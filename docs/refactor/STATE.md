@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-- Phase 2: project guardrails and status documents.
+- Phase 3: codebase audit complete; behavior baseline pending.
 
 ## Local Git Baseline
 
@@ -18,8 +18,8 @@
 | --- | --- | --- |
 | 0 Safety precheck | Completed | Sensitive/runtime files identified without reading secret values. |
 | 1 Local Git baseline | Completed | Local repository, baseline commit, tag, and branch created. |
-| 2 Guardrails and docs | In progress | Initial docs are being created. |
-| 3 Codebase audit | Pending | Must use `git ls-files` as source. |
+| 2 Guardrails and docs | Completed | Guardrails committed. |
+| 3 Codebase audit | Completed | 45 Git-tracked files classified from `git ls-files`; source reviewed by read-only explorer agents. |
 | 4 Behavior baseline | Pending | Must run configured commands and record results. |
 | 5 Refactor plan | Pending | Must create numbered R tasks. |
 | 6 Refactor execution | Pending | Only low/medium risk tasks with sufficient evidence may run. |
@@ -33,4 +33,4 @@
 
 ## Next Step
 
-Complete Phase 2, commit guardrails, then begin the read-only repository audit.
+Run Phase 4 behavior baseline commands and record results.
