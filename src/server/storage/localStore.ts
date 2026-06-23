@@ -104,7 +104,7 @@ export class LocalStore {
   }
 
   async read<K extends CollectionName>(name: K): Promise<CollectionValue[K]> {
-    await mkdir(this.dataDir, { recursive: true });
+    await this.ensureDataDir();
     const filePath = this.pathFor(name);
     if (!existsSync(filePath)) {
       return structuredClone(defaults[name]);
@@ -134,11 +134,15 @@ export class LocalStore {
   }
 
   private async writeUnlocked<K extends CollectionName>(name: K, value: CollectionValue[K]): Promise<void> {
-    await mkdir(this.dataDir, { recursive: true });
+    await this.ensureDataDir();
     const filePath = this.pathFor(name);
     const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
     await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
     await renameWithRetry(tmpPath, filePath);
+  }
+
+  private async ensureDataDir(): Promise<void> {
+    await mkdir(this.dataDir, { recursive: true });
   }
 
   private pathFor(name: CollectionName): string {

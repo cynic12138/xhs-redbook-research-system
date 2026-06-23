@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-- Phase 5: refactor plan complete; ready to execute eligible task R-001.
+- Phase 6: R-001 completed; no further eligible low/medium-risk tasks have sufficient evidence.
 
 ## Local Git Baseline
 
@@ -22,7 +22,7 @@
 | 3 Codebase audit | Completed | 47 Git-tracked files classified after Phase 4 test additions; source reviewed by read-only explorer agents. |
 | 4 Behavior baseline | Completed | Tests, typecheck, and build passed; no lint or E2E configured; UI layer frozen without visual baseline. |
 | 5 Refactor plan | Completed | R-001 is READY; R-002 through R-006 are BLOCKED pending stronger behavior evidence. |
-| 6 Refactor execution | Pending | Only low/medium risk tasks with sufficient evidence may run. |
+| 6 Refactor execution | Completed | R-001 completed and verified; R-002 through R-006 remain blocked. |
 | 7 Final verification/report | Pending | Must record final checks. |
 
 ## Known Preconditions
@@ -33,4 +33,4 @@
 
 ## Next Step
 
-Execute R-001 only after confirming a clean Git working tree.
+Run final verification and write `FINAL_REPORT.md`.

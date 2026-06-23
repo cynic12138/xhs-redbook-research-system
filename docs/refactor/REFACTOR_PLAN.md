@@ -6,7 +6,7 @@ Tasks are ordered from lower risk to higher risk. Only tasks marked `READY` may 
 
 ## R-001: Extract LocalStore Directory Initialization Helper
 
-- Status: READY
+- Status: COMPLETED
 - Risk level: Low
 - Files and symbols: `src/server/storage/localStore.ts`; private `LocalStore` implementation only.
 - Current structural issue: `read()` and `writeUnlocked()` duplicate the same `mkdir(this.dataDir, { recursive: true })` setup.
@@ -17,6 +17,7 @@ Tasks are ordered from lower risk to higher risk. Only tasks marked `READY` may 
 - Verification commands: `npm test -- test/localStore.test.ts`; `npm test`; `npm run typecheck`; `npm run build`.
 - Rollback method: revert this task commit or restore only `src/server/storage/localStore.ts` to the pre-task version.
 - Sufficient behavior evidence: Yes. Focused characterization tests cover the touched behavior and no public API/UI/database schema is changed.
+- Completion evidence: extracted private `ensureDataDir()` only; focused test passed (3 tests); full test suite passed (6 files, 17 tests); typecheck passed; build passed; read-only reviewer found no issues.
 
 ## R-002: Consolidate JobService Upsert Helpers
 
