@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-- Phase 4: behavior baseline complete; refactor planning pending.
+- Phase 5: refactor plan complete; ready to execute eligible task R-001.
 
 ## Local Git Baseline
 
@@ -21,7 +21,7 @@
 | 2 Guardrails and docs | Completed | Guardrails committed. |
 | 3 Codebase audit | Completed | 47 Git-tracked files classified after Phase 4 test additions; source reviewed by read-only explorer agents. |
 | 4 Behavior baseline | Completed | Tests, typecheck, and build passed; no lint or E2E configured; UI layer frozen without visual baseline. |
-| 5 Refactor plan | Pending | Must create numbered R tasks. |
+| 5 Refactor plan | Completed | R-001 is READY; R-002 through R-006 are BLOCKED pending stronger behavior evidence. |
 | 6 Refactor execution | Pending | Only low/medium risk tasks with sufficient evidence may run. |
 | 7 Final verification/report | Pending | Must record final checks. |
 
@@ -33,4 +33,4 @@
 
 ## Next Step
 
-Create the numbered behavior-preserving refactor plan.
+Execute R-001 only after confirming a clean Git working tree.
