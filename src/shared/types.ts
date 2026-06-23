@@ -1,0 +1,472 @@
+export type SearchSort = "general" | "popular" | "latest";
+export type NoteTypeFilter = "all" | "video" | "image";
+export type JobStatus = "queued" | "running" | "paused" | "completed" | "failed";
+export type QueueStatus = "pending" | "running" | "done" | "error";
+export type QueueKind = "read" | "comments" | "user" | "user-posts" | "analyze";
+export type CapabilityStatus = "ready" | "partial" | "planned" | "guarded";
+export type CapabilityRisk = "read" | "write" | "danger";
+export type ReplyStrategy = "questions" | "top-engaged" | "all-unanswered";
+export type ReplyPlanStatus = "draft" | "queued" | "sending" | "completed" | "paused" | "failed";
+export type ReplyActionStatus = "draft" | "queued" | "sending" | "sent" | "failed" | "paused";
+export type AiReportStatus = "completed" | "failed";
+export type AiArtifactStatus = "completed" | "failed";
+export type AiArtifactSource = "ai" | "local";
+export type AiPromptSource = "default" | "custom";
+export type AiWorkflowKey =
+  | "content-planning"
+  | "audience-insight"
+  | "competitor-analysis"
+  | "viral-deep-dive"
+  | "viral-template"
+  | "note-analysis";
+
+export interface AuthStatus {
+  connected: boolean;
+  configured: boolean;
+  user?: UserSummary;
+  error?: string;
+  checkedAt?: string;
+}
+
+export interface UserSummary {
+  id?: string;
+  nickname?: string;
+  avatar?: string;
+  raw?: unknown;
+}
+
+export interface SearchJob {
+  id: string;
+  keywords: string[];
+  sort: SearchSort;
+  noteType: NoteTypeFilter;
+  pages: number;
+  commentPages: number;
+  concurrency?: number;
+  status: JobStatus;
+  breakerReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  progress: {
+    seeded: number;
+    pending: number;
+    running: number;
+    done: number;
+    error: number;
+    total: number;
+    byKind?: Record<QueueKind, QueueKindProgress>;
+  };
+}
+
+export interface QueueKindProgress {
+  pending: number;
+  running: number;
+  done: number;
+  error: number;
+  total: number;
+}
+
+export interface QueueItem {
+  id: string;
+  jobId: string;
+  kind: QueueKind;
+  arg: string;
+  noteId?: string;
+  userId?: string;
+  keyword?: string;
+  status: QueueStatus;
+  attempts: number;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteRecord {
+  id: string;
+  jobIds: string[];
+  keywords: string[];
+  title: string;
+  desc: string;
+  type: "normal" | "video" | "unknown";
+  webUrl: string;
+  noteUrl: string;
+  authorId?: string;
+  authorName?: string;
+  coverUrl?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  likedCount: number;
+  collectedCount: number;
+  commentCount: number;
+  shareCount: number;
+  hotScore: number;
+  publishedAt?: string;
+  raw?: unknown;
+  analysis?: ViralAnalysis;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommentRecord {
+  id: string;
+  noteId: string;
+  authorId?: string;
+  authorName?: string;
+  content: string;
+  likedCount: number;
+  raw?: unknown;
+  createdAt: string;
+}
+
+export interface AuthorRecord {
+  id: string;
+  nickname: string;
+  avatar?: string;
+  desc?: string;
+  fansCount: number;
+  followingCount: number;
+  likedCount: number;
+  noteCount: number;
+  raw?: unknown;
+  updatedAt: string;
+}
+
+export interface AuthorPostRecord {
+  id: string;
+  authorId: string;
+  title: string;
+  type: "normal" | "video" | "unknown";
+  webUrl?: string;
+  likedCount: number;
+  collectedCount: number;
+  commentCount: number;
+  raw?: unknown;
+}
+
+export interface KeywordMetric {
+  keyword: string;
+  top1Likes: number;
+  top10AvgLikes: number;
+  top1Collects: number;
+  collectLikeRatio: number;
+  commentLikeRatio: number;
+  competitionDensity: number;
+  opportunityScore: number;
+  tier: "S" | "A" | "B" | "C";
+  noteCount: number;
+}
+
+export interface AuthorMetric {
+  authorId: string;
+  nickname: string;
+  fansCount: number;
+  noteCount: number;
+  avgLikes: number;
+  medianLikes: number;
+  maxLikes: number;
+  breakoutRatio: number;
+}
+
+export interface AnalyticsReport {
+  jobId: string;
+  generatedAt: string;
+  overview: {
+    notes: number;
+    videos: number;
+    imageNotes: number;
+    avgLikes: number;
+    totalComments: number;
+    totalCollects: number;
+    totalShares: number;
+  };
+  keywords: KeywordMetric[];
+  authors: AuthorMetric[];
+  formBreakdown: Array<{
+    form: "normal" | "video" | "unknown";
+    noteCount: number;
+    top1Likes: number;
+    top10AvgLikes: number;
+    collectLikeRatio: number;
+  }>;
+  templates: Array<{
+    noteId: string;
+    title: string;
+    score: number;
+    hookPatterns: string[];
+    contentType: string;
+  }>;
+}
+
+export interface ViralAnalysis {
+  score: number;
+  hookPatterns: string[];
+  contentType: "reference" | "insight" | "entertainment";
+  discussionType: "discussion" | "normal" | "passive";
+  collectLikeRatio: number;
+  commentLikeRatio: number;
+  shareLikeRatio: number;
+  questionRate: number;
+  commentThemes: Array<{ keyword: string; count: number }>;
+  titleLength: number;
+  bodyLength: number;
+  paragraphCount: number;
+  authorMedianLikes: number;
+  viralMultiplier: number;
+  generatedAt: string;
+}
+
+export interface NotesQuery {
+  jobId?: string;
+  q?: string;
+  type?: NoteTypeFilter;
+  author?: string;
+  minLikes?: number;
+  sort?: "hot" | "likes" | "comments" | "collects" | "latest";
+}
+
+export interface NotesPageResult {
+  items: NoteRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface SearchJobInput {
+  keywords: string[];
+  sort: SearchSort;
+  noteType: NoteTypeFilter;
+  pages: number;
+  commentPages: number;
+  concurrency?: number;
+}
+
+export interface RedbookCapability {
+  key: string;
+  command: string;
+  module: string;
+  label: string;
+  description: string;
+  status: CapabilityStatus;
+  risk: CapabilityRisk;
+  route?: string;
+}
+
+export interface AiModelConfig {
+  id: string;
+  name: string;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  apiKeyMasked: string;
+  hasApiKey: boolean;
+  isDefault: boolean;
+  temperature: number;
+  maxTokens: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiModelInput {
+  name: string;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  isDefault?: boolean;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+export interface AiReport {
+  id: string;
+  jobId: string;
+  title: string;
+  modelId?: string;
+  source: "ai" | "local";
+  status: AiReportStatus;
+  markdown: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiWorkflowDefinition {
+  key: AiWorkflowKey;
+  title: string;
+  description: string;
+  module: "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "ai";
+  requires: Array<"job" | "note" | "comments" | "authors" | "analytics">;
+}
+
+export interface AiPromptInfo {
+  key: AiWorkflowKey;
+  title: string;
+  version: string;
+  inputRequirements: string[];
+  outputSections: string[];
+  promptSource?: AiPromptSource;
+  isCustomized?: boolean;
+  artifactCount?: number;
+  lastUsedAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiPromptDetail extends AiPromptInfo {
+  defaultTemplate: string;
+  customTemplate?: string;
+  activeTemplate: string;
+  variables: Array<{
+    key: string;
+    label: string;
+    description: string;
+  }>;
+  recentArtifacts: Array<{
+    id: string;
+    title: string;
+    createdAt: string;
+    source: AiArtifactSource;
+  }>;
+}
+
+export interface AiPromptConfig {
+  key: AiWorkflowKey;
+  customTemplate?: string;
+  activeSource: AiPromptSource;
+  updatedAt: string;
+  lastUsedAt?: string;
+}
+
+export interface AiWorkflowRunInput {
+  workflowKey: AiWorkflowKey;
+  jobId?: string;
+  noteId?: string;
+  focus?: string;
+}
+
+export interface AiArtifact {
+  id: string;
+  workflowKey: AiWorkflowKey | "assistant";
+  jobId?: string;
+  noteId?: string;
+  title: string;
+  markdown: string;
+  source: AiArtifactSource;
+  status: AiArtifactStatus;
+  modelId?: string;
+  promptKey?: AiWorkflowKey | "assistant" | "report";
+  promptTitle?: string;
+  promptSource?: AiPromptSource;
+  promptVersion?: string;
+  contextSummary?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiAssistantMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+export interface AiAssistantChatInput {
+  message: string;
+  jobId?: string;
+  noteId?: string;
+  module?: string;
+}
+
+export interface AiAssistantChatResponse {
+  message: AiAssistantMessage;
+  artifact?: AiArtifact;
+}
+
+export interface ReplyCandidate {
+  id: string;
+  actionId: string;
+  commentId: string;
+  noteId: string;
+  author?: string;
+  content: string;
+  likes: number;
+  hasSubReplies: boolean;
+  isQuestion: boolean;
+  matchedStrategy: ReplyStrategy;
+  draft: string;
+}
+
+export interface ReplyPlanRecord {
+  id: string;
+  noteId: string;
+  webUrl: string;
+  noteTitle: string;
+  strategy: ReplyStrategy;
+  status: ReplyPlanStatus;
+  candidates: ReplyCandidate[];
+  skipped: number;
+  totalComments: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReplyActionRecord {
+  id: string;
+  planId: string;
+  noteId: string;
+  webUrl: string;
+  commentId: string;
+  content: string;
+  status: ReplyActionStatus;
+  error?: string;
+  approvedAt?: string;
+  sentAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HealthNoteDiagnostic {
+  noteId: string;
+  title: string;
+  level: number;
+  levelLabel: string;
+  levelColor: "green" | "yellow" | "red" | "gray";
+  sensitiveHits: string[];
+  tagCount: number;
+  tagWarning: boolean;
+}
+
+export interface HealthReportRecord {
+  id: string;
+  jobId: string;
+  generatedAt: string;
+  totalNotes: number;
+  notes: HealthNoteDiagnostic[];
+  limitedNotes: HealthNoteDiagnostic[];
+  sensitiveNotes: HealthNoteDiagnostic[];
+  distribution: Record<string, number>;
+}
+
+export interface BoardRecord {
+  id: string;
+  userId?: string;
+  name: string;
+  noteCount: number;
+  raw?: unknown;
+  updatedAt: string;
+}
+
+export interface FavoriteNoteRecord {
+  id: string;
+  userId?: string;
+  title: string;
+  webUrl: string;
+  likedCount: number;
+  collectedCount: number;
+  commentCount: number;
+  raw?: unknown;
+  updatedAt: string;
+}
