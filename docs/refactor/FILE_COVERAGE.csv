@@ -39,7 +39,9 @@ src/shared/types.ts,first-party production source,true,false,cross-module,yes,Sh
 src/shared/utils.ts,first-party production source,true,false,cross-module,yes,Shared pure utility helpers,utility functions,client server tests,shared types,none,yes,test/utils.test.ts,low,Good low-risk pure helper coverage
 test/aiPrompts.test.ts,test,true,false,test-engineering,yes,Prompt characterization tests,Vitest suite,npm test,aiPrompts shared types,none,no,src/server/services/aiPrompts.ts,low,Current behavior tests
 test/analysis.test.ts,test,true,false,test-engineering,yes,Analysis characterization tests,Vitest suite,npm test,analysis shared types,none,no,src/server/services/analysis.ts,low,Current behavior tests
+test/localStore.test.ts,test,true,false,test-engineering,yes,LocalStore characterization tests,Vitest suite,npm test,localStore fs temp dirs,creates isolated temp JSON files,no,src/server/storage/localStore.ts,low,Added in Phase 4 to capture current persistence behavior
 test/phase2.test.ts,test,true,false,test-engineering,yes,Capabilities and health tests,Vitest suite,npm test,capabilities healthService,none,no,capabilities healthService,low,Current behavior tests
+test/url.test.ts,test,true,false,test-engineering,yes,URL helper characterization tests,Vitest suite,npm test,url helpers,none,no,src/server/services/url.ts,low,Added in Phase 4 to capture current URL behavior
 test/utils.test.ts,test,true,false,test-engineering,yes,Shared utils tests,Vitest suite,npm test,shared utils,none,no,src/shared/utils.ts,low,Current behavior tests
 tsconfig.json,configuration,true,false,test-engineering,yes,Client shared test TypeScript config,compiler options,npm typecheck,TypeScript,none,yes,none,medium,Typecheck boundary
 tsconfig.server.json,configuration,true,false,test-engineering,yes,Server TypeScript build config,compiler options,npm build/typecheck,TypeScript,emits dist/server during build,yes,none,medium,Server build boundary

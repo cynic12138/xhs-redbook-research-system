@@ -51,9 +51,10 @@ Status: Phase 3 audit complete. Risks are baseline observations, not requested f
 
 - React UI and API client.
 - Express route contracts and error semantics.
-- `LocalStore` persistence and invalid/empty JSON behavior.
+- `LocalStore` persistence is partially characterized; invalid JSON behavior and multi-process behavior remain uncovered.
 - Job queue workers, rate budget, startup resume/pause, and multi-collection side effects.
 - Query delete/clear side effects.
+- URL helpers now have focused characterization coverage.
 - Media proxy/cache behavior.
 - Environment helper behavior and `.env.local` writes.
 - Redbook and AI external-service failure boundaries.

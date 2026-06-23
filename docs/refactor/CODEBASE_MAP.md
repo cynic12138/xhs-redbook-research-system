@@ -4,9 +4,9 @@ Status: Phase 3 audit complete.
 
 ## Total File Statistics
 
-- Git-tracked files: 45.
+- Git-tracked files: 47.
 - First-party production source and app assets: 24 (`index.html` plus `src/`).
-- Tests: 4.
+- Tests: 6.
 - Build/development script files: 1.
 - Root configuration and lock files: 7.
 - Refactor documentation files: 9.
@@ -111,15 +111,15 @@ Status: Phase 3 audit complete.
 
 ## Test Coverage
 
-- Current tests cover shared utilities, analysis rules, prompt generation, capabilities, and health diagnosis.
+- Current tests cover shared utilities, analysis rules, prompt generation, capabilities, health diagnosis, local JSON store behavior, and URL helpers.
 - No route contract tests.
 - No React component, DOM, visual, or E2E tests.
-- No LocalStore, job worker, media proxy, env helper, Redbook boundary, AI boundary, or concurrency tests.
+- No job worker, media proxy, env helper, Redbook boundary, AI boundary, route contract, UI, or multi-process concurrency tests.
 - No lint command or config is present.
 
 ## Audit Completion
 
-- 100% Git-tracked files categorized in `FILE_COVERAGE.csv`.
+- 100% Git-tracked files categorized in `FILE_COVERAGE.csv` as of Phase 4 test additions.
 - 100% first-party production source files assigned to a review area.
 - 100% first-party production source files marked for semantic review.
 - Application entrypoints identified.
