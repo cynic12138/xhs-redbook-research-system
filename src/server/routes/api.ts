@@ -23,6 +23,7 @@ import {
   createAiReport,
   activateAiPrompt,
   deleteAiArtifact,
+  deleteAiModel,
   deleteAiReport,
   getAiArtifact,
   getAiPromptDetail,
@@ -36,7 +37,9 @@ import {
   resetAiPromptConfig,
   saveAiModel,
   saveAiPromptConfig,
-  testAiModel
+  setDefaultAiModel,
+  testAiModel,
+  updateAiModel
 } from "../services/aiService.js";
 
 export const api = Router();
@@ -274,6 +277,30 @@ api.get("/ai/models", async (_req, res) => {
 api.post("/ai/models", async (req, res, next) => {
   try {
     res.status(201).json(await saveAiModel(aiModelInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.put("/ai/models/:id", async (req, res, next) => {
+  try {
+    res.json(await updateAiModel(req.params.id, aiModelInput.partial().parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.delete("/ai/models/:id", async (req, res, next) => {
+  try {
+    res.json(await deleteAiModel(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/models/:id/default", async (req, res, next) => {
+  try {
+    res.json(await setDefaultAiModel(req.params.id));
   } catch (error) {
     next(error);
   }

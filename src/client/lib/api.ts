@@ -82,6 +82,10 @@ export const api = {
     apiPost<ReplyActionRecord>(`/api/comment-actions/${actionId}/approve`, { content }),
   listAiModels: () => apiGet<AiModelConfig[]>("/api/ai/models"),
   saveAiModel: (input: AiModelInput) => apiPost<AiModelConfig>("/api/ai/models", input),
+  updateAiModel: (modelId: string, input: Partial<AiModelInput>) =>
+    apiPut<AiModelConfig>(`/api/ai/models/${encodeURIComponent(modelId)}`, input),
+  deleteAiModel: (modelId: string) => apiDelete<{ deleted: number }>(`/api/ai/models/${encodeURIComponent(modelId)}`),
+  setDefaultAiModel: (modelId: string) => apiPost<AiModelConfig>(`/api/ai/models/${encodeURIComponent(modelId)}/default`),
   testAiModel: (modelId: string) => apiPost<{ ok: boolean; message: string }>("/api/ai/models/test", { modelId }),
   listAiWorkflows: () => apiGet<AiWorkflowDefinition[]>("/api/ai/workflows"),
   listAiPrompts: () => apiGet<AiPromptInfo[]>("/api/ai/prompts"),

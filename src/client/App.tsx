@@ -61,6 +61,16 @@ import { api } from "./lib/api.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
+type ModelForm = { name: string; provider: string; baseUrl: string; model: string; apiKey: string };
+type ReaderPreview = { kind: "artifact" | "report"; title: string; markdown: string; meta: string[]; exportUrl: string };
+
+const emptyModelForm: ModelForm = {
+  name: "",
+  provider: "OpenAI-compatible",
+  baseUrl: "https://api.openai.com/v1",
+  model: "",
+  apiKey: ""
+};
 
 const modules: Array<{ key: ModuleKey; label: string; icon: ReactNode }> = [
   { key: "overview", label: "总览", icon: <Activity size={18} /> },
@@ -120,6 +130,8 @@ export function App() {
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [selectedReportId, setSelectedReportId] = useState("");
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const [modelEditorOpen, setModelEditorOpen] = useState(false);
+  const [editingModelId, setEditingModelId] = useState("");
   const [query, setQuery] = useState("");
   const [authorQuery, setAuthorQuery] = useState("");
   const [minLikes, setMinLikes] = useState("");
@@ -129,18 +141,14 @@ export function App() {
   const [replyStrategy, setReplyStrategy] = useState<ReplyStrategy>("questions");
   const [replyTemplate, setReplyTemplate] = useState("谢谢 {author} 的提问，我补充一下：");
   const [reportFocus, setReportFocus] = useState("话题机会、爆款结构、评论需求、可执行选题");
-  const [modelForm, setModelForm] = useState({
-    name: "",
-    provider: "OpenAI-compatible",
-    baseUrl: "https://api.openai.com/v1",
-    model: "",
-    apiKey: ""
-  });
+  const [modelForm, setModelForm] = useState<ModelForm>(emptyModelForm);
   const [modelMessages, setModelMessages] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
   const activeJob = jobs.find((job) => job.id === activeJobId);
+  const contextJob = isContextJob(activeJob) ? activeJob : undefined;
+  const contextJobId = contextJob?.id ?? "";
   const selected = notes.find((note) => note.id === selectedId) ?? notes[0] ?? null;
 
   const refreshCore = useCallback(async () => {
@@ -231,6 +239,17 @@ export function App() {
   useEffect(() => {
     void loadPromptDetail(selectedPromptKey).catch((err) => setError(err.message));
   }, [loadPromptDetail, selectedPromptKey]);
+
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const nextModule = (event as CustomEvent<ModuleKey>).detail;
+      if (modules.some((module) => module.key === nextModule)) {
+        setActiveModule(nextModule);
+      }
+    };
+    window.addEventListener("xhs:navigate", navigate);
+    return () => window.removeEventListener("xhs:navigate", navigate);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -374,15 +393,59 @@ export function App() {
     });
   }
 
+  function openNewModel() {
+    setEditingModelId("");
+    setModelForm(emptyModelForm);
+    setModelEditorOpen(true);
+  }
+
+  function openEditModel(model: AiModelConfig) {
+    setEditingModelId(model.id);
+    setModelForm({
+      name: model.name,
+      provider: model.provider,
+      baseUrl: model.baseUrl,
+      model: model.model,
+      apiKey: ""
+    });
+    setModelEditorOpen(true);
+  }
+
   async function saveModel() {
     await run("model", async () => {
-      await api.saveAiModel({
+      const input = {
         ...modelForm,
-        isDefault: aiModels.length === 0,
+        isDefault: editingModelId ? undefined : aiModels.length === 0,
         temperature: 0.4,
         maxTokens: 4000
-      });
-      setModelForm({ name: "", provider: "OpenAI-compatible", baseUrl: "https://api.openai.com/v1", model: "", apiKey: "" });
+      };
+      if (editingModelId) {
+        await api.updateAiModel(editingModelId, input);
+      } else {
+        await api.saveAiModel(input);
+      }
+      setEditingModelId("");
+      setModelEditorOpen(false);
+      setModelForm(emptyModelForm);
+      await refreshCore();
+    });
+  }
+
+  async function deleteModel(modelId: string) {
+    await run(`delete-model-${modelId}`, async () => {
+      await api.deleteAiModel(modelId);
+      if (editingModelId === modelId) {
+        setEditingModelId("");
+        setModelEditorOpen(false);
+        setModelForm(emptyModelForm);
+      }
+      await refreshCore();
+    });
+  }
+
+  async function setDefaultModel(modelId: string) {
+    await run(`default-model-${modelId}`, async () => {
+      await api.setDefaultAiModel(modelId);
       await refreshCore();
     });
   }
@@ -396,9 +459,12 @@ export function App() {
   }
 
   async function createReport() {
-    if (!activeJobId) return;
+    if (!contextJobId) {
+      setError("当前没有可用于分析的有效任务，请先创建并完成一次关键词抓取。");
+      return;
+    }
     await run("report", async () => {
-      await api.createAiReport({ jobId: activeJobId, focus: reportFocus });
+      await api.createAiReport({ jobId: contextJobId, focus: reportFocus });
       await loadOperations();
       setActiveModule("ai");
     });
@@ -416,8 +482,8 @@ export function App() {
 
   async function runWorkflow(workflowKey: AiWorkflowKey, focus?: string) {
     const workflow = aiWorkflows.find((item) => item.key === workflowKey);
-    if (workflow?.requires.includes("job") && !activeJobId) {
-      setError("请先创建或选择一个关键词任务。");
+    if (workflow?.requires.includes("job") && !contextJobId) {
+      setError("当前没有可用于分析的有效任务，请先创建并完成一次关键词抓取。");
       return;
     }
     if (workflow?.requires.includes("note") && !selected) {
@@ -427,7 +493,7 @@ export function App() {
     await run(`workflow-${workflowKey}`, async () => {
       const artifact = await api.runAiWorkflow({
         workflowKey,
-        jobId: activeJobId || undefined,
+        jobId: contextJobId || undefined,
         noteId: selected?.id,
         focus
       });
@@ -454,7 +520,7 @@ export function App() {
     await run("assistant-chat", async () => {
       const response = await api.assistantChat({
         message: content,
-        jobId: activeJobId || undefined,
+        jobId: contextJobId || undefined,
         noteId: selected?.id,
         module: activeModule
       });
@@ -548,7 +614,7 @@ export function App() {
       <section className="workbench">
         <CompactTaskBar
           moduleLabel={modules.find((item) => item.key === activeModule)?.label ?? "工作台"}
-          activeJob={activeJob}
+          activeJob={contextJob}
           auth={auth}
           defaultModel={defaultModel}
           notesTotal={notesTotal}
@@ -628,7 +694,7 @@ export function App() {
             busy={busy}
           />
         )}
-        {activeModule === "viral" && <ViralPage analytics={analytics} selected={selected} runWorkflow={runWorkflow} busy={busy} />}
+        {activeModule === "viral" && <ViralPage analytics={analytics} selected={selected} artifacts={aiArtifacts} runWorkflow={runWorkflow} busy={busy} />}
         {activeModule === "audience" && (
           <AudiencePage analytics={analytics} notes={notes} artifacts={aiArtifacts} runWorkflow={runWorkflow} busy={busy} />
         )}
@@ -673,7 +739,7 @@ export function App() {
         )}
         {activeModule === "ai" && (
           <AiWorkbenchPage
-            activeJob={activeJob}
+            activeJob={contextJob}
             artifacts={aiArtifacts}
             reports={aiReports}
             reportFocus={reportFocus}
@@ -693,11 +759,22 @@ export function App() {
         )}
       </section>
       {modelSettingsOpen && (
-        <ModelSettingsModal
+        <ModelSettingsDrawer
           models={aiModels}
           modelForm={modelForm}
           setModelForm={setModelForm}
+          editorOpen={modelEditorOpen}
+          editingModelId={editingModelId}
+          openNewModel={openNewModel}
+          openEditModel={openEditModel}
+          closeEditor={() => {
+            setModelEditorOpen(false);
+            setEditingModelId("");
+            setModelForm(emptyModelForm);
+          }}
           saveModel={saveModel}
+          deleteModel={deleteModel}
+          setDefaultModel={setDefaultModel}
           testModel={testModel}
           modelMessages={modelMessages}
           busy={busy}
@@ -705,7 +782,7 @@ export function App() {
         />
       )}
       {!assistantOpen && (
-        <AiAssistantEntry onOpen={() => setAssistantOpen(true)} context={activeJob ? activeJob.keywords.join(" / ") : "暂无任务"} />
+        <AiAssistantEntry onOpen={() => setAssistantOpen(true)} context={contextJob ? jobKeywordLabel(contextJob) : "先创建任务"} />
       )}
       <AiAssistantDrawer
         open={assistantOpen}
@@ -719,7 +796,7 @@ export function App() {
         workflows={visibleWorkflows.length ? visibleWorkflows : aiWorkflows.slice(0, 4)}
         runWorkflow={runWorkflow}
         contextItems={[
-          activeJob ? `任务：${activeJob.keywords.join(" / ")}` : "无当前任务",
+          contextJob ? `任务：${jobKeywordLabel(contextJob)}` : "无有效任务",
           selected ? `笔记：${selected.title}` : "未选择笔记",
           `笔记数：${notesTotal}`,
           defaultModel ? `模型：${defaultModel.name}` : "未配置模型"
@@ -738,6 +815,16 @@ function workflowsForModule(workflows: AiWorkflowDefinition[], module: ModuleKey
     return workflows.slice(0, 4);
   }
   return workflows.filter((workflow) => workflow.module === module);
+}
+
+function isContextJob(job?: SearchJob): job is SearchJob {
+  if (!job) return false;
+  if (job.status === "queued" || job.status === "running") return true;
+  return job.progress.seeded > 0 || job.progress.total > 0 || job.progress.done > 0 || job.progress.pending > 0 || job.progress.error > 0;
+}
+
+function jobKeywordLabel(job: SearchJob): string {
+  return job.keywords.filter(Boolean).join(" / ") || "未命名任务";
 }
 
 function ContextBadgeRow({ items }: { items: string[] }) {
@@ -775,13 +862,13 @@ function CompactTaskBar({
     <header className="compact-taskbar">
       <div className="taskbar-title">
         <span>{moduleLabel}</span>
-        <strong>{activeJob ? activeJob.keywords.join(" / ") : "等待创建关键词任务"}</strong>
+        <strong>{activeJob ? jobKeywordLabel(activeJob) : "未选择有效任务"}</strong>
       </div>
       <ContextBadgeRow
         items={[
           auth.connected ? "Cookie 已连接" : auth.error ? "连接失效" : "待验证",
           defaultModel ? `模型 ${defaultModel.name}` : "未配置模型",
-          activeJob ? `并发 ${activeJob.concurrency ?? 2}` : "无任务",
+          activeJob ? `并发 ${activeJob.concurrency ?? 2}` : "无有效任务",
           `笔记 ${notesTotal}`
         ]}
       />
@@ -882,7 +969,7 @@ function OverviewPage({
     ) : null;
 
   return (
-    <div className="page-grid">
+    <div className="overview-frame">
       <section className="metric-row">
         <Metric icon={<Database size={18} />} label="笔记" value={formatNumber(metrics.total)} />
         <Metric icon={<Video size={18} />} label="视频" value={formatNumber(metrics.videos)} />
@@ -1028,7 +1115,10 @@ function ResearchPage(props: {
             </button>
           }
         />
-        <textarea value={props.keywords} onChange={(event) => props.setKeywords(event.target.value)} />
+        <label className="field-stack">
+          <span>关键词</span>
+          <textarea value={props.keywords} onChange={(event) => props.setKeywords(event.target.value)} placeholder="多个关键词可用逗号或换行分隔" />
+        </label>
         <div className="form-grid">
           <Select label="排序" value={props.sort} onChange={(value) => props.setSort(value as SearchSort)} options={[["popular", "热门"], ["general", "综合"], ["latest", "最新"]]} />
           <Select label="类型" value={props.noteType} onChange={(value) => props.setNoteType(value as NoteTypeFilter)} options={[["all", "全部"], ["image", "图文"], ["video", "视频"]]} />
@@ -1042,7 +1132,7 @@ function ResearchPage(props: {
         </div>
       </section>
 
-      <section className="surface">
+      <section className="surface research-matrix-panel">
         <SectionTitle
           icon={<TrendingUp size={18} />}
           title="关键词矩阵"
@@ -1053,25 +1143,37 @@ function ResearchPage(props: {
             </button>
           }
         />
-        <div className="data-table">
-          <div className="table-head">
-            <span>关键词</span>
-            <span>层级</span>
-            <span>Top1</span>
-            <span>机会分</span>
-          </div>
-          {props.analytics?.keywords.slice(0, 10).map((item) => (
-            <div className="table-row" key={item.keyword}>
-              <strong>{item.keyword}</strong>
-              <span>{item.tier}</span>
-              <span>{formatNumber(item.top1Likes)}</span>
-              <span>{formatNumber(item.opportunityScore)}</span>
+        {props.analytics?.keywords.length ? (
+          <div className="data-table">
+            <div className="table-head">
+              <span>关键词</span>
+              <span>层级</span>
+              <span>Top1</span>
+              <span>机会分</span>
             </div>
-          ))}
-          {!props.analytics?.keywords.length && <EmptyState text="等待搜索数据" />}
-        </div>
+            {props.analytics.keywords.slice(0, 10).map((item) => (
+              <div className="table-row" key={item.keyword}>
+                <strong>{item.keyword}</strong>
+                <span>{item.tier}</span>
+                <span>{formatNumber(item.top1Likes)}</span>
+                <span>{formatNumber(item.opportunityScore)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="research-empty-guide">
+            <strong>关键词矩阵会在抓取后生成</strong>
+            <p>它用来判断每个关键词的热度、竞争密度和机会分。先在左侧输入关键词并开始抓取，系统会先拿搜索结果，再补正文、评论、作者和本地分析。</p>
+            <div className="guide-steps">
+              <span>1. 搜索关键词</span>
+              <span>2. 抓取正文评论</span>
+              <span>3. 看机会分</span>
+              <span>4. 生成内容策划</span>
+            </div>
+          </div>
+        )}
       </section>
-      <section className="surface">
+      <section className="surface content-planning-panel">
         <SectionTitle icon={<Sparkles size={18} />} title="内容策划入口" />
         <div className="status-grid">
           <Metric label="样本笔记" value={String(props.analytics?.overview.notes ?? 0)} />
@@ -1133,21 +1235,36 @@ function NotesPage(props: {
           }
         />
         <div className="filter-row">
-          <input value={props.query} onChange={(event) => { props.setPage(1); props.setQuery(event.target.value); }} placeholder="标题、正文、关键词" />
-          <input value={props.authorQuery} onChange={(event) => { props.setPage(1); props.setAuthorQuery(event.target.value); }} placeholder="作者" />
-          <input value={props.minLikes} onChange={(event) => { props.setPage(1); props.setMinLikes(event.target.value); }} placeholder="最低赞" />
-          <select value={props.resultType} onChange={(event) => { props.setPage(1); props.setResultType(event.target.value as NoteTypeFilter); }}>
-            <option value="all">全部</option>
-            <option value="image">图文</option>
-            <option value="video">视频</option>
-          </select>
-          <select value={props.resultSort} onChange={(event) => { props.setPage(1); props.setResultSort(event.target.value as SortMode); }}>
-            <option value="hot">热度</option>
-            <option value="likes">点赞</option>
-            <option value="comments">评论</option>
-            <option value="collects">收藏</option>
-            <option value="latest">最新</option>
-          </select>
+          <label className="field-stack compact-field">
+            <span>搜索</span>
+            <input value={props.query} onChange={(event) => { props.setPage(1); props.setQuery(event.target.value); }} placeholder="标题、正文、关键词" />
+          </label>
+          <label className="field-stack compact-field">
+            <span>作者</span>
+            <input value={props.authorQuery} onChange={(event) => { props.setPage(1); props.setAuthorQuery(event.target.value); }} placeholder="作者昵称" />
+          </label>
+          <label className="field-stack compact-field">
+            <span>最低赞</span>
+            <input value={props.minLikes} onChange={(event) => { props.setPage(1); props.setMinLikes(event.target.value); }} placeholder="最低赞" />
+          </label>
+          <label className="field-stack compact-field">
+            <span>类型</span>
+            <select value={props.resultType} onChange={(event) => { props.setPage(1); props.setResultType(event.target.value as NoteTypeFilter); }}>
+              <option value="all">全部</option>
+              <option value="image">图文</option>
+              <option value="video">视频</option>
+            </select>
+          </label>
+          <label className="field-stack compact-field">
+            <span>排序</span>
+            <select value={props.resultSort} onChange={(event) => { props.setPage(1); props.setResultSort(event.target.value as SortMode); }}>
+              <option value="hot">热度</option>
+              <option value="likes">点赞</option>
+              <option value="comments">评论</option>
+              <option value="collects">收藏</option>
+              <option value="latest">最新</option>
+            </select>
+          </label>
         </div>
         <div className="note-list">
           {props.notes.map((note) => (
@@ -1167,7 +1284,14 @@ function NotesPage(props: {
               </span>
             </button>
           ))}
-          {!props.notes.length && <EmptyState text="暂无结果" />}
+          {!props.notes.length && (
+            <EmptyState
+              title="当前筛选没有匹配笔记"
+              text="可以调整标题/正文关键词、作者、最低赞或类型筛选；如果当前任务还没抓取完成，请先回到总览查看任务进度。"
+              actionLabel="去话题研究新建任务"
+              onAction={() => window.dispatchEvent(new CustomEvent("xhs:navigate", { detail: "research" }))}
+            />
+          )}
         </div>
         <div className="pagination-row">
           <span>共 {props.total} 条 · 第 {props.page}/{props.totalPages} 页</span>
@@ -1242,42 +1366,65 @@ function isVideoMediaUrl(url: string): boolean {
   return /\.(mp4|m3u8|mov)(\?|#|$)/i.test(url) || /\/stream\//i.test(url);
 }
 
+function contentTypeLabel(type?: string): string {
+  if (type === "reference") return "资料收藏型";
+  if (type === "insight") return "观点洞察型";
+  if (type === "entertainment") return "情绪传播型";
+  return "未归类";
+}
+
+function discussionTypeLabel(type?: string): string {
+  if (type === "discussion") return "高讨论型";
+  if (type === "normal") return "普通讨论型";
+  if (type === "passive") return "低讨论型";
+  return "未归类";
+}
+
+function percentLabel(value?: number): string {
+  return `${Math.round((value ?? 0) * 100)}%`;
+}
+
 function ViralPage({
   analytics,
   selected,
+  artifacts,
   runWorkflow,
   busy
 }: {
   analytics: AnalyticsReport | null;
   selected: NoteRecord | null;
+  artifacts: AiArtifact[];
   runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
   busy: string;
 }) {
+  const latestDeepDive = artifacts.find((artifact) => artifact.workflowKey === "viral-deep-dive");
+  const latestTemplate = artifacts.find((artifact) => artifact.workflowKey === "viral-template");
   return (
     <div className="viral-layout">
-      <section className="surface">
+      <section className="surface viral-template-panel">
         <SectionTitle
           icon={<Flame size={18} />}
-          title="爆款模板"
+          title="爆款样本库"
           action={
             <button className="primary-button compact" onClick={() => void runWorkflow("viral-template")} disabled={busy === "workflow-viral-template"}>
               {busy === "workflow-viral-template" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-              生成模板
+              生成模板库
             </button>
           }
         />
+        <p className="panel-note">按本地爆款分排序，先找值得拆的样本，再让 AI 提炼可复用标题公式和正文框架。</p>
         <div className="template-list">
           {analytics?.templates.map((item) => (
             <div key={item.noteId} className="template-item">
               <strong>{item.title}</strong>
-              <span>爆款分 {item.score} · {item.contentType}</span>
+              <span>爆款分 {item.score} · {contentTypeLabel(item.contentType)}</span>
               <div>{item.hookPatterns.map((hook) => <em key={hook}>{hook}</em>)}</div>
             </div>
           ))}
-          {!analytics?.templates.length && <EmptyState text="等待分析结果" />}
+          {!analytics?.templates.length && <EmptyState text="抓取完成后，这里会列出高潜爆款样本" />}
         </div>
       </section>
-      <section className="surface">
+      <section className="surface viral-current-panel">
         <SectionTitle
           icon={<Sparkles size={18} />}
           title="当前笔记拆解"
@@ -1289,35 +1436,58 @@ function ViralPage({
           }
         />
         {selected?.analysis ? (
-          <div className="analysis-grid">
-            <Metric label="爆款分" value={String(selected.analysis.score)} />
-            <Metric label="收藏/赞" value={`${Math.round(selected.analysis.collectLikeRatio * 100)}%`} />
-            <Metric label="评论/赞" value={`${Math.round(selected.analysis.commentLikeRatio * 100)}%`} />
-            <Metric label="作者倍数" value={`${selected.analysis.viralMultiplier}x`} />
-            <div className="theme-cloud">
+          <div className="viral-current-scroll">
+            <div className="selected-note-summary">
+              <span>来自笔记库当前选中笔记</span>
+              <strong>{selected.title || "未命名笔记"}</strong>
+              <small>{selected.authorName ?? "未知作者"} · {selected.type === "video" ? "视频" : "图文"}</small>
+            </div>
+            <div className="analysis-grid">
+              <Metric label="爆款分" value={String(selected.analysis.score)} />
+              <Metric label="收藏/赞" value={percentLabel(selected.analysis.collectLikeRatio)} />
+              <Metric label="评论/赞" value={percentLabel(selected.analysis.commentLikeRatio)} />
+              <Metric label="作者倍数" value={`${selected.analysis.viralMultiplier}x`} />
+            </div>
+            <div className="score-explain">
+              <strong>爆款分怎么算</strong>
+              <p>本地规则会综合标题钩子、收藏/点赞比、评论/点赞比、相对作者过往表现、评论主题数量和正文完整度，压缩成 0-100 分。它用于筛选“值得进一步拆解”的样本，不等同于平台官方推荐分。</p>
+            </div>
+            <div className="insight-panel">
+              <strong>结构判断</strong>
+              <p>内容类型：{contentTypeLabel(selected.analysis.contentType)}；讨论类型：{discussionTypeLabel(selected.analysis.discussionType)}</p>
+              <p>标题钩子：{selected.analysis.hookPatterns.join("、") || "暂无明显钩子"}</p>
+              <p>复刻方向：保留用户能立即理解的冲突点，正文补足清单、步骤或真实案例，再用评论区高频问题做续篇。</p>
+            </div>
+            <div className="theme-cloud labeled">
               {selected.analysis.commentThemes.map((theme) => (
                 <span key={theme.keyword}>{theme.keyword} · {theme.count}</span>
               ))}
+              {!selected.analysis.commentThemes.length && <span>评论主题不足，建议继续抓取评论后再判断。</span>}
             </div>
           </div>
         ) : (
-          <EmptyState text="请选择已完成分析的笔记" />
+          <EmptyState text="先在笔记库选择一篇已抓取正文和评论的笔记，这里会显示它的爆款结构" />
         )}
       </section>
-      <section className="surface">
-        <SectionTitle icon={<Bot size={18} />} title="AI 深度解释" />
-        {selected?.analysis ? (
-          <InsightPanel
-            title="可复用结构"
-            lines={[
-              `标题钩子：${selected.analysis.hookPatterns.join("、") || "暂无明显钩子"}`,
-              `内容类型：${selected.analysis.contentType}`,
-              `互动结构：收藏/赞 ${Math.round(selected.analysis.collectLikeRatio * 100)}%，评论/赞 ${Math.round(selected.analysis.commentLikeRatio * 100)}%`,
-              "复刻建议：保留标题冲突点，正文增加清单和真实案例，评论区承接高频问题。"
-            ]}
-          />
+      <section className="surface viral-ai-panel">
+        <SectionTitle icon={<Bot size={18} />} title="AI 深度拆解与大模板" />
+        {latestDeepDive ? (
+          <MarkdownView content={latestDeepDive.markdown} compact />
+        ) : latestTemplate ? (
+          <MarkdownView content={latestTemplate.markdown} compact />
+        ) : selected?.analysis ? (
+          <div className="viral-ai-empty">
+            <InsightPanel
+              title="建议下一步"
+              lines={[
+                "点击“AI 深度拆解”会围绕当前选中笔记生成爆点、标题钩子、正文结构、评论心理和可复刻 brief。",
+                "点击“生成模板库”会从多篇高分样本里提炼标题公式、正文框架和选题复用方式。",
+                "AI 产物会进入 AI 工作台，并标记它使用的 Prompt，后续可以继续编辑 Prompt 再生成。"
+              ]}
+            />
+          </div>
         ) : (
-          <EmptyState text="选择一篇完成分析的笔记后查看 AI 拆解入口" />
+          <EmptyState text="选择一篇笔记后，可以生成单篇深拆或整组爆款模板" />
         )}
       </section>
     </div>
@@ -1339,9 +1509,10 @@ function AudiencePage({
 }) {
   const themes = notes.flatMap((note) => note.analysis?.commentThemes ?? []).slice(0, 18);
   const latest = artifacts.find((artifact) => artifact.workflowKey === "audience-insight");
+  const topQuestions = themes.slice(0, 8);
   return (
-    <div className="page-grid">
-      <section className="surface">
+    <div className="module-frame audience-layout">
+      <section className="surface audience-signal-panel">
         <SectionTitle
           icon={<HeartHandshake size={18} />}
           title="受众需求信号"
@@ -1357,13 +1528,29 @@ function AudiencePage({
           <Metric label="总评论" value={formatNumber(analytics?.overview.totalComments ?? 0)} />
           <Metric label="高频主题" value={String(themes.length)} />
         </div>
-        <div className="theme-cloud">
-          {themes.map((theme, index) => <span key={`${theme.keyword}-${index}`}>{theme.keyword} · {theme.count}</span>)}
+        <div className="audience-signal-grid">
+          <div className="signal-card">
+            <strong>高频痛点</strong>
+            <div className="theme-cloud compact-cloud">
+              {topQuestions.map((theme, index) => <span key={`${theme.keyword}-${index}`}>{theme.keyword} · {theme.count}</span>)}
+              {!topQuestions.length && <span>等待评论主题</span>}
+            </div>
+          </div>
+          <div className="signal-card">
+            <strong>运营怎么用</strong>
+            <p>把高频词拆成 FAQ、避坑、对比和经验复盘四类选题；评论越集中，越适合做系列内容。</p>
+          </div>
+          <div className="signal-card">
+            <strong>下一步</strong>
+            <p>生成受众洞察后，右侧会输出用户画像、痛点聚类、用户原话和人工回复策略。</p>
+          </div>
         </div>
       </section>
-      <section className="surface">
+      <section className="surface analysis-report-panel">
         <SectionTitle icon={<Bot size={18} />} title="AI 人群画像" />
-        {latest ? <MarkdownView content={latest.markdown} compact /> : <EmptyState text="运行受众洞察后生成画像、痛点和用户原话" />}
+        <div className="analysis-report-body">
+          {latest ? <MarkdownView content={latest.markdown} /> : <EmptyState text="运行受众洞察后生成画像、痛点、用户原话和内容机会" />}
+        </div>
       </section>
     </div>
   );
@@ -1381,9 +1568,10 @@ function CompetitorsPage({
   busy: string;
 }) {
   const latest = artifacts.find((artifact) => artifact.workflowKey === "competitor-analysis");
+  const hasAuthors = Boolean(analytics?.authors.length);
   return (
-    <div className="page-grid">
-      <section className="surface">
+    <div className="module-frame competitor-layout">
+      <section className="surface competitor-list-panel">
         <SectionTitle
           icon={<Layers size={18} />}
           title="竞品作者榜"
@@ -1394,29 +1582,44 @@ function CompetitorsPage({
             </button>
           }
         />
-        <div className="data-table">
-          <div className="table-head author-table">
-            <span>作者</span>
-            <span>粉丝</span>
-            <span>作品</span>
-            <span>最高赞</span>
-            <span>爆发倍数</span>
-          </div>
-          {analytics?.authors.slice(0, 12).map((author) => (
-            <div className="table-row author-table" key={author.authorId}>
-              <strong>{author.nickname}</strong>
-              <span>{formatNumber(author.fansCount)}</span>
-              <span>{author.noteCount}</span>
-              <span>{formatNumber(author.maxLikes)}</span>
-              <span>{author.breakoutRatio}x</span>
+        <p className="panel-note">优先看“粉丝规模 + 最高赞 + 爆发倍数”，不要只按单篇爆款判断账号能力。</p>
+        {hasAuthors ? (
+          <div className="data-table competitor-table">
+            <div className="table-head author-table">
+              <span>作者</span>
+              <span>粉丝</span>
+              <span>作品</span>
+              <span>最高赞</span>
+              <span>爆发倍数</span>
             </div>
-          ))}
-          {!analytics?.authors.length && <EmptyState text="等待作者与作者作品数据" />}
-        </div>
+            {analytics?.authors.slice(0, 12).map((author) => (
+              <div className="table-row author-table" key={author.authorId}>
+                <strong>{author.nickname}</strong>
+                <span>{formatNumber(author.fansCount)}</span>
+                <span>{author.noteCount}</span>
+                <span>{formatNumber(author.maxLikes)}</span>
+                <span>{author.breakoutRatio}x</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="research-empty-guide">
+            <strong>等待作者与作者作品数据</strong>
+            <p>完成搜索与详情抓取后，这里会按作者维度汇总粉丝、作品数、最高赞和爆发倍数，用来判断头部作者、腰部机会和新号切入空间。</p>
+            <div className="guide-steps">
+              <span>1. 抓取笔记</span>
+              <span>2. 补作者信息</span>
+              <span>3. 看作者榜</span>
+              <span>4. 生成竞品报告</span>
+            </div>
+          </div>
+        )}
       </section>
-      <section className="surface">
+      <section className="surface analysis-report-panel">
         <SectionTitle icon={<Bot size={18} />} title="AI 竞品判断" />
-        {latest ? <MarkdownView content={latest.markdown} compact /> : <EmptyState text="运行竞品分析后生成账号对比和追赶机会" />}
+        <div className="analysis-report-body">
+          {latest ? <MarkdownView content={latest.markdown} /> : <EmptyState text="运行竞品分析后生成账号分层、内容支柱、爆款差异和追赶机会" />}
+        </div>
       </section>
     </div>
   );
@@ -1636,50 +1839,55 @@ function PromptCenterPage({
         <SectionTitle
           icon={<FileText size={18} />}
           title={selectedPrompt ? `${selectedPrompt.title} Prompt` : "Prompt 详情"}
-          action={
-            selectedPrompt ? (
-              <div className="button-row">
-                <button className="ghost-button compact" onClick={() => void activatePrompt("default")} disabled={busy.startsWith("prompt-activate")}>
-                  默认启用
-                </button>
-                <button className="ghost-button compact" onClick={() => void activatePrompt("custom")} disabled={!selectedPrompt.customTemplate || busy.startsWith("prompt-activate")}>
-                  自定义启用
-                </button>
-                <button className="ghost-button compact danger" onClick={() => void resetPrompt()} disabled={busy === `prompt-reset-${selectedKey}`}>
-                  <RefreshCw size={14} />
-                  恢复默认
-                </button>
-                <button className="primary-button compact" onClick={() => void savePrompt()} disabled={!promptDraft.trim() || busy === `prompt-save-${selectedKey}`}>
-                  {busy === `prompt-save-${selectedKey}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
-                  保存
-                </button>
-              </div>
-            ) : undefined
-          }
         />
         {selectedPrompt ? (
           <div className="prompt-editor-layout">
-            <div className="prompt-status-strip">
-              <span className={selectedPrompt.promptSource === "custom" ? "status-pill active" : "status-pill"}>当前：{selectedPrompt.promptSource === "custom" ? "自定义 Prompt" : "默认 Prompt"}</span>
-              <span className="status-pill">{selectedPrompt.version}</span>
-              <span className="status-pill">产物 {selectedPrompt.artifactCount ?? 0}</span>
+            <div className="prompt-control-panel">
+              <div className="prompt-control-head">
+                <div>
+                  <strong>{selectedPrompt.title}</strong>
+                  <span>当前：{selectedPrompt.promptSource === "custom" ? "自定义 Prompt" : "默认 Prompt"} · {selectedPrompt.version} · 产物 {selectedPrompt.artifactCount ?? 0}</span>
+                </div>
+                <div className="button-row">
+                  <button className="ghost-button compact" onClick={() => void activatePrompt("default")} disabled={busy.startsWith("prompt-activate")}>
+                    默认启用
+                  </button>
+                  <button className="ghost-button compact" onClick={() => void activatePrompt("custom")} disabled={!selectedPrompt.customTemplate || busy.startsWith("prompt-activate")}>
+                    自定义启用
+                  </button>
+                  <button className="ghost-button compact danger" onClick={() => void resetPrompt()} disabled={busy === `prompt-reset-${selectedKey}`}>
+                    <RefreshCw size={14} />
+                    恢复默认
+                  </button>
+                  <button className="primary-button compact" onClick={() => void savePrompt()} disabled={!promptDraft.trim() || busy === `prompt-save-${selectedKey}`}>
+                    {busy === `prompt-save-${selectedKey}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                    保存
+                  </button>
+                </div>
+              </div>
+              <div className="prompt-helper-grid">
+                <div>
+                  <strong>可用变量</strong>
+                  <div className="variable-list">
+                    {selectedPrompt.variables.map((variable) => (
+                      <span key={variable.key} title={variable.description}>{`{${variable.key}}`} · {variable.label}</span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <strong>输出结构</strong>
+                  <div className="variable-list">
+                    {selectedPrompt.outputSections.map((section) => <span key={section}>{section}</span>)}
+                  </div>
+                </div>
+              </div>
             </div>
-            <textarea className="prompt-editor" value={promptDraft} onChange={(event) => setPromptDraft(event.target.value)} />
-            <div className="prompt-helper-grid">
-              <div>
-                <strong>可用变量</strong>
-                <div className="variable-list">
-                  {selectedPrompt.variables.map((variable) => (
-                    <span key={variable.key} title={variable.description}>{`{${variable.key}}`} · {variable.label}</span>
-                  ))}
-                </div>
+            <div className="prompt-text-panel">
+              <div className="panel-subhead">
+                <strong>Prompt 正文</strong>
+                <span>修改后点击保存，再选择自定义启用。</span>
               </div>
-              <div>
-                <strong>输出结构</strong>
-                <div className="variable-list">
-                  {selectedPrompt.outputSections.map((section) => <span key={section}>{section}</span>)}
-                </div>
-              </div>
+              <textarea className="prompt-editor" value={promptDraft} onChange={(event) => setPromptDraft(event.target.value)} />
             </div>
           </div>
         ) : (
@@ -1764,7 +1972,7 @@ function AiWorkbenchPage(props: {
 }) {
   const selectedArtifact = props.artifacts.find((artifact) => artifact.id === props.selectedArtifactId);
   const selectedReport = props.reports.find((report) => report.id === props.selectedReportId);
-  const preview =
+  const preview: ReaderPreview | undefined =
     selectedArtifact
       ? {
           kind: "artifact" as const,
@@ -1798,91 +2006,188 @@ function AiWorkbenchPage(props: {
   };
   const selectedArtifactWorkflow = selectedArtifact && isAiWorkflowKey(selectedArtifact.workflowKey) ? selectedArtifact.workflowKey : undefined;
   return (
-    <div className="ai-workbench-grid">
-      <section className="surface ai-library-panel">
-        <SectionTitle icon={<Sparkles size={18} />} title="AI 产物中心" />
-        <ArtifactList
-          artifacts={props.artifacts}
-          selectedId={props.selectedArtifactId}
-          selectArtifact={selectArtifact}
-          busy={props.busy}
-          deleteArtifact={props.deleteArtifact}
-        />
-        <div className="prompt-version-list">
-          <strong>Prompt 版本</strong>
-          {props.prompts.map((prompt) => (
-            <button key={prompt.key} className="prompt-version-row" onClick={() => props.setSelectedArtifactId("")}>
-              <span>{prompt.title}</span>
-              <small>{prompt.version} · {prompt.outputSections.slice(0, 3).join(" / ")}</small>
-            </button>
-          ))}
+    <div className="module-frame ai-workbench-frame">
+      <section className="surface ai-resource-panel">
+        <SectionTitle icon={<Sparkles size={18} />} title="AI 产物与报告" />
+        <div className="ai-left-split">
+          <div className="ai-left-section">
+            <div className="section-mini-head">
+              <strong>产物与报告</strong>
+              <div className="resource-count-row">
+                <span>产物 {props.artifacts.length}</span>
+                <span>报告 {props.reports.length}</span>
+              </div>
+            </div>
+            <div className="resource-list">
+              {props.artifacts.map((artifact) => (
+                <div key={artifact.id} className={artifact.id === props.selectedArtifactId ? "resource-row active" : "resource-row"}>
+                  <button className="resource-select" onClick={() => selectArtifact(artifact.id)}>
+                    <strong>{artifact.title}</strong>
+                    <small>{artifact.source === "ai" ? "AI 生成" : "本地规则"} · {new Date(artifact.createdAt).toLocaleString()}</small>
+                    {artifact.promptTitle && <small>Prompt · {artifact.promptTitle}</small>}
+                  </button>
+                  <div className="resource-actions">
+                    <a className="ghost-button compact" href={`/api/ai/artifacts/${artifact.id}/export`}>
+                      <Download size={14} />
+                    </a>
+                    <button className="ghost-button compact danger" onClick={() => void props.deleteArtifact(artifact.id)} disabled={props.busy === `delete-artifact-${artifact.id}`}>
+                      {props.busy === `delete-artifact-${artifact.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {props.reports.map((report) => (
+                <div key={report.id} className={report.id === props.selectedReportId ? "resource-row active" : "resource-row"}>
+                  <button className="resource-select" onClick={() => selectReport(report.id)}>
+                    <strong>{report.title}</strong>
+                    <small>{report.source === "ai" ? "AI 深度版" : "本地规则版"} · {new Date(report.createdAt).toLocaleString()}</small>
+                    <small>Markdown 报告</small>
+                  </button>
+                  <div className="resource-actions">
+                    <a className="ghost-button compact" href={`/api/ai/reports/${report.id}/export`}>
+                      <Download size={14} />
+                    </a>
+                    <button className="ghost-button compact danger" onClick={() => void props.deleteReport(report.id)} disabled={props.busy === `delete-report-${report.id}`}>
+                      {props.busy === `delete-report-${report.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!props.artifacts.length && !props.reports.length && <EmptyState text="暂无 AI 产物或报告，先从右侧生成一份报告" />}
+            </div>
+          </div>
+          <div className="ai-left-section">
+            <div className="section-mini-head">
+              <strong>Prompt 快速入口</strong>
+              <span>Prompt {props.prompts.length}</span>
+            </div>
+            <div className="prompt-mini-list">
+              {props.prompts.map((prompt) => (
+                <button key={prompt.key} className="prompt-version-row" onClick={() => props.openPrompt(prompt.key)}>
+                  <span>{prompt.title}</span>
+                  <small>{prompt.version} · {prompt.promptSource === "custom" ? "自定义启用" : "默认启用"}</small>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="surface markdown-preview">
-        <SectionTitle
-          icon={preview?.kind === "report" ? <FileText size={18} /> : <Bot size={18} />}
-          title={preview?.title ?? "AI 阅读区"}
-          action={preview ? (
-            <div className="button-row">
-              {selectedArtifact?.promptKey && selectedArtifact.promptKey !== "assistant" && selectedArtifact.promptKey !== "report" && (
-                <button className="ghost-button compact" onClick={() => props.openPrompt(selectedArtifact.promptKey as AiWorkflowKey)}>
-                  <KeyRound size={14} />
-                  查看 Prompt
-                </button>
-              )}
-              {selectedArtifactWorkflow && (
-                <button className="ghost-button compact" onClick={() => void props.runWorkflow(selectedArtifactWorkflow)} disabled={props.busy === `workflow-${selectedArtifactWorkflow}`}>
-                  {props.busy === `workflow-${selectedArtifactWorkflow}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-                  重新生成
-                </button>
-              )}
-              <a className="ghost-button compact" href={preview.exportUrl}>
-                <Download size={14} />
-                导出
-              </a>
-              <button className="ghost-button compact" onClick={() => { props.setSelectedArtifactId(""); props.setSelectedReportId(""); }}>
-                <X size={14} />
-                关闭
-              </button>
-            </div>
-          ) : undefined}
-        />
-        {preview ? (
-          <>
-            <ContextBadgeRow items={preview.meta} />
-            <MarkdownView content={preview.markdown} />
-          </>
-        ) : (
-          <EmptyState text="选择左侧 AI 产物或下方报告后在这里阅读" />
-        )}
-      </section>
-
-      <ReportsPage
-        activeJob={props.activeJob}
-        reports={props.reports}
-        selectedReportId={props.selectedReportId}
-        selectReport={selectReport}
-        reportFocus={props.reportFocus}
-        setReportFocus={props.setReportFocus}
-        createReport={props.createReport}
-        deleteReport={props.deleteReport}
+      <ArtifactReader
+        preview={preview}
+        selectedArtifact={selectedArtifact}
+        selectedArtifactWorkflow={selectedArtifactWorkflow}
+        openPrompt={props.openPrompt}
+        runWorkflow={props.runWorkflow}
         busy={props.busy}
+        close={() => {
+          props.setSelectedArtifactId("");
+          props.setSelectedReportId("");
+        }}
       />
-      <section className="surface artifact-context-panel">
-        <SectionTitle icon={<Gauge size={18} />} title="上下文与联动" />
-        {selectedArtifact ? (
-          <div className="artifact-context">
-            <StatusRow label="Prompt" value={selectedArtifact.promptTitle ?? "未记录"} ok={Boolean(selectedArtifact.promptTitle)} />
-            <StatusRow label="来源" value={selectedArtifact.promptSource === "custom" ? "自定义" : "默认/未记录"} ok={selectedArtifact.promptSource === "custom"} />
-            <StatusRow label="版本" value={selectedArtifact.promptVersion ?? "未记录"} ok={Boolean(selectedArtifact.promptVersion)} />
-            <StatusRow label="状态" value={selectedArtifact.status} ok={selectedArtifact.status === "completed"} />
+
+      <section className="surface ai-side-panel">
+        <SectionTitle icon={<Gauge size={18} />} title="上下文与动作" />
+        <div className="side-panel-stack">
+          {selectedArtifact ? (
+            <div className="artifact-context">
+              <StatusRow label="Prompt" value={selectedArtifact.promptTitle ?? "未记录"} ok={Boolean(selectedArtifact.promptTitle)} />
+              <StatusRow label="来源" value={selectedArtifact.promptSource === "custom" ? "自定义" : "默认/未记录"} ok={selectedArtifact.promptSource === "custom"} />
+              <StatusRow label="版本" value={selectedArtifact.promptVersion ?? "未记录"} ok={Boolean(selectedArtifact.promptVersion)} />
+              <StatusRow label="状态" value={selectedArtifact.status} ok={selectedArtifact.status === "completed"} />
+            </div>
+          ) : selectedReport ? (
+            <div className="artifact-context">
+              <StatusRow label="类型" value="Markdown 报告" ok />
+              <StatusRow label="来源" value={selectedReport.source === "ai" ? "AI 深度版" : "本地规则版"} ok={selectedReport.source === "ai"} />
+              <StatusRow label="状态" value={selectedReport.status} ok={selectedReport.status === "completed"} />
+            </div>
+          ) : (
+            <EmptyState text="选择产物后查看 Prompt、模型和上下文信息" />
+          )}
+          <div className="report-generator-card">
+            <strong>生成 Markdown 报告</strong>
+            <textarea value={props.reportFocus} onChange={(event) => props.setReportFocus(event.target.value)} />
+            <button className="primary-button full" disabled={!props.activeJob || props.busy === "report"} onClick={() => void props.createReport()}>
+              {props.busy === "report" ? <Loader2 className="spin" size={16} /> : <FileText size={16} />}
+              生成报告
+            </button>
           </div>
-        ) : (
-          <EmptyState text="选择一个产物后查看 Prompt、模型和上下文信息" />
-        )}
+          <div className="side-action-list">
+            <strong>常用工作流</strong>
+            {props.prompts.slice(0, 4).map((prompt) => (
+              <button key={prompt.key} className="ghost-button compact" onClick={() => props.openPrompt(prompt.key)}>
+                <KeyRound size={14} />
+                {prompt.title}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
     </div>
+  );
+}
+
+function ArtifactReader({
+  preview,
+  selectedArtifact,
+  selectedArtifactWorkflow,
+  openPrompt,
+  runWorkflow,
+  busy,
+  close
+}: {
+  preview?: ReaderPreview;
+  selectedArtifact?: AiArtifact;
+  selectedArtifactWorkflow?: AiWorkflowKey;
+  openPrompt: (key: AiWorkflowKey) => void;
+  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  busy: string;
+  close: () => void;
+}) {
+  return (
+    <section className="surface artifact-reader">
+      <SectionTitle
+        icon={preview?.kind === "report" ? <FileText size={18} /> : <Bot size={18} />}
+        title={preview?.title ?? "AI 阅读区"}
+        action={preview ? (
+          <div className="button-row">
+            {selectedArtifact?.promptKey && selectedArtifact.promptKey !== "assistant" && selectedArtifact.promptKey !== "report" && (
+              <button className="ghost-button compact" onClick={() => openPrompt(selectedArtifact.promptKey as AiWorkflowKey)}>
+                <KeyRound size={14} />
+                查看 Prompt
+              </button>
+            )}
+            {selectedArtifactWorkflow && (
+              <button className="ghost-button compact" onClick={() => void runWorkflow(selectedArtifactWorkflow)} disabled={busy === `workflow-${selectedArtifactWorkflow}`}>
+                {busy === `workflow-${selectedArtifactWorkflow}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                重新生成
+              </button>
+            )}
+            <a className="ghost-button compact" href={preview.exportUrl}>
+              <Download size={14} />
+              导出
+            </a>
+            <button className="ghost-button compact" onClick={close}>
+              <X size={14} />
+              关闭
+            </button>
+          </div>
+        ) : undefined}
+      />
+      {preview ? (
+        <>
+          <ContextBadgeRow items={preview.meta} />
+          <div className="artifact-reader-body">
+            <MarkdownView content={preview.markdown} />
+          </div>
+        </>
+      ) : (
+        <div className="reader-empty-state">
+          <EmptyState text="选择左侧 AI 产物或报告后在这里阅读；也可以从右侧生成新的 Markdown 报告" />
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2015,19 +2320,28 @@ function AiAssistantEntry({ onOpen, context }: { onOpen: () => void; context: st
   );
 }
 
-function ModelSettingsModal(props: {
+function ModelSettingsDrawer(props: {
   models: AiModelConfig[];
-  modelForm: { name: string; provider: string; baseUrl: string; model: string; apiKey: string };
-  setModelForm: (value: { name: string; provider: string; baseUrl: string; model: string; apiKey: string }) => void;
+  modelForm: ModelForm;
+  setModelForm: (value: ModelForm) => void;
+  editorOpen: boolean;
+  editingModelId: string;
+  openNewModel: () => void;
+  openEditModel: (model: AiModelConfig) => void;
+  closeEditor: () => void;
   saveModel: () => Promise<void>;
+  deleteModel: (modelId: string) => Promise<void>;
+  setDefaultModel: (modelId: string) => Promise<void>;
   testModel: (modelId: string) => Promise<void>;
   modelMessages: Record<string, { ok: boolean; message: string }>;
   busy: string;
   onClose: () => void;
 }) {
+  const defaultModel = props.models.find((model) => model.isDefault) ?? props.models[0];
+  const update = (key: keyof ModelForm, value: string) => props.setModelForm({ ...props.modelForm, [key]: value });
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <section className="model-settings-modal">
+    <div className="settings-drawer-backdrop" role="dialog" aria-modal="true">
+      <aside className="settings-drawer">
         <SectionTitle
           icon={<Settings size={18} />}
           title="模型设置"
@@ -2038,16 +2352,99 @@ function ModelSettingsModal(props: {
             </button>
           }
         />
-        <ModelsPage
-          models={props.models}
-          modelForm={props.modelForm}
-          setModelForm={props.setModelForm}
-          saveModel={props.saveModel}
-          testModel={props.testModel}
-          modelMessages={props.modelMessages}
-          busy={props.busy}
-        />
-      </section>
+        <div className="drawer-summary">
+          <span>默认模型</span>
+          <strong>{defaultModel ? `${defaultModel.name} · ${defaultModel.model}` : "未配置"}</strong>
+          <small>{defaultModel?.apiKeyMasked || "新增模型后即可用于 AI 工作流"}</small>
+        </div>
+        <div className="drawer-toolbar">
+          <button className="primary-button compact" onClick={props.openNewModel}>
+            <KeyRound size={14} />
+            新增模型
+          </button>
+          {props.editorOpen && (
+            <button className="ghost-button compact" onClick={props.closeEditor}>
+              <X size={14} />
+              收起表单
+            </button>
+          )}
+        </div>
+
+        {props.editorOpen && (
+          <section className="model-editor-card">
+            <div className="model-editor-head">
+              <strong>{props.editingModelId ? "编辑模型" : "新增模型"}</strong>
+              <small>{props.editingModelId ? "不填写 API Key 时保留原密钥" : "OpenAI-compatible 接口均可接入"}</small>
+            </div>
+            <label className="field-stack compact-field">
+              <span>名称</span>
+              <input value={props.modelForm.name} onChange={(event) => update("name", event.target.value)} placeholder="例如 DeepSeek" />
+            </label>
+            <label className="field-stack compact-field">
+              <span>Provider</span>
+              <input value={props.modelForm.provider} onChange={(event) => update("provider", event.target.value)} placeholder="OpenAI-compatible" />
+            </label>
+            <label className="field-stack compact-field">
+              <span>Base URL</span>
+              <input value={props.modelForm.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder="https://api.openai.com/v1" />
+            </label>
+            <label className="field-stack compact-field">
+              <span>Model</span>
+              <input value={props.modelForm.model} onChange={(event) => update("model", event.target.value)} placeholder="deepseek-v4-pro" />
+            </label>
+            <label className="field-stack compact-field">
+              <span>API Key</span>
+              <input value={props.modelForm.apiKey} onChange={(event) => update("apiKey", event.target.value)} placeholder="保存后只显示 masked key" type="password" />
+            </label>
+            <button
+              className="primary-button full"
+              disabled={!props.modelForm.name || !props.modelForm.model || props.busy === "model"}
+              onClick={() => void props.saveModel()}
+            >
+              {props.busy === "model" ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+              保存模型
+            </button>
+          </section>
+        )}
+
+        <section className="drawer-section">
+          <SectionTitle icon={<Settings size={16} />} title="已配置模型" />
+          <div className="drawer-model-list">
+            {props.models.map((model) => (
+              <div key={model.id} className={model.isDefault ? "drawer-model-row active" : "drawer-model-row"}>
+                <div className="drawer-model-main">
+                  <strong>{model.name}</strong>
+                  <span>{model.provider} · {model.model}</span>
+                  <small>{model.apiKeyMasked || "未配置 Key"}</small>
+                  {props.modelMessages[model.id] && (
+                    <small className={props.modelMessages[model.id].ok ? "model-test ok" : "model-test warn"}>
+                      {props.modelMessages[model.id].message}
+                    </small>
+                  )}
+                </div>
+                <div className="drawer-model-actions">
+                  {!model.isDefault && (
+                    <button className="ghost-button compact" onClick={() => void props.setDefaultModel(model.id)} disabled={props.busy === `default-model-${model.id}`}>
+                      默认
+                    </button>
+                  )}
+                  <button className="ghost-button compact" onClick={() => props.openEditModel(model)}>
+                    编辑
+                  </button>
+                  <button className="ghost-button compact" onClick={() => void props.testModel(model.id)} disabled={props.busy === `test-${model.id}`}>
+                    {props.busy === `test-${model.id}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                    测试
+                  </button>
+                  <button className="ghost-button compact danger" onClick={() => void props.deleteModel(model.id)} disabled={props.busy === `delete-model-${model.id}`}>
+                    {props.busy === `delete-model-${model.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!props.models.length && <EmptyState text="暂无模型，点击上方新增模型开始接入" />}
+          </div>
+        </section>
+      </aside>
     </div>
   );
 }
@@ -2068,7 +2465,7 @@ function CommentsPage(props: {
 }) {
   const currentActions = props.replyActions.filter((action) => props.replyPlans.some((plan) => plan.id === action.planId));
   return (
-    <div className="page-grid">
+    <div className="module-frame two-column-frame">
       <section className="surface command-surface">
         <SectionTitle icon={<MessageSquareReply size={18} />} title="回复计划" />
         <label>
@@ -2380,9 +2777,18 @@ function AuthPanel({
           自动读取
         </button>
       </div>
-      <input value={cookieFields.a1} onChange={(event) => setCookieFields({ ...cookieFields, a1: event.target.value })} placeholder="a1" />
-      <input value={cookieFields.web_session} onChange={(event) => setCookieFields({ ...cookieFields, web_session: event.target.value })} placeholder="web_session" />
-      <input value={cookieFields.webId} onChange={(event) => setCookieFields({ ...cookieFields, webId: event.target.value })} placeholder="webId（可选）" />
+      <label className="field-stack compact-field">
+        <span>a1</span>
+        <input value={cookieFields.a1} onChange={(event) => setCookieFields({ ...cookieFields, a1: event.target.value })} placeholder="从小红书 Cookies 复制 a1" />
+      </label>
+      <label className="field-stack compact-field">
+        <span>web_session</span>
+        <input value={cookieFields.web_session} onChange={(event) => setCookieFields({ ...cookieFields, web_session: event.target.value })} placeholder="从小红书 Cookies 复制 web_session" />
+      </label>
+      <label className="field-stack compact-field">
+        <span>webId（可选）</span>
+        <input value={cookieFields.webId} onChange={(event) => setCookieFields({ ...cookieFields, webId: event.target.value })} placeholder="有 webId 时再填写" />
+      </label>
       <button className="primary-button full" onClick={() => void saveCookie()} disabled={busy === "auth" || !cookieFields.a1 || !cookieFields.web_session}>
         {busy === "auth" ? <Loader2 className="spin" size={16} /> : <LogIn size={16} />}
         验证
@@ -2451,8 +2857,28 @@ function NumberField({ label, value, min, max, onChange }: { label: string; valu
   );
 }
 
-function EmptyState({ text }: { text: string }) {
-  return <div className="empty-state">{text}</div>;
+function EmptyState({
+  title,
+  text,
+  actionLabel,
+  onAction
+}: {
+  title?: string;
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="empty-state">
+      {title && <strong>{title}</strong>}
+      <span>{text}</span>
+      {actionLabel && onAction && (
+        <button className="ghost-button compact" onClick={onAction}>
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function formatNumber(value: number): string {

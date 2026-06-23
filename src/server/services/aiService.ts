@@ -284,6 +284,67 @@ export async function saveAiModel(input: AiModelInput): Promise<AiModelConfig> {
   return model;
 }
 
+export async function updateAiModel(modelId: string, input: Partial<AiModelInput>): Promise<AiModelConfig> {
+  const models = await store.read("aiModels");
+  const current = models.find((item) => item.id === modelId);
+  if (!current) {
+    throw new Error("AI model not found.");
+  }
+
+  const apiKey = input.apiKey?.trim();
+  if (apiKey) {
+    await saveEnvValue(keyNameForModel(modelId), apiKey);
+  }
+
+  const updated: AiModelConfig = {
+    ...current,
+    name: input.name?.trim() || current.name,
+    provider: input.provider?.trim() || current.provider,
+    baseUrl: input.baseUrl ? normalizeBaseUrl(input.baseUrl) : current.baseUrl,
+    model: input.model?.trim() || current.model,
+    apiKeyMasked: apiKey ? maskKey(apiKey) : current.apiKeyMasked,
+    hasApiKey: apiKey ? true : current.hasApiKey,
+    isDefault: input.isDefault ?? current.isDefault,
+    temperature: input.temperature !== undefined ? clamp(Number(input.temperature), 0, 2) : current.temperature,
+    maxTokens: input.maxTokens !== undefined ? clamp(Number(input.maxTokens), 256, 32_000) : current.maxTokens,
+    updatedAt: nowIso()
+  };
+
+  await store.update("aiModels", (items) =>
+    items.map((item) => (item.id === modelId ? updated : updated.isDefault ? { ...item, isDefault: false } : item))
+  );
+  return updated;
+}
+
+export async function deleteAiModel(modelId: string): Promise<{ deleted: number }> {
+  const models = await store.read("aiModels");
+  const current = models.find((item) => item.id === modelId);
+  if (!current) {
+    return { deleted: 0 };
+  }
+
+  await store.update("aiModels", (items) => {
+    const remaining = items.filter((item) => item.id !== modelId);
+    if (current.isDefault && remaining.length && !remaining.some((item) => item.isDefault)) {
+      return remaining.map((item, index) => ({ ...item, isDefault: index === 0 }));
+    }
+    return remaining;
+  });
+  return { deleted: 1 };
+}
+
+export async function setDefaultAiModel(modelId: string): Promise<AiModelConfig> {
+  const models = await store.read("aiModels");
+  const target = models.find((item) => item.id === modelId);
+  if (!target) {
+    throw new Error("AI model not found.");
+  }
+
+  const updated = { ...target, isDefault: true, updatedAt: nowIso() };
+  await store.update("aiModels", (items) => items.map((item) => (item.id === modelId ? updated : { ...item, isDefault: false })));
+  return updated;
+}
+
 export async function testAiModel(modelId: string): Promise<{ ok: boolean; message: string }> {
   const model = (await store.read("aiModels")).find((item) => item.id === modelId);
   if (!model) {
