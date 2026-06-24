@@ -1,219 +1,167 @@
-# 小红书运营台 Design System Master
+# XHS Operations Console Design System
 
-> 使用方式：实现或修改任意页面前，先阅读本文件，再阅读 `design-system/pages/[page].md`。页面规则优先级高于 Master；页面文件未覆盖的内容，全部遵守 Master。
+This file is the visual source of truth for the local Xiaohongshu operations console. Page-level rules in `design-system/pages/*.md` may refine layout details, but they must not contradict these global rules.
 
-## 1. 产品定位
+## Product Position
 
-- 产品名称：小红书运营台
-- 产品类型：本地单用户运营工作台，面向小红书搜索抓取、内容研究、爆款拆解、评论运营、Prompt 管理和 AI 报告生产。
-- 核心用户：小红书运营、内容策划、品牌投放分析、个人博主和数据助理。
-- 核心任务链路：连接账号 -> 创建关键词任务 -> 抓取笔记与评论 -> 筛选样本 -> 分析话题、受众、竞品、爆款 -> 生成 AI 产物与 Markdown 报告 -> 回到 Prompt 优化。
-- 设计关键词：数据密集、运营工具、可扫描、工作流清晰、AI 可追溯、低装饰、高可控。
+- Product: Xiaohongshu operations console for search, crawling, content research, audience insight, competitor analysis, Prompt management, AI artifacts, and Markdown reports.
+- Primary users: content operators, solo creators, brand researchers, growth analysts, and data assistants who need long desktop sessions.
+- Product character: professional, calm, data-dense, trustworthy, AI-assisted, and readable for Chinese-heavy workflows.
+- Main workflow: connect account -> create keyword task -> inspect notes/comments/authors -> analyze topics/viral/audience/competitors -> generate AI artifacts/reports -> refine prompts.
 
-## 2. 设计来源与项目覆盖
+## Design Direction
 
-本规则基于 `$ui-ux-pro-max` 生成的 Data-Dense Dashboard 方向，并结合当前产品的小红书运营场景做项目级覆盖：
+Use a restrained data-operations dashboard rather than a marketing page. Keep Xiaohongshu rose as a brand and primary-action signal, but avoid large pink surfaces. Use neutral backgrounds, navy text, blue data accents, and clear semantic state colors.
 
-- 保留小红书粉作为品牌和主操作色。
-- 蓝色用于数据分析、信息状态和可解释性。
-- 绿色用于连接成功、任务完成、可执行。
-- 橙色用于风控、等待、需要人工确认。
-- 红色只用于失败、删除、危险操作。
-- 不采用 landing page、hero、视频背景、营销化大留白。
+Avoid:
 
-## 3. 全局布局骨架
+- large gradients, glassmorphism, glow effects, and decorative blobs;
+- oversized hero typography;
+- card-in-card nesting;
+- emoji as structural icons;
+- layout-shifting hover transforms;
+- relying on color alone for state;
+- arbitrary one-off colors, shadows, and radii.
 
-- 应用结构固定为：左侧导航 + 顶部紧凑命令栏 + 主工作区 + 可选右侧抽屉/悬浮 AI 入口。
-- 左侧导航宽度：216-232px；不因页面内容变化而改变。
-- 顶部命令栏高度：56-64px；只承载当前模块、当前有效任务、状态 chips 和全局操作。
-- 主工作区高度：`calc(100vh - headerHeight)`；页面内部容器自己滚动，避免浏览器整页滚动带来错位。
-- 页面容器必须设置 `min-height: 0`，有列表/长文/表格的区域必须设置内部滚动。
-- 桌面基准宽度：1440px；最低可用宽度：1280px。低于 1280px 时允许右侧 AI 抽屉覆盖，不挤压主工作区。
-- 常规页面推荐 12 列网格；运营页面优先使用 2 栏或 3 栏等高布局。
+## Semantic Tokens
 
-## 4. 颜色系统
+Use these CSS variables as the implementation target.
 
-| 语义 | Token | 建议值 | 用途 |
-| --- | --- | --- | --- |
-| 品牌/主操作 | `--color-primary` | `#ff2f68` | 新搜索、生成、验证、当前选中 |
-| 主操作悬停 | `--color-primary-hover` | `#e9275b` | 主按钮 hover |
-| 品牌浅底 | `--color-primary-soft` | `#fff0f5` | 当前导航、选中卡片背景 |
-| 数据蓝 | `--color-data` | `#2563eb` | 图表、Prompt 信息、分析状态 |
-| 成功绿 | `--color-success` | `#059669` | 已连接、完成、可用 |
-| 警示橙 | `--color-warning` | `#d97706` | 风控、等待、人工确认 |
-| 危险红 | `--color-danger` | `#dc2626` | 删除、失败、不可恢复 |
-| 页面背景 | `--color-bg` | `#f6f8fb` | 应用底色 |
-| 面板背景 | `--color-surface` | `#ffffff` | 卡片、面板、抽屉 |
-| 次级背景 | `--color-muted` | `#f1f5f9` | 表头、空状态、chip |
-| 边框 | `--color-border` | `#dbe3ef` | 面板、输入框、分割线 |
-| 强文本 | `--color-text` | `#0f172a` | 标题、关键数据 |
-| 次文本 | `--color-text-muted` | `#64748b` | 说明、meta、placeholder |
+### Color
 
-颜色规则：
-
-- 粉色只用于品牌、主 CTA、当前选中和重点状态，不用于普通数据图表。
-- 危险操作必须使用红色边框/文本/按钮，并与主操作保持距离。
-- 状态不能只靠颜色表达，必须有文字标签。
-- 空状态背景不能用大面积粉色；使用浅灰或虚线边框即可。
-
-## 5. 字体与排版
-
-- 中文优先字体：`Inter`, `Microsoft YaHei`, `PingFang SC`, system sans-serif。
-- 数据/代码/Prompt 变量可使用：`JetBrains Mono`, `Fira Code`, monospace。
-- 页面一级标题：16-18px，600-700；禁止 hero 级大标题。
-- 面板标题：14-15px，600。
-- 正文与表格：13-14px。
-- 元信息、chip、辅助说明：12px，行高不低于 18px。
-- Markdown 阅读器最大正文行宽：860-960px；宽屏时不要让长段落横跨整个页面。
-- Prompt 编辑器和 Markdown 阅读器必须有清晰行高，推荐 1.65。
-
-## 6. 间距与密度
-
-| Token | 值 | 用途 |
+| Token | Value | Usage |
 | --- | --- | --- |
-| `--space-1` | 4px | 图标与文字微间距 |
-| `--space-2` | 8px | chip、按钮内部、小卡片间距 |
-| `--space-3` | 12px | 面板内紧凑 padding |
-| `--space-4` | 16px | 标准面板 padding |
-| `--space-5` | 20px | 页面网格 gap 上限 |
-| `--space-6` | 24px | 大区块间距 |
+| `--background` | `#f6f8fb` | application background |
+| `--background-subtle` | `#eef3f8` | secondary page bands, empty states |
+| `--surface` | `#ffffff` | panels, cards, drawers |
+| `--surface-elevated` | `#ffffff` | drawers, floating assistant, popovers |
+| `--surface-hover` | `#f8fbff` | row/card hover |
+| `--foreground` | `#0f172a` | primary text |
+| `--foreground-secondary` | `#334155` | secondary readable text |
+| `--foreground-muted` | `#64748b` | metadata and helper copy |
+| `--foreground-disabled` | `#94a3b8` | disabled text |
+| `--border` | `#dbe3ef` | default borders |
+| `--border-strong` | `#b8c5d8` | active and focused borders |
+| `--divider` | `#e7edf5` | subtle separators |
+| `--primary` | `#e11d48` | primary actions and brand-selected state |
+| `--primary-hover` | `#be123c` | primary action hover |
+| `--primary-active` | `#9f1239` | primary action active |
+| `--primary-soft` | `#fff1f4` | selected navigation/background |
+| `--primary-foreground` | `#ffffff` | text on primary |
+| `--secondary` | `#2563eb` | analytics, links, prompt metadata |
+| `--secondary-soft` | `#eff6ff` | blue chip backgrounds |
+| `--accent` | `#d97706` | warning attention and manual confirmation |
+| `--accent-soft` | `#fff7ed` | warning backgrounds |
+| `--success` | `#059669` | connected, completed, available |
+| `--success-soft` | `#ecfdf5` | success backgrounds |
+| `--warning` | `#d97706` | throttling, pending, needs attention |
+| `--warning-soft` | `#fffbeb` | warning backgrounds |
+| `--error` | `#dc2626` | failure, delete, dangerous actions |
+| `--error-soft` | `#fef2f2` | error backgrounds |
+| `--info` | `#2563eb` | information states |
+| `--info-soft` | `#eff6ff` | information backgrounds |
+| `--focus-ring` | `rgba(37, 99, 235, 0.28)` | keyboard focus ring |
+| `--overlay` | `rgba(15, 23, 42, 0.45)` | drawer/modal scrim |
 
-密度规则：
+### Typography
 
-- 工作台类页面默认使用 8-16px 间距，不使用 32px 以上的大留白。
-- 面板之间 gap 统一 10-14px。
-- 表格行高 36-44px，笔记卡片行高由内容决定但不得撑满整页。
-- 若内容不足，使用任务引导型空状态补齐，而不是空白撑满。
+Use local/system fonts. Do not add remote font dependencies.
 
-## 7. 圆角、边框、阴影
+- UI text: `Inter`, `Microsoft YaHei`, `PingFang SC`, `Segoe UI`, system sans-serif.
+- Data/code/prompt text: `JetBrains Mono`, `Fira Code`, `Consolas`, monospace.
+- Body text: 13-14px on desktop, 16px minimum for mobile inputs.
+- Panel title: 14-15px, 650 weight.
+- Page title: 16-18px, 700 weight.
+- Metadata/chips: 12px, 18px line-height.
+- Markdown body: 14px, 1.75 line-height, max readable width 920-980px.
 
-- 默认圆角：8px。
-- 小按钮、chip、输入框：6-8px。
-- 抽屉、弹窗：10-12px。
-- 面板边框：1px solid border；阴影只用于浮层、抽屉、悬浮 AI 入口。
-- 禁止卡片套卡片造成边界混乱；必要时用分区标题、细分割线或浅底块。
+### Scale
 
-## 8. 组件规则
+| Type | Tokens |
+| --- | --- |
+| Space | `--space-1: 4px`, `--space-2: 8px`, `--space-3: 12px`, `--space-4: 16px`, `--space-5: 20px`, `--space-6: 24px` |
+| Radius | `--radius-xs: 4px`, `--radius-sm: 6px`, `--radius-md: 8px`, `--radius-lg: 12px`, `--radius-pill: 999px` |
+| Border | `--border-width: 1px` |
+| Shadow | `--shadow-sm`, `--shadow-md`, `--shadow-lg`, `--shadow-drawer` |
+| Z-index | `--z-nav: 10`, `--z-floating: 30`, `--z-drawer: 50`, `--z-modal: 60` |
+| Motion | `--duration-fast: 120ms`, `--duration-normal: 180ms`, `--duration-slow: 240ms`, `--ease-standard: cubic-bezier(.2,0,0,1)` |
+| Breakpoints | `--bp-mobile: 640px`, `--bp-tablet: 900px`, `--bp-desktop: 1280px`, `--bp-wide: 1440px` |
 
-### 8.1 顶部命令栏
+## Layout Rules
 
-- 左侧：当前模块名 + 当前有效任务名。
-- 中间：Cookie、模型、并发、笔记数等状态 chips。
-- 右侧：刷新、模型设置、AI 助手、新搜索。
-- 不显示无效历史任务名；没有有效任务时显示“未选择有效任务”。
-- 不放大段说明文，不放页面专属表单。
+- App shell: sidebar + compact command bar + internally scrolling work area.
+- Desktop sidebar: 216-232px; tablet/mobile sidebar may collapse to icon rail.
+- Top command bar: 56-64px visual height; no page-specific forms inside it.
+- Main panels must use `min-height: 0` when inside grid/flex layouts.
+- Long lists, tables, Markdown, media grids, and prompt editors scroll internally.
+- Avoid browser-wide horizontal scroll at 375px, 768px, 1280px, and 1440px.
+- Keep one clear primary action per panel or workflow step.
 
-### 8.2 左侧导航
+## Component Rules
 
-- 保持固定顺序：总览、话题研究、笔记库、爆款拆解、受众洞察、竞品分析、评论运营、Prompt 中心、AI 工作台。
-- 当前页面必须有明显选中态：粉色浅底 + 左侧/边框强调。
-- 图标统一使用 lucide-react，禁止 emoji 作为结构图标。
+### Buttons
 
-### 8.3 面板
+- Primary: filled rose, used only for main actions such as search, verify, generate, save.
+- Secondary/ghost: neutral border, used for navigation, export, refresh, and low-risk actions.
+- Danger: red text/border/background and clear label.
+- Icon-only controls require `aria-label` and stable 32-36px desktop hit area; mobile hit area should approach 44px.
+- Hover/focus must not move surrounding content.
 
-- 面板必须有明确标题和可操作区域。
-- 长内容面板必须分为 header、body、footer；body 内部滚动。
-- 任何可滚动区域都必须有可见边界，不得让用户误以为页面坏掉。
-- 面板中的 primary action 放右上角或底部右侧，不能横跨整栏除非是表单提交的唯一动作。
+### Forms
 
-### 8.4 空状态
+- Every input/select/textarea has a visible label.
+- Placeholder never replaces label.
+- Focus states use visible blue ring.
+- Disabled states use both disabled attribute and muted styling.
+- Error text appears close to the relevant area where possible.
 
-每个空状态必须回答：
+### Panels and Tables
 
-- 为什么为空。
-- 需要什么数据。
-- 下一步点哪里。
+- Panels use white surface, subtle border, 8-12px radius, and minimal shadow.
+- Table/list headers are sticky when content scrolls.
+- Row hover uses soft background and border only.
+- Empty states must explain why empty, what data is needed, and the next available action.
 
-禁止只写“暂无数据”并留白。
+### Markdown and AI
 
-### 8.5 表格与列表
+- Markdown is used for AI artifacts, reports, assistant replies, and recent report previews.
+- Headings, lists, tables, blockquotes, code blocks, inline code, and links need distinct styles.
+- AI assistant entry is a horizontal draggable pill; no vertical rail.
+- AI drawer is a right overlay/resizable drawer. It must not require changing business flow.
+- Current assistant is non-streaming; do not present stop/regenerate controls as functional chat operations unless backend supports them.
 
-- 作者榜、关键词矩阵、评论列表优先表格或密集列表。
-- 排名类数据默认降序排列。
-- 表头 sticky；长表内部滚动。
-- 行 hover 只改变背景/边框，不移动布局。
-- 单条搜索结果不得撑满整个列表容器。
+### Drawers and Overlays
 
-### 8.6 Markdown 阅读器
+- Use a 45% dark scrim for modal/drawer overlays.
+- Drawers must not cause horizontal scroll.
+- Escape/close controls must be visible and keyboard-focusable.
+- API keys and cookies are never shown in plaintext.
 
-- 用于 AI 产物、AI 报告、最近报告、助手回复。
-- 必须支持标题、列表、表格、引用、代码块、行内代码、链接。
-- 阅读器操作区包含：查看 Prompt、重新生成、导出、删除、关闭。
-- 长文在阅读器内部滚动，右侧上下文面板保持可见。
+## Accessibility
 
-### 8.7 Prompt 编辑器
+- Text contrast should meet WCAG AA where practical.
+- Focus state must be visible on keyboard navigation.
+- State is expressed with text/icon plus color.
+- Respect `prefers-reduced-motion`.
+- Touch targets on narrow screens must be large enough for reliable use.
+- Do not disable browser zoom.
 
-- Prompt 中心必须清楚区分：当前启用版本、默认 Prompt、自定义 Prompt、可用变量、输出结构、关联产物。
-- 保存、启用、恢复默认是高风险/状态改变操作，必须在视觉上区分。
-- 变量使用 chip 展示；输出结构用可扫描短标签，不放大段文本。
+## Page Priorities
 
-### 8.8 AI 助手入口
+1. AI Workbench: artifact/report reading center with prompt linkage.
+2. Prompt Center: prompt selection, edit, variables, output structure, linked artifacts.
+3. Notes Library: dense list + stable detail/media/body panel.
+4. Research: compact search + keyword matrix + actionable empty states.
+5. Viral/Audience/Competitor: data list + analysis report with readable Markdown.
+6. Comments: clear two/three-step comment draft confirmation workflow.
+7. Overview: status, task progress, capability map, recent artifacts.
 
-- 桌面端为横向可拖拽胶囊按钮，默认右下角。
-- 不使用竖排文字。
-- 不遮挡右侧详情面板的主要操作；拖动后位置写入本地。
-- 打开后使用右侧抽屉，宽度 420-640px，可关闭，可调整。
+## Verification Checklist
 
-### 8.9 模型设置
-
-- 模型设置是全局抽屉，不占用 AI 工作台主阅读区。
-- 抽屉宽度 560-640px；禁止横向滚动。
-- 已配置模型列表优先显示；新增/编辑表单默认收起。
-- API Key 永不明文回显。
-
-## 9. 图表与数据可视化
-
-- 关键词机会矩阵：使用 heatmap 或表格矩阵，必须有数值与颜色图例。
-- 作者榜：使用水平条形图或可排序表格，适合 20-50 个作者。
-- 趋势数据：使用折线图；少于 4 个点时改用指标卡。
-- 多维对比：优先 grouped bar；雷达图只在 5-8 个固定维度时使用。
-- KPI 与阈值：使用 bullet/progress，不用大仪表盘。
-- 所有图表必须提供文本 fallback 或可导出数据，不仅依赖 hover。
-
-## 10. 交互规则
-
-- hover/active/focus 状态必须稳定，不改变布局尺寸。
-- 微交互 150-250ms；避免过慢动画。
-- 所有按钮需要 loading/disabled 状态。
-- 删除、清空、发送评论、恢复默认 Prompt 等操作必须显式确认或至少有危险视觉。
-- AI 不自动执行评论、点赞、收藏、发布；只能生成草稿或进入人工确认队列。
-
-## 11. 可访问性
-
-- 表单字段必须有 label；placeholder 不能替代 label。
-- 交互元素可键盘访问，焦点顺序与视觉顺序一致。
-- nav-heavy 页面需要跳过导航的入口或合理的 tab 顺序。
-- 文本对比度至少 WCAG AA。
-- 颜色不是唯一状态信息，必须配文字或图标。
-- 支持 reduced motion；动画关闭后页面仍然可理解。
-
-## 12. 文案规则
-
-- 使用运营人员能理解的中文：正文、评论、作者、作者作品、爆款分、收藏/赞、评论/赞、机会分。
-- 避免英文标签如 reference、insight、template 直接暴露给用户；可在技术 meta 中保留。
-- 错误文案必须说明原因和下一步。
-- 风控文案要克制，不制造恐慌，但必须明确暂停原因。
-
-## 13. 页面级文件索引
-
-- `design-system/pages/overview.md`
-- `design-system/pages/research.md`
-- `design-system/pages/notes.md`
-- `design-system/pages/viral.md`
-- `design-system/pages/audience.md`
-- `design-system/pages/competitors.md`
-- `design-system/pages/comments.md`
-- `design-system/pages/prompts.md`
-- `design-system/pages/ai.md`
-- `design-system/pages/model-settings.md`
-
-## 14. 交付检查清单
-
-- 页面在 1440px 与 1280px 下无横向滚动。
-- 主要面板填满视口但不靠空白撑高度。
-- 每个滚动容器都有 `min-height: 0` 和明确边界。
-- 空状态都有下一步操作。
-- 顶部命令栏不显示过期历史任务名。
-- AI 产物、报告、Prompt、模型之间能互相追溯。
-- 危险操作与主操作视觉区分明显。
-- 所有页面遵守对应页面级规则。
+- `npm run typecheck`
+- `npm test`
+- `npm run build`
+- Browser check at 375px, 768px, 1440px.
+- No console runtime errors except known favicon 404 if present.
+- Frontend 5173 and backend 8787 are reachable.
+- No business API, route, storage, or backend behavior changed.

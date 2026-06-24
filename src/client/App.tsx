@@ -596,6 +596,8 @@ export function App() {
               key={item.key}
               className={activeModule === item.key ? "active" : ""}
               onClick={() => setActiveModule(item.key)}
+              aria-label={item.label}
+              aria-current={activeModule === item.key ? "page" : undefined}
             >
               {item.icon}
               <span>{item.label}</span>
@@ -2027,10 +2029,10 @@ function AiWorkbenchPage(props: {
                     {artifact.promptTitle && <small>Prompt · {artifact.promptTitle}</small>}
                   </button>
                   <div className="resource-actions">
-                    <a className="ghost-button compact" href={`/api/ai/artifacts/${artifact.id}/export`}>
+                    <a className="ghost-button compact" href={`/api/ai/artifacts/${artifact.id}/export`} aria-label={`导出 ${artifact.title}`}>
                       <Download size={14} />
                     </a>
-                    <button className="ghost-button compact danger" onClick={() => void props.deleteArtifact(artifact.id)} disabled={props.busy === `delete-artifact-${artifact.id}`}>
+                    <button className="ghost-button compact danger" onClick={() => void props.deleteArtifact(artifact.id)} disabled={props.busy === `delete-artifact-${artifact.id}`} aria-label={`删除 ${artifact.title}`}>
                       {props.busy === `delete-artifact-${artifact.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
                     </button>
                   </div>
@@ -2044,10 +2046,10 @@ function AiWorkbenchPage(props: {
                     <small>Markdown 报告</small>
                   </button>
                   <div className="resource-actions">
-                    <a className="ghost-button compact" href={`/api/ai/reports/${report.id}/export`}>
+                    <a className="ghost-button compact" href={`/api/ai/reports/${report.id}/export`} aria-label={`导出 ${report.title}`}>
                       <Download size={14} />
                     </a>
-                    <button className="ghost-button compact danger" onClick={() => void props.deleteReport(report.id)} disabled={props.busy === `delete-report-${report.id}`}>
+                    <button className="ghost-button compact danger" onClick={() => void props.deleteReport(report.id)} disabled={props.busy === `delete-report-${report.id}`} aria-label={`删除 ${report.title}`}>
                       {props.busy === `delete-report-${report.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
                     </button>
                   </div>
@@ -2245,7 +2247,7 @@ function AiAssistantDrawer({
         icon={<Bot size={18} />}
         title="AI 助手"
         action={
-          <button className="ghost-button compact" onClick={onClose}>
+          <button className="ghost-button compact" onClick={onClose} aria-label="关闭 AI 助手">
             <X size={14} />
             收起
           </button>
@@ -2266,10 +2268,20 @@ function AiAssistantDrawer({
             {message.role === "assistant" ? <MarkdownView content={message.content} compact /> : <p>{message.content}</p>}
           </div>
         ))}
+        {busy === "assistant-chat" && messages[messages.length - 1]?.role !== "assistant" && (
+          <div className="assistant-message assistant pending" aria-live="polite">
+            <strong>AI 助手</strong>
+            <p>
+              <Loader2 className="spin" size={14} />
+              正在生成回复...
+            </p>
+          </div>
+        )}
         {!messages.length && <EmptyState text="可以询问选题、受众、竞品、爆款拆解或评论运营建议" />}
       </div>
       <div className="assistant-input">
-        <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="问 AI：基于当前任务，我下一步该做什么？" />
+        <label className="sr-only" htmlFor="assistant-input">AI 助手输入</label>
+        <textarea id="assistant-input" value={input} onChange={(event) => setInput(event.target.value)} placeholder="问 AI：基于当前任务，我下一步该做什么？" />
         <button className="primary-button full" onClick={() => void sendMessage()} disabled={busy === "assistant-chat" || !input.trim()}>
           {busy === "assistant-chat" ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
           发送

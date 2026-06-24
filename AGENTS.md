@@ -39,7 +39,7 @@ small reversible changes, and verification over speed.
 - Do not print, modify, commit, or expose `.env`, tokens, cookies, API keys, private keys, passwords, or other secrets.
 - Do not change business rules, calculations, public API routes, HTTP status codes, field names, request/response formats, error semantics, database schema, indexes, constraints, migrations, or transaction semantics.
 - Do not change environment variable names, config keys, startup behavior, deployment behavior, framework versions, dependency versions, or runtime versions.
-- Do not change frontend copy, translations, DOM semantics, classes, ids, selectors, CSS, layout, responsive behavior, animations, image assets, or interactions.
+- Planned visual design changes to CSS, layout, responsive behavior, animations, and presentation DOM are allowed when explicitly requested; frontend business behavior, routes, data contracts, stable selectors, user copy, and interactions must remain unchanged.
 - Do not mix bug fixes with refactoring.
 - Do not delete or change tests to hide regressions.
 - Do not update screenshot baselines to hide visual changes.
