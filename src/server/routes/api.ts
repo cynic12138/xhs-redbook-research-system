@@ -11,6 +11,7 @@ import { redbookCapabilities } from "../services/capabilities.js";
 import { buildHealthCheck } from "../services/healthService.js";
 import { proxyMedia } from "../services/mediaService.js";
 import { isAuthRisk, markAuthDisconnected } from "../services/authState.js";
+import { browserAuth } from "../services/browserAuthService.js";
 import {
   approveReplyAction,
   createReplyPlan,
@@ -105,6 +106,20 @@ const aiOrchestrationInput = z
 
 const aiPromptKey = z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis"]);
 
+const extensionCookieInput = z.object({
+  a1: z.string().min(1),
+  web_session: z.string().min(1),
+  webId: z.string().optional(),
+  browser: z.enum(["edge", "chrome", "unknown"]).default("unknown"),
+  extensionVersion: z.string().optional(),
+  permissionStatus: z.enum(["granted", "missing", "unknown"]).default("granted")
+});
+
+const browserOpenInput = z.object({
+  url: z.string().url(),
+  mode: z.enum(["auto", "current-browser", "dedicated-edge"]).default("auto")
+});
+
 api.get("/health", (_req, res) => {
   res.json({ ok: true, time: nowIso() });
 });
@@ -152,6 +167,88 @@ api.post("/auth/browser", async (_req, res, next) => {
     res.json(status);
   } catch (error) {
     await markAuthDisconnected(error instanceof Error ? error.message : String(error));
+    next(error);
+  }
+});
+
+api.get("/auth/extension/status", async (_req, res) => {
+  res.json(await store.read("browserBridgeStatus"));
+});
+
+api.post("/auth/extension-cookie", async (req, res, next) => {
+  try {
+    const body = extensionCookieInput.parse(req.body);
+    const cookieString = buildCookieString(body);
+    const user = await redbook.verifyCookie(cookieString);
+    await saveCookieString(cookieString);
+    const status = { connected: true, configured: true, user, checkedAt: nowIso() };
+    await Promise.all([
+      store.write("authStatus", status),
+      store.write("browserBridgeStatus", {
+        connected: true,
+        browser: body.browser,
+        extensionVersion: body.extensionVersion,
+        lastSeenAt: nowIso(),
+        permissionStatus: body.permissionStatus,
+        message: "浏览器助手已同步当前浏览器登录态。"
+      })
+    ]);
+    res.json(status);
+  } catch (error) {
+    await markAuthDisconnected(error instanceof Error ? error.message : String(error));
+    next(error);
+  }
+});
+
+api.post("/auth/browser-session", async (_req, res, next) => {
+  try {
+    res.status(201).json(await browserAuth.startSession());
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/auth/browser-session/:id/capture", async (req, res, next) => {
+  try {
+    const result = await browserAuth.captureSession(req.params.id);
+    if (result.status !== "verified") {
+      res.json(result);
+      return;
+    }
+    await saveCookieString(result.cookieString);
+    const status = { connected: true, configured: true, user: result.user, checkedAt: nowIso() };
+    await store.write("authStatus", status);
+    res.json(status);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("登录会话不存在")) {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+api.delete("/auth/browser-session/:id", async (req, res, next) => {
+  try {
+    res.json(browserAuth.closeSession(req.params.id));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("登录会话不存在")) {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+api.post("/browser/open-url", async (req, res, next) => {
+  try {
+    const body = browserOpenInput.parse(req.body);
+    if (body.mode === "current-browser") {
+      res.status(400).json({ error: "当前浏览器打开需要浏览器助手扩展，请先安装并启用扩展。" });
+      return;
+    }
+    res.json(await browserAuth.openUrl(body.url));
+  } catch (error) {
     next(error);
   }
 });
@@ -421,6 +518,40 @@ api.get("/ai/orchestrations/:id", async (req, res) => {
     return;
   }
   res.json(orchestration);
+});
+
+api.get("/ai/orchestrations/:id/events", async (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive"
+  });
+  let closed = false;
+  const send = async () => {
+    if (closed) return;
+    const orchestration = await getAiOrchestration(req.params.id);
+    if (!orchestration) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: "AI orchestration not found" })}\n\n`);
+      res.end();
+      closed = true;
+      return;
+    }
+    res.write(`event: orchestration\ndata: ${JSON.stringify(orchestration)}\n\n`);
+    if (["completed", "failed", "cancelled"].includes(orchestration.status)) {
+      res.end();
+      closed = true;
+    }
+  };
+  const timer = setInterval(() => {
+    void send().catch((error) => {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : String(error) })}\n\n`);
+    });
+  }, 2000);
+  req.on("close", () => {
+    closed = true;
+    clearInterval(timer);
+  });
+  await send();
 });
 
 api.get("/ai/artifacts", async (req, res) => {

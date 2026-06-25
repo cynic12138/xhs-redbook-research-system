@@ -16,6 +16,10 @@ import type {
   AiWorkflowRunInput,
   AnalyticsReport,
   AuthStatus,
+  BrowserBridgeStatus,
+  BrowserAuthSessionInfo,
+  BrowserOpenMode,
+  BrowserOpenResult,
   HealthReportRecord,
   NoteRecord,
   NotesPageResult,
@@ -33,38 +37,43 @@ export interface CookieFields {
   webId: string;
 }
 
+export type BrowserAuthCaptureResponse = AuthStatus | BrowserAuthSessionInfo;
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(path);
-  return parseResponse<T>(response);
+  return request<T>(path);
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
+  return request<T>(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined
   });
-  return parseResponse<T>(response);
 }
 
 export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
+  return request<T>(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined
   });
-  return parseResponse<T>(response);
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
-  const response = await fetch(path, { method: "DELETE" });
-  return parseResponse<T>(response);
+  return request<T>(path, { method: "DELETE" });
 }
 
 export const api = {
   authStatus: () => apiGet<AuthStatus>("/api/auth/status"),
+  browserBridgeStatus: () => apiGet<BrowserBridgeStatus>("/api/auth/extension/status"),
   saveCookie: (fields: CookieFields) => apiPost<AuthStatus>("/api/auth/cookie", fields),
   autoReadCookie: () => apiPost<AuthStatus>("/api/auth/browser"),
+  startAuthBrowserSession: () => apiPost<BrowserAuthSessionInfo>("/api/auth/browser-session"),
+  captureAuthBrowserSession: (sessionId: string) =>
+    apiPost<BrowserAuthCaptureResponse>(`/api/auth/browser-session/${encodeURIComponent(sessionId)}/capture`),
+  closeAuthBrowserSession: (sessionId: string) =>
+    apiDelete<BrowserAuthSessionInfo>(`/api/auth/browser-session/${encodeURIComponent(sessionId)}`),
+  openBrowserUrl: (input: { url: string; mode?: BrowserOpenMode }) => apiPost<BrowserOpenResult>("/api/browser/open-url", input),
   createJob: (input: SearchJobInput) => apiPost<SearchJob>("/api/search-jobs", input),
   listJobs: () => apiGet<SearchJob[]>("/api/search-jobs"),
   getJob: (jobId: string) => apiGet<SearchJob>(`/api/search-jobs/${jobId}`),
@@ -110,6 +119,18 @@ export const api = {
     apiPost<AiReport>("/api/ai/reports", input),
   deleteAiReport: (reportId: string) => apiDelete<{ deleted: number }>(`/api/ai/reports/${encodeURIComponent(reportId)}`)
 };
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    const response = await fetch(path, init);
+    return parseResponse<T>(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("后端服务暂时不可用，请确认 npm run dev 已同时启动前端 5173 和后端 8787。");
+    }
+    throw error;
+  }
+}
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const raw = await response.text();

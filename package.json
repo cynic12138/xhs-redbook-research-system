@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n server,client -c cyan,magenta \"npm:dev:server\" \"node scripts/wait-for-health.mjs http://127.0.0.1:8787/api/health 60000 && npm run dev:client\"",
+    "dev": "node scripts/dev.mjs",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.server.json && vite build",

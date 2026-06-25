@@ -44,6 +44,43 @@ export interface UserSummary {
   raw?: unknown;
 }
 
+export type BrowserAuthBrowser = "edge";
+export type BrowserAuthSessionStatus = "opening" | "waiting" | "verified" | "failed" | "closed";
+
+export interface BrowserAuthSessionInfo {
+  sessionId: string;
+  status: BrowserAuthSessionStatus;
+  browser: BrowserAuthBrowser;
+  browserName: string;
+  loginUrl: string;
+  message: string;
+  missingKeys?: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastError?: string;
+}
+
+export type BrowserBridgeBrowser = "edge" | "chrome" | "unknown";
+export type BrowserBridgePermissionStatus = "granted" | "missing" | "unknown";
+
+export interface BrowserBridgeStatus {
+  connected: boolean;
+  browser: BrowserBridgeBrowser;
+  extensionVersion?: string;
+  lastSeenAt?: string;
+  permissionStatus: BrowserBridgePermissionStatus;
+  message?: string;
+}
+
+export type BrowserOpenMode = "auto" | "current-browser" | "dedicated-edge";
+
+export interface BrowserOpenResult {
+  ok: boolean;
+  mode: Exclude<BrowserOpenMode, "auto">;
+  url: string;
+  message: string;
+}
+
 export interface SearchJob {
   id: string;
   keywords: string[];

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XHS Ops Bridge</title>
+    <style>
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 14px;
+        font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #172033;
+        background: #f7f9fc;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+      p {
+        margin: 0 0 12px;
+        color: #657083;
+      }
+      button {
+        width: 100%;
+        border: 1px solid #d8e0ec;
+        border-radius: 8px;
+        padding: 9px 10px;
+        margin-top: 8px;
+        background: #fff;
+        color: #172033;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: #ff315f;
+        background: #ff315f;
+        color: white;
+      }
+      #status {
+        min-height: 18px;
+        margin-top: 10px;
+        word-break: break-word;
+        color: #657083;
+      }
+      #status.ok {
+        color: #047857;
+      }
+      #status.error {
+        color: #b42318;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>XHS Ops Bridge</h1>
+    <p>Log in to Xiaohongshu in this browser, then sync the login state to the local ops app. If the extension was just updated, refresh the Xiaohongshu tab first.</p>
+    <button id="open-xhs">Open Xiaohongshu</button>
+    <button id="sync" class="primary">Sync current browser login</button>
+    <div id="status">Waiting</div>
+    <script src="popup.js"></script>
+  </body>
+</html>
