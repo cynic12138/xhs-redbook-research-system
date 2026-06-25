@@ -12,6 +12,7 @@ import type {
   AuthStatus,
   AuthorPostRecord,
   AuthorRecord,
+  BrowserBridgeStatus,
   BoardRecord,
   CommentRecord,
   FavoriteNoteRecord,
@@ -25,6 +26,7 @@ import type {
 
 type CollectionName =
   | "authStatus"
+  | "browserBridgeStatus"
   | "searchJobs"
   | "queueItems"
   | "notes"
@@ -47,6 +49,7 @@ type CollectionName =
 
 interface DataShape {
   authStatus: AuthStatus;
+  browserBridgeStatus: BrowserBridgeStatus;
   searchJobs: SearchJob[];
   queueItems: QueueItem[];
   notes: NoteRecord[];
@@ -73,6 +76,7 @@ interface DataShape {
 
 const defaults: DataShape = {
   authStatus: { connected: false, configured: false },
+  browserBridgeStatus: { connected: false, browser: "unknown", permissionStatus: "unknown" },
   searchJobs: [],
   queueItems: [],
   notes: [],

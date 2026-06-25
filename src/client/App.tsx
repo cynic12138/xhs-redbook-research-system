@@ -48,6 +48,7 @@ import type {
   AiWorkflowKey,
   AnalyticsReport,
   AuthStatus,
+  BrowserBridgeStatus,
   HealthReportRecord,
   NoteRecord,
   NoteTypeFilter,
@@ -64,6 +65,7 @@ type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "com
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
 type ModelForm = { name: string; provider: string; baseUrl: string; model: string; apiKey: string };
 type ReaderPreview = { kind: "artifact" | "report"; title: string; markdown: string; meta: string[]; exportUrl: string };
+type RunWorkflow = (workflowKey: AiWorkflowKey, focus?: string) => Promise<AiArtifact | undefined>;
 type AssistantNoticeTone = "info" | "warning" | "error" | "progress";
 type AssistantNotice = {
   key: string;
@@ -106,6 +108,7 @@ export function App() {
   const [activeModule, setActiveModule] = useState<ModuleKey>("overview");
   const [auth, setAuth] = useState<AuthStatus>({ connected: false, configured: false });
   const [cookieFields, setCookieFields] = useState({ a1: "", web_session: "", webId: "" });
+  const [browserBridge, setBrowserBridge] = useState<BrowserBridgeStatus>({ connected: false, browser: "unknown", permissionStatus: "unknown" });
   const [keywords, setKeywords] = useState("");
   const [sort, setSort] = useState<SearchSort>("popular");
   const [noteType, setNoteType] = useState<NoteTypeFilter>("all");
@@ -169,13 +172,14 @@ export function App() {
   const selectedModel = aiModels.find((model) => model.id === selectedModelId) ?? defaultModel;
 
   const refreshCore = useCallback(async () => {
-    const [authStatus, allJobs, caps, models, workflows, prompts] = await Promise.all([
+    const [authStatus, allJobs, caps, models, workflows, prompts, bridgeStatus] = await Promise.all([
       api.authStatus(),
       api.listJobs(),
       api.capabilities(),
       api.listAiModels(),
       api.listAiWorkflows(),
-      api.listAiPrompts()
+      api.listAiPrompts(),
+      api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus)
     ]);
     const sortedJobs = allJobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     setAuth(authStatus);
@@ -184,6 +188,7 @@ export function App() {
     setAiModels(models);
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
+    setBrowserBridge(bridgeStatus);
     setError(clearRecoveredBackendError);
     if (!activeJobId) {
       const defaultJob = sortedJobs.find((job) => isContextJob(job)) ?? sortedJobs[0];
@@ -288,35 +293,53 @@ export function App() {
   }, [loadAnalytics, loadNotes, loadOperations, loadOrchestrations, refreshCore]);
 
   useEffect(() => {
+    let alive = true;
+    callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000)
+      .then((status) => {
+        if (alive) {
+          setBrowserBridge({ ...status, connected: true, message: status.message || "浏览器助手已连接。" });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!activeOrchestrationId) {
       return;
     }
     let alive = true;
     let timer: number | undefined;
+    let source: EventSource | undefined;
+    const applyOrchestration = async (orchestration: AiOrchestration) => {
+      if (!alive) return;
+      setAiOrchestrations((items) => upsertById(items, orchestration));
+      if (orchestration.jobId) {
+        setActiveJobId(orchestration.jobId);
+      }
+      if (orchestration.artifactIds.length) {
+        const latestArtifactId = orchestration.artifactIds[orchestration.artifactIds.length - 1] ?? "";
+        setSelectedArtifactId(latestArtifactId);
+        setSelectedReportId("");
+        await loadOperations();
+        if (latestArtifactId) {
+          const artifact = await api.getAiArtifact(latestArtifactId).catch(() => undefined);
+          if (alive && artifact) {
+            setAiArtifacts((items) => [artifact, ...items.filter((item) => item.id !== artifact.id)]);
+          }
+        }
+      }
+      await refreshCore();
+      if (orchestration.status === "completed") {
+        setActiveModule("ai");
+      }
+    };
     const tick = async () => {
       try {
         const orchestration = await api.getAiOrchestration(activeOrchestrationId);
-        if (!alive) return;
-        setAiOrchestrations((items) => upsertById(items, orchestration));
-        if (orchestration.jobId) {
-          setActiveJobId(orchestration.jobId);
-        }
-        if (orchestration.artifactIds.length) {
-          const latestArtifactId = orchestration.artifactIds[orchestration.artifactIds.length - 1] ?? "";
-          setSelectedArtifactId(latestArtifactId);
-          setSelectedReportId("");
-          await loadOperations();
-          if (latestArtifactId) {
-            const artifact = await api.getAiArtifact(latestArtifactId).catch(() => undefined);
-            if (alive && artifact) {
-              setAiArtifacts((items) => [artifact, ...items.filter((item) => item.id !== artifact.id)]);
-            }
-          }
-        }
-        await refreshCore();
-        if (orchestration.status === "completed") {
-          setActiveModule("ai");
-        }
+        await applyOrchestration(orchestration);
         if (orchestration.status === "completed" || orchestration.status === "failed" || orchestration.status === "cancelled") {
           return;
         }
@@ -327,9 +350,24 @@ export function App() {
         }
       }
     };
-    void tick();
+    source = new EventSource(`/api/ai/orchestrations/${activeOrchestrationId}/events`);
+    source.addEventListener("orchestration", (event) => {
+      const orchestration = JSON.parse((event as MessageEvent<string>).data) as AiOrchestration;
+      void applyOrchestration(orchestration).then(() => {
+        if (orchestration.status === "completed" || orchestration.status === "failed" || orchestration.status === "cancelled") {
+          source?.close();
+        }
+      });
+    });
+    source.addEventListener("error", () => {
+      source?.close();
+      if (alive && !timer) {
+        timer = window.setTimeout(tick, 1000);
+      }
+    });
     return () => {
       alive = false;
+      source?.close();
       if (timer) {
         window.clearTimeout(timer);
       }
@@ -413,6 +451,40 @@ export function App() {
     await run("auth", async () => {
       setAuth(await api.autoReadCookie());
       await refreshCore();
+    });
+  }
+
+  async function refreshBrowserBridge() {
+    const savedStatus = await api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus);
+    const runtimeStatus = await callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000).catch(() => undefined);
+    setBrowserBridge(runtimeStatus ? { ...savedStatus, ...runtimeStatus, connected: true } : savedStatus);
+  }
+
+  async function syncBrowserBridgeCookie() {
+    await run("auth", async () => {
+      const status = await callBrowserBridge<AuthStatus>("syncCookie", undefined, 15000);
+      setAuth(status);
+      setCookieFields({ a1: "", web_session: "", webId: "" });
+      setBrowserBridge((current) => ({
+        ...current,
+        connected: true,
+        lastSeenAt: new Date().toISOString(),
+        permissionStatus: "granted",
+        message: "已同步当前浏览器的小红书登录态。"
+      }));
+      await refreshCore();
+    });
+  }
+
+  async function openOriginalUrl(url: string) {
+    try {
+      await callBrowserBridge("openUrl", { url }, 1500);
+      return;
+    } catch {
+      // Extension is optional. Fallback keeps original-post opening available.
+    }
+    await run("open-url", async () => {
+      await api.openBrowserUrl({ url, mode: "auto" });
     });
   }
 
@@ -586,17 +658,17 @@ export function App() {
     });
   }
 
-  async function runWorkflow(workflowKey: AiWorkflowKey, focus?: string) {
+  async function runWorkflow(workflowKey: AiWorkflowKey, focus?: string): Promise<AiArtifact | undefined> {
     const workflow = aiWorkflows.find((item) => item.key === workflowKey);
     if (workflow?.requires.includes("job") && !contextJobId) {
       setError("当前没有可用于分析的有效任务，请先创建并完成一次关键词抓取。");
-      return;
+      return undefined;
     }
     if (workflow?.requires.includes("note") && !selected) {
       setError("请先选择一篇笔记。");
-      return;
+      return undefined;
     }
-    await run(`workflow-${workflowKey}`, async () => {
+    return await run(`workflow-${workflowKey}`, async () => {
       const artifact = await api.runAiWorkflow({
         workflowKey,
         jobId: contextJobId || undefined,
@@ -610,7 +682,35 @@ export function App() {
       setSelectedReportId("");
       setActiveModule("ai");
       await loadOperations();
+      return artifact;
     });
+  }
+
+  async function runAssistantWorkflow(workflowKey: AiWorkflowKey, focus?: string): Promise<AiArtifact | undefined> {
+    const workflow = aiWorkflows.find((item) => item.key === workflowKey);
+    const title = workflow?.title ?? workflowKey;
+    setAssistantMessages((messages) => [
+      ...messages,
+      {
+        id: `assistant_workflow_start_${Date.now()}`,
+        role: "assistant",
+        content: `开始生成「${title}」，会使用当前任务和已入库笔记作为上下文。`,
+        createdAt: new Date().toISOString()
+      }
+    ]);
+    const artifact = await runWorkflow(workflowKey, focus);
+    if (artifact) {
+      setAssistantMessages((messages) => [
+        ...messages,
+        {
+          id: `assistant_workflow_done_${artifact.id}`,
+          role: "assistant",
+          content: `「${artifact.title}」已生成，结果已放入 AI 工作台并自动打开。`,
+          createdAt: new Date().toISOString()
+        }
+      ]);
+    }
+    return artifact;
   }
 
   async function sendAssistantMessage() {
@@ -778,8 +878,11 @@ export function App() {
             aiReports={aiReports}
             cookieFields={cookieFields}
             setCookieFields={setCookieFields}
+            browserBridge={browserBridge}
             saveCookie={saveCookie}
             autoReadCookie={autoReadCookie}
+            refreshBrowserBridge={refreshBrowserBridge}
+            syncBrowserBridgeCookie={syncBrowserBridgeCookie}
             onResume={resumeJob}
             onStop={stopJob}
             busy={busy}
@@ -827,6 +930,7 @@ export function App() {
             activeJobId={activeJobId}
             clearCurrentNotes={clearCurrentNotes}
             deleteSelectedNote={deleteSelectedNote}
+            openOriginalUrl={openOriginalUrl}
             runWorkflow={runWorkflow}
             busy={busy}
           />
@@ -958,7 +1062,7 @@ export function App() {
         }}
         onRefresh={refreshCore}
         workflows={visibleWorkflows.length ? visibleWorkflows : aiWorkflows.slice(0, 4)}
-        runWorkflow={runWorkflow}
+        runWorkflow={runAssistantWorkflow}
         contextItems={[
           contextJob ? `任务：${jobKeywordLabel(contextJob)}` : "无有效任务",
           contextJob && selected ? `笔记：${selected.title}` : "未选择笔记",
@@ -1100,7 +1204,7 @@ function WorkflowActionBar({
   workflows: AiWorkflowDefinition[];
   busy: string;
   selectedWorkflow: AiWorkflowKey;
-  onRun: (workflowKey: AiWorkflowKey) => Promise<void>;
+  onRun: RunWorkflow;
 }) {
   return (
     <section className="workflow-bar">
@@ -1133,8 +1237,11 @@ function OverviewPage({
   aiReports,
   cookieFields,
   setCookieFields,
+  browserBridge,
   saveCookie,
   autoReadCookie,
+  refreshBrowserBridge,
+  syncBrowserBridgeCookie,
   onResume,
   onStop,
   busy
@@ -1146,8 +1253,11 @@ function OverviewPage({
   aiReports: AiReport[];
   cookieFields: { a1: string; web_session: string; webId: string };
   setCookieFields: (value: { a1: string; web_session: string; webId: string }) => void;
+  browserBridge: BrowserBridgeStatus;
   saveCookie: () => Promise<void>;
   autoReadCookie: () => Promise<void>;
+  refreshBrowserBridge: () => Promise<void>;
+  syncBrowserBridgeCookie: () => Promise<void>;
   onResume: () => Promise<void>;
   onStop: () => Promise<void>;
   busy: string;
@@ -1205,8 +1315,11 @@ function OverviewPage({
           auth={auth}
           cookieFields={cookieFields}
           setCookieFields={setCookieFields}
+          browserBridge={browserBridge}
           saveCookie={saveCookie}
           autoReadCookie={autoReadCookie}
+          refreshBrowserBridge={refreshBrowserBridge}
+          syncBrowserBridgeCookie={syncBrowserBridgeCookie}
           busy={busy}
         />
       </section>
@@ -1297,7 +1410,7 @@ function ResearchPage(props: {
   createJob: () => Promise<void>;
   busy: string;
   analytics: AnalyticsReport | null;
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  runWorkflow: RunWorkflow;
 }) {
   return (
     <div className="research-grid">
@@ -1314,7 +1427,7 @@ function ResearchPage(props: {
         />
         <label className="field-stack">
           <span>关键词</span>
-          <textarea value={props.keywords} onChange={(event) => props.setKeywords(event.target.value)} placeholder="推荐候选词：武汉相亲、武汉脱单。输入后才会抓取，可用逗号或换行分隔。" />
+          <textarea value={props.keywords} onChange={(event) => props.setKeywords(event.target.value)} placeholder="请输入你想研究的小红书关键词，例如品牌名、产品词、场景词或人群词；可用逗号或换行分隔。" />
         </label>
         <div className="form-grid">
           <Select label="排序" value={props.sort} onChange={(value) => props.setSort(value as SearchSort)} options={[["popular", "热门"], ["general", "综合"], ["latest", "最新"]]} />
@@ -1411,7 +1524,8 @@ function NotesPage(props: {
   activeJobId: string;
   clearCurrentNotes: () => Promise<void>;
   deleteSelectedNote: () => Promise<void>;
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  openOriginalUrl: (url: string) => Promise<void>;
+  runWorkflow: RunWorkflow;
   busy: string;
 }) {
   return (
@@ -1504,7 +1618,7 @@ function NotesPage(props: {
           </div>
         </div>
       </section>
-      <NoteDetail note={props.selected} onDelete={props.deleteSelectedNote} runWorkflow={props.runWorkflow} busy={props.busy} />
+      <NoteDetail note={props.selected} onDelete={props.deleteSelectedNote} openOriginalUrl={props.openOriginalUrl} runWorkflow={props.runWorkflow} busy={props.busy} />
     </div>
   );
 }
@@ -1591,7 +1705,7 @@ function ViralPage({
   analytics: AnalyticsReport | null;
   selected: NoteRecord | null;
   artifacts: AiArtifact[];
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  runWorkflow: RunWorkflow;
   busy: string;
 }) {
   const latestDeepDive = artifacts.find((artifact) => artifact.workflowKey === "viral-deep-dive");
@@ -1701,7 +1815,7 @@ function AudiencePage({
   analytics: AnalyticsReport | null;
   notes: NoteRecord[];
   artifacts: AiArtifact[];
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  runWorkflow: RunWorkflow;
   busy: string;
 }) {
   const themes = notes.flatMap((note) => note.analysis?.commentThemes ?? []).slice(0, 18);
@@ -1761,7 +1875,7 @@ function CompetitorsPage({
 }: {
   analytics: AnalyticsReport | null;
   artifacts: AiArtifact[];
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  runWorkflow: RunWorkflow;
   busy: string;
 }) {
   const latest = artifacts.find((artifact) => artifact.workflowKey === "competitor-analysis");
@@ -2164,7 +2278,7 @@ function AiWorkbenchPage(props: {
   setSelectedReportId: (value: string) => void;
   prompts: AiPromptInfo[];
   openPrompt: (key: AiWorkflowKey) => void;
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  runWorkflow: RunWorkflow;
   busy: string;
 }) {
   const selectedArtifact = props.artifacts.find((artifact) => artifact.id === props.selectedArtifactId);
@@ -2338,7 +2452,7 @@ function ArtifactReader({
   selectedArtifact?: AiArtifact;
   selectedArtifactWorkflow?: AiWorkflowKey;
   openPrompt: (key: AiWorkflowKey) => void;
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  runWorkflow: RunWorkflow;
   busy: string;
   close: () => void;
 }) {
@@ -2443,7 +2557,7 @@ function AiAssistantDrawer({
   onOpenArtifacts: (artifactId: string) => void;
   onRefresh: () => Promise<void>;
   workflows: AiWorkflowDefinition[];
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  runWorkflow: RunWorkflow;
   contextItems: string[];
   busy: string;
 }) {
@@ -2572,6 +2686,29 @@ function AiAssistantDrawer({
           <OrchestrationTimeline orchestration={activeOrchestration} onOpenJob={onOpenJob} onOpenArtifacts={onOpenArtifacts} />
         </div>
       )}
+      {workflows.length > 0 && (
+        <section className="assistant-next-actions compact-actions" aria-label="AI 建议动作">
+          <div className="assistant-next-actions-head">
+            <span>快捷动作</span>
+            <small>基于当前上下文生成产物</small>
+          </div>
+          <div className="assistant-suggestion-row">
+            {workflows.slice(0, 4).map((workflow) => (
+              <button
+                key={workflow.key}
+                className="assistant-suggestion-card"
+                onClick={() => void runWorkflow(workflow.key)}
+                disabled={busy === `workflow-${workflow.key}`}
+                title={workflow.description}
+              >
+                {busy === `workflow-${workflow.key}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                <span>{workflow.title}</span>
+                <small>{workflow.description}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="assistant-body-scroll">
         <div className="assistant-messages">
           {messages.map((message) => (
@@ -2610,29 +2747,6 @@ function AiAssistantDrawer({
           )}
         </div>
       </div>
-      {workflows.length > 0 && (
-        <section className="assistant-next-actions" aria-label="AI 建议动作">
-          <div className="assistant-next-actions-head">
-            <span>建议下一步</span>
-            <small>点击后使用当前上下文生成产物</small>
-          </div>
-          <div className="assistant-suggestion-row">
-            {workflows.slice(0, 6).map((workflow) => (
-              <button
-                key={workflow.key}
-                className="assistant-suggestion-card"
-                onClick={() => void runWorkflow(workflow.key)}
-                disabled={busy === `workflow-${workflow.key}`}
-                title={workflow.description}
-              >
-                {busy === `workflow-${workflow.key}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-                <span>{workflow.title}</span>
-                <small>{workflow.description}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
       <div className="assistant-input assistant-composer" onKeyDown={handleInputKeyDown}>
         <label className="sr-only" htmlFor="assistant-input">AI 助手输入</label>
         <textarea id="assistant-input" value={input} onChange={(event) => setInput(event.target.value)} placeholder="问 AI：基于当前任务，我下一步该做什么？" />
@@ -3107,12 +3221,14 @@ function ModelsPage(props: {
 function NoteDetail({
   note,
   onDelete,
+  openOriginalUrl,
   runWorkflow,
   busy
 }: {
   note: NoteRecord | null;
   onDelete: () => Promise<void>;
-  runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
+  openOriginalUrl: (url: string) => Promise<void>;
+  runWorkflow: RunWorkflow;
   busy: string;
 }) {
   if (!note) {
@@ -3134,10 +3250,10 @@ function NoteDetail({
               {busy === "workflow-note-analysis" ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
               AI 分析
             </button>
-            <a className="ghost-button compact" href={note.webUrl} target="_blank" rel="noreferrer">
+            <button className="ghost-button compact" onClick={() => void openOriginalUrl(note.webUrl)} disabled={busy === "open-url"}>
               <ExternalLink size={15} />
-              原帖
-            </a>
+              智能打开原帖
+            </button>
             <button className="ghost-button compact danger" onClick={() => void onDelete()} disabled={busy === "delete-note"}>
               {busy === "delete-note" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
               删除
@@ -3186,28 +3302,55 @@ function AuthPanel({
   auth,
   cookieFields,
   setCookieFields,
+  browserBridge,
   saveCookie,
   autoReadCookie,
+  refreshBrowserBridge,
+  syncBrowserBridgeCookie,
   busy
 }: {
   auth: AuthStatus;
   cookieFields: { a1: string; web_session: string; webId: string };
   setCookieFields: (value: { a1: string; web_session: string; webId: string }) => void;
+  browserBridge: BrowserBridgeStatus;
   saveCookie: () => Promise<void>;
   autoReadCookie: () => Promise<void>;
+  refreshBrowserBridge: () => Promise<void>;
+  syncBrowserBridgeCookie: () => Promise<void>;
   busy: string;
 }) {
   return (
     <section className="surface command-surface">
       <SectionTitle icon={<ShieldCheck size={18} />} title="登录连接" />
+      <div className={`browser-bridge-card ${browserBridge.connected ? "ok" : "pending"}`}>
+        <div>
+          <strong>浏览器助手 Bridge</strong>
+          <p>
+            {browserBridge.connected
+              ? `已连接 ${browserBridge.browser === "edge" ? "Edge" : browserBridge.browser === "chrome" ? "Chrome" : "浏览器"}，可同步当前浏览器登录态。`
+              : "推荐安装本项目浏览器助手扩展，登录当前浏览器的小红书后即可同步 Cookie。"}
+          </p>
+          {browserBridge.lastSeenAt && <small>最近同步：{formatDateTime(browserBridge.lastSeenAt)}</small>}
+        </div>
+        <div className="button-row">
+          <button className="ghost-button compact" onClick={() => void refreshBrowserBridge()}>
+            <RefreshCw size={15} />
+            检测助手
+          </button>
+          <button className="primary-button compact" onClick={() => void syncBrowserBridgeCookie()} disabled={busy === "auth" || !browserBridge.connected}>
+            {busy === "auth" ? <Loader2 className="spin" size={15} /> : <KeyRound size={15} />}
+            同步登录态
+          </button>
+        </div>
+      </div>
       <div className="button-row">
         <button className="ghost-button" onClick={() => window.open("https://www.xiaohongshu.com/", "_blank")}>
           <ExternalLink size={16} />
-          打开
+          打开小红书
         </button>
         <button className="ghost-button" onClick={() => void autoReadCookie()} disabled={busy === "auth"}>
           {busy === "auth" ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
-          自动读取
+          读取本机浏览器（兼容）
         </button>
       </div>
       <label className="field-stack compact-field">
@@ -3320,6 +3463,11 @@ function formatNumber(value: number): string {
   return String(value);
 }
 
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
 function readStoredNumber(key: string, fallback: number): number {
   const raw = localStorage.getItem(key);
   const value = raw ? Number(raw) : fallback;
@@ -3337,6 +3485,30 @@ function isAiWorkflowKey(value: AiArtifact["workflowKey"]): value is AiWorkflowK
 function isControlledOrchestrationRequest(content: string): boolean {
   const text = content.trim();
   return /抓取|搜索/.test(text) && /关键词/.test(text) && /话题|机会|爆款|评论|选题|分析/.test(text);
+}
+
+function callBrowserBridge<T = unknown>(action: string, payload?: unknown, timeoutMs = 3000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const requestId = `xhs_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const timer = window.setTimeout(() => {
+      window.removeEventListener("message", onMessage);
+      reject(new Error("浏览器助手未响应，请确认扩展已安装并启用。"));
+    }, timeoutMs);
+    function onMessage(event: MessageEvent) {
+      if (event.source !== window || event.data?.source !== "XHS_BRIDGE" || event.data?.requestId !== requestId) {
+        return;
+      }
+      window.clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+      if (event.data.ok) {
+        resolve((event.data.result ?? event.data.data) as T);
+      } else {
+        reject(new Error(event.data.error || "浏览器助手调用失败。"));
+      }
+    }
+    window.addEventListener("message", onMessage);
+    window.postMessage({ source: "XHS_APP", type: "XHS_BRIDGE_REQUEST", requestId, action, payload }, window.location.origin);
+  });
 }
 
 function upsertById<T extends { id: string }>(items: T[], next: T): T[] {

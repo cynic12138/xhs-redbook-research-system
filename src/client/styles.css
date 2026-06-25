@@ -486,6 +486,32 @@ button:disabled {
   gap: 12px;
 }
 
+.browser-bridge-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background-subtle);
+}
+
+.browser-bridge-card.ok {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+
+.browser-bridge-card.pending {
+  border-color: color-mix(in srgb, var(--info) 24%, var(--border));
+}
+
+.browser-bridge-card p,
+.browser-bridge-card small {
+  margin: 4px 0 0;
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .section-title {
   justify-content: space-between;
   margin-bottom: 12px;
@@ -3905,7 +3931,8 @@ label {
 
 /* Assistant redesign: chat-first copilot surface */
 .assistant-drawer {
-  grid-template-rows: auto auto minmax(0, auto) minmax(0, auto) minmax(220px, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, auto) minmax(0, auto) minmax(180px, 42vh) auto auto;
+  align-content: start;
   gap: 8px;
   padding: 16px;
   background:
@@ -4216,7 +4243,7 @@ label {
 
 /* Final assistant layout tuning: keep chat as the primary surface. */
 .assistant-drawer {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
 }
 
 .assistant-example-list button::after {
@@ -4224,7 +4251,24 @@ label {
 }
 
 .assistant-suggestion-row {
-  grid-auto-columns: minmax(132px, 152px);
+  grid-auto-columns: minmax(128px, 148px);
+}
+
+.assistant-next-actions.compact-actions {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--primary-soft));
+}
+
+.assistant-next-actions.compact-actions .assistant-next-actions-head {
+  margin: 0;
+}
+
+.assistant-next-actions.compact-actions .assistant-suggestion-row {
+  padding-bottom: 2px;
 }
 
 .assistant-suggestion-card {
@@ -4238,4 +4282,46 @@ label {
 
 .assistant-suggestion-card small {
   line-height: 1.25;
+}
+
+.auth-flow-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius-md);
+  background: var(--info-soft);
+}
+
+.auth-flow-card.verified {
+  border-left-color: var(--success);
+  background: var(--success-soft);
+}
+
+.auth-flow-card.failed,
+.auth-flow-card.closed {
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.auth-flow-card strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.auth-flow-card p,
+.auth-flow-card small {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.auth-flow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

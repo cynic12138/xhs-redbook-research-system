@@ -25,6 +25,8 @@
 | 前端页面 | `http://127.0.0.1:5173`，开发模式下由 Vite 提供 |
 | 后端 API | `http://127.0.0.1:8787/api`，Express 服务 |
 | Redbook 封装 | `src/server/services/redbookService.ts`，把 `@lucasygu/redbook` 包装成本项目服务 |
+| 浏览器助手扩展 | `browser-extension/xhs-bridge/`，把当前浏览器的小红书登录态同步到本机后端 |
+| 专用登录窗口 | `src/server/services/browserAuthService.ts`，启动独立 Edge profile 读取登录 Cookie |
 | 任务队列 | `src/server/services/jobService.ts`，负责搜索、补详情、评论、作者、分析 |
 | 本地数据 | `data/*.json`，运行时自动生成，已被 Git 忽略 |
 | 本地密钥 | `.env.local`，保存 Cookie 和 AI 模型 Key，已被 Git 忽略 |
@@ -33,8 +35,9 @@
 
 - Node.js 22 或更高版本。本机已验证可用版本：Node `v24.15.0`，npm `11.13.0`。
 - npm。
-- Chrome 浏览器。
-- 一个已在 Chrome 中登录的小红书账号。
+- Microsoft Edge 或 Chrome 浏览器。
+- 一个已在浏览器中登录的小红书账号。
+- 如果使用“专用登录窗口”，本机需要安装 Microsoft Edge。
 
 ## 安装依赖
 
@@ -43,6 +46,8 @@ npm install
 ```
 
 项目已经在 `package.json` 中声明了 `@lucasygu/redbook`，因此正常安装依赖即可，不需要为了本项目额外全局安装 redbook CLI。
+
+浏览器助手扩展不需要 npm 构建，直接以“加载解压缩的扩展”的方式安装 `browser-extension/xhs-bridge/` 目录。
 
 ## 配置 `.env.local`
 
@@ -75,16 +80,56 @@ Copy-Item .env.example .env.local
 
 本项目使用浏览器 Cookie 登录态，不需要小红书官方 API Key。
 
-推荐路径：
+推荐顺序：
 
-1. 用 Chrome 登录 `https://www.xiaohongshu.com`。
-2. 启动本项目。
-3. 打开前端页面，进入顶部或总览里的登录/认证区域。
-4. 优先点击“自动读取”。
-5. 如果自动读取失败，手动填写 `a1`、`web_session`，可选填写 `webId`。
-6. 点击验证，看到账号信息或连接成功状态后再开始任务。
+1. 浏览器助手扩展：推荐。适合把当前 Edge/Chrome profile 里的小红书登录态同步到本机后端。
+2. 专用 Edge 登录窗口：推荐给不想读取日常浏览器 profile 的场景。系统会打开独立 Edge profile，登录后从本机 DevTools 通道读取 Cookie。
+3. 兼容自动读取：调用 `@lucasygu/redbook/cookies` 尝试读取 Chrome Cookie，部分 Windows/Chrome 版本可能失败。
+4. 手动 Cookie：最后兜底，手动复制 `a1` 和 `web_session`。
 
-Windows 上 Chrome 127+ 可能因为 App-Bound Encryption 导致自动读取失败。可以先关闭 Chrome 后重试自动读取；仍失败时，用 Chrome DevTools 手动复制 Cookie：
+### 方式一：浏览器助手扩展
+
+1. 启动本项目，确保后端 `http://127.0.0.1:8787` 和前端 `http://127.0.0.1:5173` 都可用。
+2. 打开 Edge 的 `edge://extensions/` 或 Chrome 的 `chrome://extensions/`。
+3. 开启“开发人员模式”。
+4. 点击“加载解压缩的扩展”，选择 `browser-extension/xhs-bridge/`。
+5. 在同一个浏览器 profile 中登录 `https://www.xiaohongshu.com/`。
+6. 回到本项目登录连接区域，点击“检测助手”，再点击“同步登录态”。
+7. 也可以点击扩展图标，在弹窗里点 “Sync current browser login”。
+
+扩展只请求这些权限：
+
+| 权限 | 用途 |
+| --- | --- |
+| `cookies` | 读取 `xiaohongshu.com` 相关 Cookie |
+| `tabs` / `scripting` | 检查当前小红书页面和打开原帖 |
+| `storage` | 浏览器扩展本地能力预留 |
+| `host_permissions` | 仅覆盖小红书域名、本机 `5173` 和本机 `8787` |
+
+Cookie 只会通过 `POST /api/auth/extension-cookie` 发送到本机 `http://127.0.0.1:8787`，不会发送到云端。后端验证成功后会写入 `.env.local`，接口响应不会回显 Cookie 明文。
+
+扩展还用于“智能打开原帖”：优先在当前浏览器打开小红书链接；如果没有安装扩展，前端会回退到专用 Edge 环境。
+
+### 方式二：专用 Edge 登录窗口
+
+在前端登录连接区域使用专用登录窗口时，后端会：
+
+1. 启动 Microsoft Edge。
+2. 使用独立 profile：`data/xhs-login-edge-profile/`。
+3. 打开 `https://www.xiaohongshu.com/`。
+4. 通过本机 `127.0.0.1` DevTools 调试端口读取 `a1` 和 `web_session`。
+5. 用 Redbook 验证 Cookie。
+6. 验证通过后写入 `.env.local`。
+
+这个 profile 目录位于 `data/` 下，已被 Git 忽略。专用窗口适合隔离日常浏览器 Cookie，但仍然只应在你自己的账号和本机环境中使用。
+
+### 方式三：兼容自动读取
+
+点击“读取本机浏览器（兼容）”会调用 Redbook 的浏览器 Cookie 提取能力。Windows 上 Chrome 127+ 可能因为 App-Bound Encryption 导致自动读取失败。可以先关闭 Chrome 后重试；仍失败时，改用浏览器助手扩展或手动 Cookie。
+
+### 方式四：手动 Cookie
+
+如果自动方式都失败，可以用 Chrome/Edge DevTools 手动复制 Cookie：
 
 1. 在小红书网页按 `F12`。
 2. 打开 `Application` -> `Cookies` -> `https://www.xiaohongshu.com`。
@@ -109,10 +154,11 @@ npm run dev
 
 启动过程：
 
-1. 后端启动在 `http://127.0.0.1:8787`。
-2. 脚本等待 `/api/health` 可用。
-3. 前端启动在 `http://127.0.0.1:5173`。
-4. 前端通过 Vite proxy 把 `/api` 请求转发到后端。
+1. `scripts/dev.mjs` 先检查 `http://127.0.0.1:8787/api/health`。
+2. 如果已有健康后端，会复用当前后端。
+3. 如果没有后端，会启动 `npm run dev:server`。
+4. 后端可用后启动 `npm run dev:client`。
+5. 前端通过 Vite proxy 把 `/api` 请求转发到后端。
 
 也可以分开启动：
 
@@ -124,7 +170,7 @@ npm run dev:client
 ## 第一次使用流程
 
 1. 启动项目并打开 `http://127.0.0.1:5173`。
-2. 在登录/认证区域验证小红书 Cookie。
+2. 在登录/认证区域验证小红书 Cookie，优先使用浏览器助手扩展或专用 Edge 登录窗口。
 3. 进入“话题研究”。
 4. 输入一个或多个关键词，多个关键词可以用逗号或换行分隔。
 5. 选择排序、笔记类型、页数、评论页数和并发。
@@ -240,6 +286,8 @@ Authorization: Bearer <apiKey>
 
 模型 tools 调用只允许使用项目内定义的只读工具。服务端会校验工具名和参数，不接受删除数据、读取密钥、读取 Cookie、发送评论或修改配置等危险请求。
 
+前端通过 Server-Sent Events 订阅 `/api/ai/orchestrations/:id/events`，可以在 AI 助手抽屉里看到编排任务的实时步骤进度。
+
 ## 常用脚本
 
 | 命令 | 用途 |
@@ -278,7 +326,9 @@ npm start
 | `data/aiModels.json` | AI 模型配置，不含明文 Key |
 | `data/aiReports.json` | AI 或本地 Markdown 报告 |
 | `data/aiArtifacts.json` | AI 工作流产物 |
+| `data/browserBridgeStatus.json` | 浏览器助手最近同步状态 |
 | `data/media-cache/` | 媒体代理缓存 |
+| `data/xhs-login-edge-profile/` | 专用 Edge 登录窗口 profile |
 
 导出接口：
 
@@ -288,6 +338,18 @@ GET /api/export/:jobId?format=csv
 GET /api/export/:jobId?format=html
 GET /api/ai/reports/:id/export
 GET /api/ai/artifacts/:id/export
+```
+
+登录/浏览器辅助接口：
+
+```text
+GET /api/auth/extension/status
+POST /api/auth/extension-cookie
+POST /api/auth/browser-session
+POST /api/auth/browser-session/:id/capture
+DELETE /api/auth/browser-session/:id
+POST /api/browser/open-url
+GET /api/ai/orchestrations/:id/events
 ```
 
 ## 常见问题
@@ -312,10 +374,26 @@ PORT=8788
 
 优先处理：
 
-1. 在 Chrome 重新打开并登录小红书。
-2. 回到本项目重新点击自动读取。
-3. 如果仍失败，手动复制 `a1` 和 `web_session`。
-4. 保存后重启后端。
+1. 确认后端 `8787` 已启动。
+2. 如果使用扩展，确认扩展已加载、当前浏览器已登录小红书，并刷新过小红书标签页。
+3. 回到本项目点击“检测助手”和“同步登录态”。
+4. 如果扩展失败，尝试专用 Edge 登录窗口。
+5. 仍失败时，手动复制 `a1` 和 `web_session`。
+6. 保存后重启后端。
+
+### 浏览器助手未连接
+
+检查：
+
+1. Edge/Chrome 是否已开启开发人员模式并加载 `browser-extension/xhs-bridge/`。
+2. 本地前端是否运行在 `http://127.0.0.1:5173` 或 `http://localhost:5173`。
+3. 本地后端是否运行在 `http://127.0.0.1:8787`。
+4. 是否在同一个浏览器 profile 中登录了小红书。
+5. 扩展更新后，刷新小红书标签页和本地前端页面。
+
+### 专用 Edge 登录窗口打不开
+
+专用登录窗口需要 Microsoft Edge。若系统提示未找到 Edge，可以安装/修复 Edge，或改用浏览器助手扩展、兼容自动读取、手动 Cookie。
 
 ### 任务暂停
 
@@ -338,6 +416,7 @@ PORT=8788
 ## 开发约定
 
 - 不提交 `data/`、`dist/`、`.env.local`、`output/`、日志、Cookie、token 或模型 Key。
+- 浏览器助手扩展只保留本地开发版源码，不提交打包产物、商店私钥或发布账号信息。
 - 行为保持型重构时，优先运行 `npm test`、`npm run typecheck`、`npm run build`。
 - 前端目前没有组件/E2E/视觉测试，改 UI 时需要额外人工验证。
 - 后端公共接口集中在 `src/server/routes/api.ts`，类型合同集中在 `src/shared/types.ts`。
@@ -348,8 +427,9 @@ PORT=8788
 
 - `git status` 没有误加入 `.env.local`、`data/`、`output/`、日志或导出文件。
 - `.env.example` 只包含占位值，不包含真实 Cookie 或 API Key。
-- 运行数据目录 `data/` 没有被加入 Git。
+- 运行数据目录 `data/` 没有被加入 Git，尤其是 `data/xhs-login-edge-profile/`。
 - README、测试和文档中的 Key 都是示例值。
+- 浏览器扩展里没有加入远程服务器地址、发布密钥或真实 Cookie。
 - 如修改 AI tools 或写入类接口，必须补充服务端参数校验和测试。
 
 ## License
