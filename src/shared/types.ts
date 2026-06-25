@@ -12,6 +12,15 @@ export type AiReportStatus = "completed" | "failed";
 export type AiArtifactStatus = "completed" | "failed";
 export type AiArtifactSource = "ai" | "local";
 export type AiPromptSource = "default" | "custom";
+export type AiOrchestrationStatus = "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+export type AiOrchestrationStepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
+export type AiOrchestrationStepKey =
+  | "create-search-job"
+  | "wait-notes"
+  | "run-content-planning"
+  | "run-viral-template"
+  | "run-audience-insight"
+  | "summarize";
 export type AiWorkflowKey =
   | "content-planning"
   | "audience-insight"
@@ -280,6 +289,13 @@ export interface AiModelInput {
   maxTokens?: number;
 }
 
+export interface AiModelToolsProbeResult {
+  ok: boolean;
+  supportsTools: boolean;
+  message: string;
+  checkedAt: string;
+}
+
 export interface AiReport {
   id: string;
   jobId: string;
@@ -343,6 +359,7 @@ export interface AiWorkflowRunInput {
   workflowKey: AiWorkflowKey;
   jobId?: string;
   noteId?: string;
+  modelId?: string;
   focus?: string;
 }
 
@@ -377,12 +394,47 @@ export interface AiAssistantChatInput {
   message: string;
   jobId?: string;
   noteId?: string;
+  modelId?: string;
   module?: string;
 }
 
 export interface AiAssistantChatResponse {
   message: AiAssistantMessage;
   artifact?: AiArtifact;
+}
+
+export interface AiOrchestrationStep {
+  key: AiOrchestrationStepKey;
+  title: string;
+  status: AiOrchestrationStepStatus;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  output?: {
+    jobId?: string;
+    noteCount?: number;
+    artifactId?: string;
+  };
+}
+
+export interface AiOrchestration {
+  id: string;
+  instruction: string;
+  keywords: string[];
+  modelId?: string;
+  jobId?: string;
+  steps: AiOrchestrationStep[];
+  status: AiOrchestrationStatus;
+  artifactIds: string[];
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiOrchestrationCreateInput {
+  instruction: string;
+  keywords?: string[];
+  modelId?: string;
 }
 
 export interface ReplyCandidate {

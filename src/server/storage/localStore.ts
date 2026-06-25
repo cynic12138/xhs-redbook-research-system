@@ -6,6 +6,7 @@ import type {
   AiArtifact,
   AiAssistantMessage,
   AiModelConfig,
+  AiOrchestration,
   AiPromptConfig,
   AiReport,
   AuthStatus,
@@ -35,6 +36,7 @@ type CollectionName =
   | "aiReports"
   | "aiArtifacts"
   | "aiPromptConfigs"
+  | "aiOrchestrations"
   | "aiMessages"
   | "replyPlans"
   | "replyActions"
@@ -56,6 +58,7 @@ interface DataShape {
   aiReports: AiReport[];
   aiArtifacts: AiArtifact[];
   aiPromptConfigs: AiPromptConfig[];
+  aiOrchestrations: AiOrchestration[];
   aiMessages: AiAssistantMessage[];
   replyPlans: ReplyPlanRecord[];
   replyActions: ReplyActionRecord[];
@@ -81,6 +84,7 @@ const defaults: DataShape = {
   aiReports: [],
   aiArtifacts: [],
   aiPromptConfigs: [],
+  aiOrchestrations: [],
   aiMessages: [],
   replyPlans: [],
   replyActions: [],

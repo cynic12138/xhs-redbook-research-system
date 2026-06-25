@@ -34,11 +34,12 @@ import {
   Video,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type {
   AiArtifact,
   AiAssistantMessage,
   AiModelConfig,
+  AiOrchestration,
   AiPromptDetail,
   AiPromptInfo,
   AiPromptSource,
@@ -63,6 +64,15 @@ type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "com
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
 type ModelForm = { name: string; provider: string; baseUrl: string; model: string; apiKey: string };
 type ReaderPreview = { kind: "artifact" | "report"; title: string; markdown: string; meta: string[]; exportUrl: string };
+type AssistantNoticeTone = "info" | "warning" | "error" | "progress";
+type AssistantNotice = {
+  key: string;
+  tone: AssistantNoticeTone;
+  title: string;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+};
 
 const emptyModelForm: ModelForm = {
   name: "",
@@ -96,7 +106,7 @@ export function App() {
   const [activeModule, setActiveModule] = useState<ModuleKey>("overview");
   const [auth, setAuth] = useState<AuthStatus>({ connected: false, configured: false });
   const [cookieFields, setCookieFields] = useState({ a1: "", web_session: "", webId: "" });
-  const [keywords, setKeywords] = useState("武汉相亲, 武汉脱单");
+  const [keywords, setKeywords] = useState("");
   const [sort, setSort] = useState<SearchSort>("popular");
   const [noteType, setNoteType] = useState<NoteTypeFilter>("all");
   const [pages, setPages] = useState(1);
@@ -122,10 +132,14 @@ export function App() {
   const [selectedPrompt, setSelectedPrompt] = useState<AiPromptDetail | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
   const [aiArtifacts, setAiArtifacts] = useState<AiArtifact[]>([]);
+  const [aiOrchestrations, setAiOrchestrations] = useState<AiOrchestration[]>([]);
+  const [activeOrchestrationId, setActiveOrchestrationId] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantWidth, setAssistantWidth] = useState(() => readStoredNumber("xhs.aiDrawerWidth", 420));
   const [assistantMessages, setAssistantMessages] = useState<AiAssistantMessage[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState(() => readStoredString("xhs.selectedModelId", ""));
+  const [assistantGuideDismissed, setAssistantGuideDismissed] = useState(() => localStorage.getItem("xhs.assistantGuideDismissed") === "true");
   const [selectedWorkflow, setSelectedWorkflow] = useState<AiWorkflowKey>("content-planning");
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [selectedReportId, setSelectedReportId] = useState("");
@@ -145,11 +159,14 @@ export function App() {
   const [modelMessages, setModelMessages] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [assistantError, setAssistantError] = useState("");
 
   const activeJob = jobs.find((job) => job.id === activeJobId);
   const contextJob = isContextJob(activeJob) ? activeJob : undefined;
   const contextJobId = contextJob?.id ?? "";
   const selected = notes.find((note) => note.id === selectedId) ?? notes[0] ?? null;
+  const defaultModel = aiModels.find((model) => model.isDefault) ?? aiModels[0];
+  const selectedModel = aiModels.find((model) => model.id === selectedModelId) ?? defaultModel;
 
   const refreshCore = useCallback(async () => {
     const [authStatus, allJobs, caps, models, workflows, prompts] = await Promise.all([
@@ -168,8 +185,11 @@ export function App() {
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
     setError(clearRecoveredBackendError);
-    if (!activeJobId && sortedJobs[0]) {
-      setActiveJobId(sortedJobs[0].id);
+    if (!activeJobId) {
+      const defaultJob = sortedJobs.find((job) => isContextJob(job)) ?? sortedJobs[0];
+      if (defaultJob) {
+        setActiveJobId(defaultJob.id);
+      }
     }
   }, [activeJobId]);
 
@@ -216,6 +236,10 @@ export function App() {
     setAiArtifacts(artifacts);
   }, [activeJobId]);
 
+  const loadOrchestrations = useCallback(async () => {
+    setAiOrchestrations(await api.listAiOrchestrations());
+  }, []);
+
   const loadPromptDetail = useCallback(async (key: AiWorkflowKey) => {
     const detail = await api.getAiPrompt(key);
     setSelectedPrompt(detail);
@@ -234,7 +258,8 @@ export function App() {
     void loadNotes().catch((err) => setError(err.message));
     void loadAnalytics().catch(() => setAnalytics(null));
     void loadOperations().catch(() => undefined);
-  }, [loadAnalytics, loadNotes, loadOperations]);
+    void loadOrchestrations().catch(() => undefined);
+  }, [loadAnalytics, loadNotes, loadOperations, loadOrchestrations]);
 
   useEffect(() => {
     void loadPromptDetail(selectedPromptKey).catch((err) => setError(err.message));
@@ -257,13 +282,82 @@ export function App() {
       void loadNotes().catch(() => undefined);
       void loadAnalytics().catch(() => undefined);
       void loadOperations().catch(() => undefined);
+      void loadOrchestrations().catch(() => undefined);
     }, 7000);
     return () => clearInterval(timer);
-  }, [loadAnalytics, loadNotes, loadOperations, refreshCore]);
+  }, [loadAnalytics, loadNotes, loadOperations, loadOrchestrations, refreshCore]);
+
+  useEffect(() => {
+    if (!activeOrchestrationId) {
+      return;
+    }
+    let alive = true;
+    let timer: number | undefined;
+    const tick = async () => {
+      try {
+        const orchestration = await api.getAiOrchestration(activeOrchestrationId);
+        if (!alive) return;
+        setAiOrchestrations((items) => upsertById(items, orchestration));
+        if (orchestration.jobId) {
+          setActiveJobId(orchestration.jobId);
+        }
+        if (orchestration.artifactIds.length) {
+          const latestArtifactId = orchestration.artifactIds[orchestration.artifactIds.length - 1] ?? "";
+          setSelectedArtifactId(latestArtifactId);
+          setSelectedReportId("");
+          await loadOperations();
+          if (latestArtifactId) {
+            const artifact = await api.getAiArtifact(latestArtifactId).catch(() => undefined);
+            if (alive && artifact) {
+              setAiArtifacts((items) => [artifact, ...items.filter((item) => item.id !== artifact.id)]);
+            }
+          }
+        }
+        await refreshCore();
+        if (orchestration.status === "completed") {
+          setActiveModule("ai");
+        }
+        if (orchestration.status === "completed" || orchestration.status === "failed" || orchestration.status === "cancelled") {
+          return;
+        }
+        timer = window.setTimeout(tick, 2500);
+      } catch (err) {
+        if (alive) {
+          setAssistantError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    };
+    void tick();
+    return () => {
+      alive = false;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [activeOrchestrationId, loadOperations, refreshCore]);
 
   useEffect(() => {
     localStorage.setItem("xhs.aiDrawerWidth", String(assistantWidth));
   }, [assistantWidth]);
+
+  useEffect(() => {
+    if (!aiModels.length) {
+      setSelectedModelId("");
+      return;
+    }
+    if (selectedModelId && aiModels.some((model) => model.id === selectedModelId)) {
+      return;
+    }
+    setSelectedModelId((aiModels.find((model) => model.isDefault) ?? aiModels[0]).id);
+  }, [aiModels, selectedModelId]);
+
+  useEffect(() => {
+    if (selectedModelId) {
+      localStorage.setItem("xhs.selectedModelId", selectedModelId);
+    } else {
+      localStorage.removeItem("xhs.selectedModelId");
+    }
+  }, [selectedModelId]);
 
   useEffect(() => {
     if (selectedArtifactId && !aiArtifacts.some((artifact) => artifact.id === selectedArtifactId)) {
@@ -295,7 +389,11 @@ export function App() {
     try {
       return await task();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      if (key === "assistant-chat") {
+        setAssistantError(message);
+      }
       return undefined;
     } finally {
       setBusy("");
@@ -458,6 +556,14 @@ export function App() {
     }
   }
 
+  async function probeModelTools(modelId: string) {
+    const result = await run(`tools-probe-${modelId}`, () => api.probeAiModelTools(modelId));
+    if (result) {
+      setModelMessages((messages) => ({ ...messages, [modelId]: { ok: result.ok, message: result.message } }));
+      setError(result.ok ? "" : result.message);
+    }
+  }
+
   async function createReport() {
     if (!contextJobId) {
       setError("当前没有可用于分析的有效任务，请先创建并完成一次关键词抓取。");
@@ -495,6 +601,7 @@ export function App() {
         workflowKey,
         jobId: contextJobId || undefined,
         noteId: selected?.id,
+        modelId: selectedModel?.id,
         focus
       });
       setAiArtifacts((items) => [artifact, ...items.filter((item) => item.id !== artifact.id)]);
@@ -509,6 +616,7 @@ export function App() {
   async function sendAssistantMessage() {
     const content = assistantInput.trim();
     if (!content) return;
+    setAssistantError("");
     const userMessage: AiAssistantMessage = {
       id: `local_${Date.now()}`,
       role: "user",
@@ -517,13 +625,38 @@ export function App() {
     };
     setAssistantMessages((messages) => [...messages, userMessage]);
     setAssistantInput("");
+    if (isControlledOrchestrationRequest(content)) {
+      await run("assistant-chat", async () => {
+        const orchestration = await api.createAiOrchestration({
+          instruction: content,
+          modelId: selectedModel?.id
+        });
+        setAiOrchestrations((items) => upsertById(items, orchestration));
+        setActiveOrchestrationId(orchestration.id);
+        setAssistantMessages((messages) => [
+          ...messages,
+          {
+            id: `orch_msg_${orchestration.id}`,
+            role: "assistant",
+            content: `已创建 AI 编排会话：${orchestration.keywords.join(" / ")}。我会按步骤抓取关键词、等待笔记入库，并生成内容规划、爆款结构和评论需求分析。`,
+            createdAt: new Date().toISOString()
+          }
+        ]);
+        await loadOrchestrations();
+      });
+      return;
+    }
     await run("assistant-chat", async () => {
       const response = await api.assistantChat({
         message: content,
         jobId: contextJobId || undefined,
-        noteId: selected?.id,
+        noteId: contextJobId ? selected?.id : undefined,
+        modelId: selectedModel?.id,
         module: activeModule
       });
+      if (!response.message) {
+        throw new Error("AI 返回内容为空，请稍后重试或切换模型。");
+      }
       setAssistantMessages((messages) => [...messages, response.message]);
       if (response.artifact) {
         setAiArtifacts((items) => [response.artifact as AiArtifact, ...items.filter((item) => item.id !== response.artifact?.id)]);
@@ -577,7 +710,6 @@ export function App() {
   }
 
   const visibleWorkflows = workflowsForModule(aiWorkflows, activeModule);
-  const defaultModel = aiModels.find((model) => model.isDefault) ?? aiModels[0];
   const appStyle = { "--assistant-width": `${assistantWidth}px` } as CSSProperties;
 
   return (
@@ -618,7 +750,10 @@ export function App() {
           moduleLabel={modules.find((item) => item.key === activeModule)?.label ?? "工作台"}
           activeJob={contextJob}
           auth={auth}
-          defaultModel={defaultModel}
+          defaultModel={selectedModel}
+          models={aiModels}
+          selectedModelId={selectedModel?.id ?? ""}
+          setSelectedModelId={setSelectedModelId}
           notesTotal={notesTotal}
           onRefresh={refreshCore}
           onOpenModels={() => setModelSettingsOpen(true)}
@@ -778,6 +913,7 @@ export function App() {
           deleteModel={deleteModel}
           setDefaultModel={setDefaultModel}
           testModel={testModel}
+          probeModelTools={probeModelTools}
           modelMessages={modelMessages}
           busy={busy}
           onClose={() => setModelSettingsOpen(false)}
@@ -795,13 +931,39 @@ export function App() {
         input={assistantInput}
         setInput={setAssistantInput}
         sendMessage={sendAssistantMessage}
+        models={aiModels}
+        selectedModelId={selectedModel?.id ?? ""}
+        setSelectedModelId={setSelectedModelId}
+        guideDismissed={assistantGuideDismissed}
+        dismissGuide={() => {
+          setAssistantGuideDismissed(true);
+          localStorage.setItem("xhs.assistantGuideDismissed", "true");
+        }}
+        activeJob={contextJob}
+        hasContextJob={Boolean(contextJobId)}
+        notesTotal={notesTotal}
+        assistantError={assistantError}
+        orchestrations={aiOrchestrations}
+        activeOrchestrationId={activeOrchestrationId}
+        onOpenModels={() => setModelSettingsOpen(true)}
+        onNewSearch={() => setActiveModule("research")}
+        onOpenJob={(jobId) => {
+          setActiveJobId(jobId);
+          setActiveModule("overview");
+        }}
+        onOpenArtifacts={(artifactId) => {
+          setSelectedArtifactId(artifactId);
+          setSelectedReportId("");
+          setActiveModule("ai");
+        }}
+        onRefresh={refreshCore}
         workflows={visibleWorkflows.length ? visibleWorkflows : aiWorkflows.slice(0, 4)}
         runWorkflow={runWorkflow}
         contextItems={[
           contextJob ? `任务：${jobKeywordLabel(contextJob)}` : "无有效任务",
-          selected ? `笔记：${selected.title}` : "未选择笔记",
+          contextJob && selected ? `笔记：${selected.title}` : "未选择笔记",
           `笔记数：${notesTotal}`,
-          defaultModel ? `模型：${defaultModel.name}` : "未配置模型"
+          selectedModel ? `模型：${selectedModel.name}` : "未配置模型"
         ]}
         busy={busy}
       />
@@ -837,11 +999,40 @@ function ContextBadgeRow({ items }: { items: string[] }) {
   );
 }
 
+function ModelPicker({
+  models,
+  selectedModelId,
+  setSelectedModelId,
+  label
+}: {
+  models: AiModelConfig[];
+  selectedModelId: string;
+  setSelectedModelId: (modelId: string) => void;
+  label: string;
+}) {
+  return (
+    <label className="model-picker">
+      <span>{label}</span>
+      <select value={selectedModelId} onChange={(event) => setSelectedModelId(event.target.value)} disabled={!models.length}>
+        {!models.length && <option value="">未配置模型</option>}
+        {models.map((model) => (
+          <option key={model.id} value={model.id}>
+            {model.name} · {model.model}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function CompactTaskBar({
   moduleLabel,
   activeJob,
   auth,
   defaultModel,
+  models,
+  selectedModelId,
+  setSelectedModelId,
   notesTotal,
   onRefresh,
   onOpenModels,
@@ -853,6 +1044,9 @@ function CompactTaskBar({
   activeJob?: SearchJob;
   auth: AuthStatus;
   defaultModel?: AiModelConfig;
+  models: AiModelConfig[];
+  selectedModelId: string;
+  setSelectedModelId: (modelId: string) => void;
   notesTotal: number;
   onRefresh: () => Promise<void>;
   onOpenModels: () => void;
@@ -883,6 +1077,7 @@ function CompactTaskBar({
           <Settings size={15} />
           模型设置
         </button>
+        <ModelPicker models={models} selectedModelId={selectedModelId} setSelectedModelId={setSelectedModelId} label="模型" />
         <button className="ghost-button compact" onClick={onToggleAssistant}>
           <Sparkles size={15} />
           {assistantOpen ? "收起 AI" : "AI 助手"}
@@ -1119,7 +1314,7 @@ function ResearchPage(props: {
         />
         <label className="field-stack">
           <span>关键词</span>
-          <textarea value={props.keywords} onChange={(event) => props.setKeywords(event.target.value)} placeholder="多个关键词可用逗号或换行分隔" />
+          <textarea value={props.keywords} onChange={(event) => props.setKeywords(event.target.value)} placeholder="推荐候选词：武汉相亲、武汉脱单。输入后才会抓取，可用逗号或换行分隔。" />
         </label>
         <div className="form-grid">
           <Select label="排序" value={props.sort} onChange={(value) => props.setSort(value as SearchSort)} options={[["popular", "热门"], ["general", "综合"], ["latest", "最新"]]} />
@@ -2202,6 +2397,22 @@ function AiAssistantDrawer({
   input,
   setInput,
   sendMessage,
+  models,
+  selectedModelId,
+  setSelectedModelId,
+  guideDismissed,
+  dismissGuide,
+  activeJob,
+  hasContextJob,
+  notesTotal,
+  assistantError,
+  orchestrations,
+  activeOrchestrationId,
+  onOpenModels,
+  onNewSearch,
+  onOpenJob,
+  onOpenArtifacts,
+  onRefresh,
   workflows,
   runWorkflow,
   contextItems,
@@ -2215,6 +2426,22 @@ function AiAssistantDrawer({
   input: string;
   setInput: (value: string) => void;
   sendMessage: () => Promise<void>;
+  models: AiModelConfig[];
+  selectedModelId: string;
+  setSelectedModelId: (modelId: string) => void;
+  guideDismissed: boolean;
+  dismissGuide: () => void;
+  activeJob?: SearchJob;
+  hasContextJob: boolean;
+  notesTotal: number;
+  assistantError: string;
+  orchestrations: AiOrchestration[];
+  activeOrchestrationId: string;
+  onOpenModels: () => void;
+  onNewSearch: () => void;
+  onOpenJob: (jobId: string) => void;
+  onOpenArtifacts: (artifactId: string) => void;
+  onRefresh: () => Promise<void>;
   workflows: AiWorkflowDefinition[];
   runWorkflow: (workflowKey: AiWorkflowKey) => Promise<void>;
   contextItems: string[];
@@ -2238,48 +2465,175 @@ function AiAssistantDrawer({
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
+  const handleInputKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (input.trim() && busy !== "assistant-chat") {
+        void sendMessage();
+      }
+    }
+  };
+  const notices: AssistantNotice[] = [];
+  if (assistantError) {
+    notices.push({
+      key: "assistant-error",
+      tone: "error",
+      title: "AI 调用失败",
+      message: assistantError,
+      actionLabel: "切换模型",
+      onAction: onOpenModels
+    });
+  }
+  if (busy === "assistant-chat") {
+    notices.push({
+      key: "assistant-generating",
+      tone: "progress",
+      title: "AI 正在生成",
+      message: "请稍候，生成完成前会暂时禁用重复发送。"
+    });
+  }
+  if (!models.length) {
+    notices.push({
+      key: "no-model",
+      tone: "warning",
+      title: "尚未配置 AI 模型",
+      message: "当前仍可发送问题，但只会使用本地规则版结果。",
+      actionLabel: "配置模型",
+      onAction: onOpenModels
+    });
+  }
+  if (!hasContextJob) {
+    notices.push({
+      key: "no-job",
+      tone: "info",
+      title: "当前无有效任务",
+      message: "本次提问不会引用历史任务。可新建搜索或直接询问通用运营问题。",
+      actionLabel: "新建搜索",
+      onAction: onNewSearch
+    });
+  } else if (activeJob?.status === "running") {
+    notices.push({
+      key: "job-running",
+      tone: "progress",
+      title: "任务抓取中",
+      message: `已完成 ${activeJob.progress.done}/${activeJob.progress.total}，待处理 ${activeJob.progress.pending}，已入库笔记 ${notesTotal} 条。`,
+      actionLabel: "刷新进度",
+      onAction: () => void onRefresh()
+    });
+  } else if (notesTotal === 0) {
+    notices.push({
+      key: "no-notes",
+      tone: "warning",
+      title: "当前任务暂无入库笔记",
+      message: "AI 暂时缺少可分析样本，可以等待抓取完成或切换任务。",
+      actionLabel: "刷新",
+      onAction: () => void onRefresh()
+    });
+  }
+  const activeOrchestration =
+    orchestrations.find((item) => item.id === activeOrchestrationId) ??
+    orchestrations.find((item) => item.status === "running" || item.status === "waiting" || item.status === "queued") ??
+    orchestrations[0];
   return (
     <aside className="assistant-drawer" style={{ width }}>
       <button className="assistant-resizer" onMouseDown={startResize} aria-label="调整 AI 助手宽度">
         <GripVertical size={16} />
       </button>
-      <SectionTitle
-        icon={<Bot size={18} />}
-        title="AI 助手"
-        action={
+      <div className="assistant-header-row">
+        <div className="assistant-heading">
+          <Bot size={18} />
+          <strong>AI 助手</strong>
+        </div>
+        <div className="assistant-header-actions">
+          <ModelPicker models={models} selectedModelId={selectedModelId} setSelectedModelId={setSelectedModelId} label="模型" />
           <button className="ghost-button compact" onClick={onClose} aria-label="关闭 AI 助手">
             <X size={14} />
             收起
           </button>
-        }
-      />
+        </div>
+      </div>
       <ContextBadgeRow items={contextItems} />
-      <div className="assistant-quick">
-        {workflows.slice(0, 6).map((workflow) => (
-          <button key={workflow.key} className="ghost-button compact" onClick={() => void runWorkflow(workflow.key)} disabled={busy === `workflow-${workflow.key}`}>
-            {workflow.title}
-          </button>
-        ))}
+      {(notices.length > 0 || !guideDismissed) && (
+        <div className="assistant-status-stack">
+          {notices.map((notice) => <AssistantStateNotice key={notice.key} notice={notice} />)}
+          {!guideDismissed && (
+            <div className="assistant-guide">
+              <div>
+                <strong>首次使用 AI 助手</strong>
+                <p>有任务时会结合当前任务、笔记和评论回答；无有效任务时只回答通用运营问题，不会自动引用历史任务。</p>
+              </div>
+              <button className="ghost-button compact" onClick={dismissGuide}>知道了</button>
+            </div>
+          )}
+        </div>
+      )}
+      {activeOrchestration && (
+        <div className="assistant-orchestration-slot">
+          <OrchestrationTimeline orchestration={activeOrchestration} onOpenJob={onOpenJob} onOpenArtifacts={onOpenArtifacts} />
+        </div>
+      )}
+      <div className="assistant-body-scroll">
+        <div className="assistant-messages">
+          {messages.map((message) => (
+            <div key={message.id} className={`assistant-message ${message.role}`}>
+              <strong>{message.role === "user" ? "你" : "AI 助手"}</strong>
+              {message.role === "assistant" ? <MarkdownView content={message.content} compact /> : <p>{message.content}</p>}
+            </div>
+          ))}
+          {busy === "assistant-chat" && messages[messages.length - 1]?.role !== "assistant" && (
+            <div className="assistant-message assistant pending" aria-live="polite">
+              <strong>AI 助手</strong>
+              <p>
+                <Loader2 className="spin" size={14} />
+                正在生成回复...
+              </p>
+            </div>
+          )}
+          {!messages.length && (
+            <div className="assistant-welcome-card">
+              <div>
+                <strong>可以这样开始</strong>
+                <p>直接提问，或让助手串联“抓取关键词 → 等待笔记入库 → 生成分析产物”。</p>
+              </div>
+              <div className="assistant-example-list">
+                <button type="button" onClick={() => setInput("抓取关键词 [在这里输入你的关键词]，并生成话题机会、爆款结构、评论需求、可执行选题")}>
+                  抓取关键词并分析
+                </button>
+                <button type="button" onClick={() => setInput("基于当前任务，给我下一步最值得做的内容策划方向")}>
+                  推荐下一步动作
+                </button>
+                <button type="button" onClick={() => setInput("帮我总结当前评论里的用户痛点和选题机会")}>
+                  分析评论需求
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="assistant-messages">
-        {messages.map((message) => (
-          <div key={message.id} className={`assistant-message ${message.role}`}>
-            <strong>{message.role === "user" ? "你" : "AI 助手"}</strong>
-            {message.role === "assistant" ? <MarkdownView content={message.content} compact /> : <p>{message.content}</p>}
+      {workflows.length > 0 && (
+        <section className="assistant-next-actions" aria-label="AI 建议动作">
+          <div className="assistant-next-actions-head">
+            <span>建议下一步</span>
+            <small>点击后使用当前上下文生成产物</small>
           </div>
-        ))}
-        {busy === "assistant-chat" && messages[messages.length - 1]?.role !== "assistant" && (
-          <div className="assistant-message assistant pending" aria-live="polite">
-            <strong>AI 助手</strong>
-            <p>
-              <Loader2 className="spin" size={14} />
-              正在生成回复...
-            </p>
+          <div className="assistant-suggestion-row">
+            {workflows.slice(0, 6).map((workflow) => (
+              <button
+                key={workflow.key}
+                className="assistant-suggestion-card"
+                onClick={() => void runWorkflow(workflow.key)}
+                disabled={busy === `workflow-${workflow.key}`}
+                title={workflow.description}
+              >
+                {busy === `workflow-${workflow.key}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                <span>{workflow.title}</span>
+                <small>{workflow.description}</small>
+              </button>
+            ))}
           </div>
-        )}
-        {!messages.length && <EmptyState text="可以询问选题、受众、竞品、爆款拆解或评论运营建议" />}
-      </div>
-      <div className="assistant-input">
+        </section>
+      )}
+      <div className="assistant-input assistant-composer" onKeyDown={handleInputKeyDown}>
         <label className="sr-only" htmlFor="assistant-input">AI 助手输入</label>
         <textarea id="assistant-input" value={input} onChange={(event) => setInput(event.target.value)} placeholder="问 AI：基于当前任务，我下一步该做什么？" />
         <button className="primary-button full" onClick={() => void sendMessage()} disabled={busy === "assistant-chat" || !input.trim()}>
@@ -2288,6 +2642,68 @@ function AiAssistantDrawer({
         </button>
       </div>
     </aside>
+  );
+}
+
+function AssistantStateNotice({ notice }: { notice: AssistantNotice }) {
+  return (
+    <div className={`assistant-state ${notice.tone}`}>
+      <div>
+        <strong>{notice.title}</strong>
+        <p>{notice.message}</p>
+      </div>
+      {notice.actionLabel && notice.onAction && (
+        <button className="ghost-button compact" onClick={notice.onAction}>
+          {notice.actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function OrchestrationTimeline({
+  orchestration,
+  onOpenJob,
+  onOpenArtifacts
+}: {
+  orchestration: AiOrchestration;
+  onOpenJob: (jobId: string) => void;
+  onOpenArtifacts: (artifactId: string) => void;
+}) {
+  return (
+    <section className="orchestration-timeline" aria-label="AI 编排进度">
+      <div className="orchestration-head">
+        <div>
+          <strong>{orchestration.keywords.join(" / ") || "AI 编排任务"}</strong>
+          <span>{orchestrationStatusLabel(orchestration.status)}</span>
+        </div>
+        <span className={`orchestration-status ${orchestration.status}`}>{orchestrationStatusLabel(orchestration.status)}</span>
+        <div className="button-row">
+          {orchestration.jobId && (
+            <button className="ghost-button compact" onClick={() => onOpenJob(orchestration.jobId!)}>
+              查看任务
+            </button>
+          )}
+          {orchestration.artifactIds.length > 0 && (
+            <button className="ghost-button compact" onClick={() => onOpenArtifacts(orchestration.artifactIds[orchestration.artifactIds.length - 1]!)}>
+              打开产物
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="timeline-steps">
+        {orchestration.steps.map((step) => (
+          <div key={step.key} className={`orchestration-step ${step.status}`}>
+            <span className="orchestration-dot" />
+            <div>
+              <strong>{step.title}</strong>
+              <p>{step.status === "failed" ? step.error || "执行失败" : step.status}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {orchestration.error && <p className="orchestration-error">{orchestration.error}</p>}
+    </section>
   );
 }
 
@@ -2345,6 +2761,7 @@ function ModelSettingsDrawer(props: {
   deleteModel: (modelId: string) => Promise<void>;
   setDefaultModel: (modelId: string) => Promise<void>;
   testModel: (modelId: string) => Promise<void>;
+  probeModelTools: (modelId: string) => Promise<void>;
   modelMessages: Record<string, { ok: boolean; message: string }>;
   busy: string;
   onClose: () => void;
@@ -2446,6 +2863,10 @@ function ModelSettingsDrawer(props: {
                   <button className="ghost-button compact" onClick={() => void props.testModel(model.id)} disabled={props.busy === `test-${model.id}`}>
                     {props.busy === `test-${model.id}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
                     测试
+                  </button>
+                  <button className="ghost-button compact" onClick={() => void props.probeModelTools(model.id)} disabled={props.busy === `tools-probe-${model.id}`}>
+                    {props.busy === `tools-probe-${model.id}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                    工具检测
                   </button>
                   <button className="ghost-button compact danger" onClick={() => void props.deleteModel(model.id)} disabled={props.busy === `delete-model-${model.id}`}>
                     {props.busy === `delete-model-${model.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
@@ -2905,8 +3326,21 @@ function readStoredNumber(key: string, fallback: number): number {
   return Number.isFinite(value) ? Math.min(640, Math.max(360, value)) : fallback;
 }
 
+function readStoredString(key: string, fallback: string): string {
+  return localStorage.getItem(key) || fallback;
+}
+
 function isAiWorkflowKey(value: AiArtifact["workflowKey"]): value is AiWorkflowKey {
   return value !== "assistant";
+}
+
+function isControlledOrchestrationRequest(content: string): boolean {
+  const text = content.trim();
+  return /抓取|搜索/.test(text) && /关键词/.test(text) && /话题|机会|爆款|评论|选题|分析/.test(text);
+}
+
+function upsertById<T extends { id: string }>(items: T[], next: T): T[] {
+  return [next, ...items.filter((item) => item.id !== next.id)];
 }
 
 function readStoredPosition(key: string, fallback: { x: number; y: number }): { x: number; y: number } {
@@ -2936,6 +3370,15 @@ function statusLabel(status: RedbookCapability["status"]): string {
   if (status === "partial") return "部分接入";
   if (status === "guarded") return "需确认";
   return "规划中";
+}
+
+function orchestrationStatusLabel(status: AiOrchestration["status"]): string {
+  if (status === "queued") return "排队中";
+  if (status === "running") return "执行中";
+  if (status === "waiting") return "等待数据";
+  if (status === "completed") return "已完成";
+  if (status === "failed") return "失败";
+  return "已取消";
 }
 
 function formatBreakerReason(reason: string): string {

@@ -41,6 +41,8 @@ import {
   testAiModel,
   updateAiModel
 } from "../services/aiService.js";
+import { createAiOrchestrationWithToolsFallback, probeAiModelTools } from "../services/aiToolCallingService.js";
+import { getAiOrchestration, listAiOrchestrations } from "../services/aiOrchestratorService.js";
 
 export const api = Router();
 startReplyWorker();
@@ -76,6 +78,7 @@ const aiWorkflowInput = z.object({
   workflowKey: z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis"]),
   jobId: z.string().optional(),
   noteId: z.string().optional(),
+  modelId: z.string().optional(),
   focus: z.string().optional()
 });
 
@@ -83,8 +86,22 @@ const aiAssistantInput = z.object({
   message: z.string().min(1),
   jobId: z.string().optional(),
   noteId: z.string().optional(),
+  modelId: z.string().optional(),
   module: z.string().optional()
 });
+
+const aiOrchestrationInput = z
+  .object({
+    instruction: z.string().optional(),
+    message: z.string().optional(),
+    keywords: z.array(z.string()).optional(),
+    modelId: z.string().optional()
+  })
+  .transform((value) => ({
+    instruction: value.instruction ?? value.message ?? "",
+    keywords: value.keywords,
+    modelId: value.modelId
+  }));
 
 const aiPromptKey = z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis"]);
 
@@ -315,6 +332,14 @@ api.post("/ai/models/test", async (req, res, next) => {
   }
 });
 
+api.post("/ai/models/:id/tools-probe", async (req, res, next) => {
+  try {
+    res.json(await probeAiModelTools(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
 api.get("/ai/workflows", (_req, res) => {
   res.json(listAiWorkflows());
 });
@@ -375,6 +400,27 @@ api.post("/ai/assistant/chat", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+api.post("/ai/orchestrations", async (req, res, next) => {
+  try {
+    res.status(201).json(await createAiOrchestrationWithToolsFallback(aiOrchestrationInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/ai/orchestrations", async (_req, res) => {
+  res.json(await listAiOrchestrations());
+});
+
+api.get("/ai/orchestrations/:id", async (req, res) => {
+  const orchestration = await getAiOrchestration(req.params.id);
+  if (!orchestration) {
+    res.status(404).json({ error: "AI orchestration not found" });
+    return;
+  }
+  res.json(orchestration);
 });
 
 api.get("/ai/artifacts", async (req, res) => {

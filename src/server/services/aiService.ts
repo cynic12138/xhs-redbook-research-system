@@ -212,6 +212,7 @@ export async function runAiWorkflow(input: AiWorkflowRunInput): Promise<AiArtifa
     noteId: input.noteId,
     title,
     prompt: prompt.prompt,
+    modelId: input.modelId,
     promptKey: prompt.promptKey,
     promptTitle: prompt.promptTitle,
     promptSource: prompt.promptSource,
@@ -229,7 +230,7 @@ export async function chatWithAssistant(input: AiAssistantChatInput): Promise<Ai
     content: input.message,
     createdAt: now
   };
-  const context = await buildAiContext(input.jobId, input.noteId);
+  const context = input.jobId ? await buildAiContext(input.jobId, input.noteId) : emptyAiContext();
   const prompt = buildAssistantPrompt(input.message, context, input.module);
   const artifact = await createArtifact({
     workflowKey: "assistant",
@@ -237,6 +238,7 @@ export async function chatWithAssistant(input: AiAssistantChatInput): Promise<Ai
     noteId: input.noteId,
     title: "AI 助手回复",
     prompt,
+    modelId: input.modelId,
     promptKey: "assistant",
     promptTitle: "AI 助手",
     promptSource: "default",
@@ -442,6 +444,15 @@ interface AiContext {
   authorPosts: AuthorPostRecord[];
 }
 
+function emptyAiContext(): AiContext {
+  return {
+    notes: [],
+    comments: [],
+    authors: [],
+    authorPosts: []
+  };
+}
+
 async function buildAiContext(jobId?: string, noteId?: string): Promise<AiContext> {
   const [jobs, comments, authors, authorPosts] = await Promise.all([
     store.read("searchJobs"),
@@ -505,10 +516,11 @@ async function createArtifact(input: {
   promptSource?: AiArtifact["promptSource"];
   promptVersion?: string;
   contextSummary?: string;
+  modelId?: string;
   fallback: string;
 }): Promise<AiArtifact> {
   const models = await store.read("aiModels");
-  const model = models.find((item) => item.isDefault) ?? models[0];
+  const model = (input.modelId ? models.find((item) => item.id === input.modelId) : undefined) ?? models.find((item) => item.isDefault) ?? models[0];
   let markdown = input.fallback;
   let source: AiArtifact["source"] = "local";
   let status: AiArtifact["status"] = "completed";

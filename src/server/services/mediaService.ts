@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { NoteRecord } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
 import { store } from "../storage/localStore.js";
@@ -219,7 +220,7 @@ async function pipeRemoteMedia(remote: globalThis.Response, res: Response): Prom
     return;
   }
 
-  Readable.fromWeb(remote.body).pipe(res);
+  Readable.fromWeb(remote.body as unknown as NodeReadableStream).pipe(res);
 }
 
 function sendBuffer(res: Response, body: Buffer, contentType: string, cacheHit: boolean): void {
