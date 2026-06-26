@@ -67,6 +67,62 @@ describe("browser auth API routes", () => {
     vi.restoreAllMocks();
   });
 
+  it("marks stored auth as needing verification after server start", async () => {
+    vi.doMock("../src/server/utils/env.js", () => ({
+      getCookieString: vi.fn(async () => "a1=old; web_session=old"),
+      saveCookieString: vi.fn()
+    }));
+    vi.doMock("../src/server/storage/localStore.js", () => ({
+      store: {
+        read: vi.fn(async (name: string) => {
+          if (name === "authStatus") {
+            return { connected: true, configured: true, checkedAt: "2000-01-01T00:00:00.000Z" };
+          }
+          if (name === "searchJobs") {
+            return [];
+          }
+          return { connected: false, configured: false };
+        }),
+        write: vi.fn(),
+        update: vi.fn()
+      }
+    }));
+    const app = await createApp();
+    const response = await requestJson(app, "/api/auth/status", { method: "GET" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      connected: false,
+      configured: true,
+      needsVerification: true
+    });
+  });
+
+  it("verifies auth as unconfigured when no local cookie exists", async () => {
+    const storeWrite = vi.fn();
+    vi.doMock("../src/server/utils/env.js", () => ({
+      getCookieString: vi.fn(async () => undefined),
+      saveCookieString: vi.fn()
+    }));
+    vi.doMock("../src/server/storage/localStore.js", () => ({
+      store: {
+        read: vi.fn(async () => ({ connected: false, configured: false })),
+        write: storeWrite,
+        update: vi.fn()
+      }
+    }));
+    const app = await createApp();
+    const response = await requestJson(app, "/api/auth/verify", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      connected: false,
+      configured: false,
+      needsVerification: false
+    });
+    expect(storeWrite).toHaveBeenCalledWith("authStatus", expect.objectContaining({ connected: false, configured: false }));
+  });
+
   it("starts a dedicated browser auth session", async () => {
     vi.doMock("../src/server/services/browserAuthService.js", () => ({
       browserAuth: {

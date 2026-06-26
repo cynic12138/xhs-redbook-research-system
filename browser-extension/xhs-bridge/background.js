@@ -33,7 +33,7 @@ async function handleCommand(action, payload = {}) {
   if (action === "openUrl") {
     return openUrl(payload.url);
   }
-  throw new Error(`Unsupported bridge action: ${action}`);
+  throw new Error(`不支持的浏览器助手操作：${action}`);
 }
 
 async function syncCookie() {
@@ -55,10 +55,10 @@ async function syncCookie() {
     const foundNames = [...new Set(cookies.map((cookie) => cookie.name))].sort();
     const pageHint = formatPageAuthHint(pageAuth);
     throw new Error(
-      `Missing required XHS cookies: ${missingKeys.join(", ")}. ` +
-        `Found cookie names: ${foundNames.length ? foundNames.join(", ") : "none"}. ` +
+      `缺少必要的小红书 Cookie：${missingKeys.join(", ")}。` +
+        `已读取到的 Cookie 名称：${foundNames.length ? foundNames.join(", ") : "无"}。` +
         `${pageHint} ` +
-        "Please confirm this exact browser profile is logged in to xiaohongshu.com, refresh the Xiaohongshu tab, then try again."
+        "请确认当前浏览器已登录小红书，刷新小红书页面后再重试。"
     );
   }
 
@@ -102,7 +102,7 @@ async function readPageAuthCandidates() {
     .filter((tab) => typeof tab.id === "number")
     .sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
   if (!candidates.length) {
-    return { ok: false, error: "No open Xiaohongshu tab was found." };
+    return { ok: false, error: "没有找到已打开的小红书页面。" };
   }
 
   const errors = [];
@@ -120,7 +120,7 @@ async function readPageAuthCandidates() {
       errors.push(error instanceof Error ? error.message : String(error));
     }
   }
-  return { ok: false, error: errors[0] ?? "Unable to inspect the Xiaohongshu page." };
+  return { ok: false, error: errors[0] ?? "无法检测小红书页面登录态。" };
 }
 
 function collectPageAuthFromPage() {
@@ -197,25 +197,25 @@ function collectPageAuthFromPage() {
 
 function formatPageAuthHint(pageAuth) {
   if (!pageAuth) {
-    return "Page storage was not inspected.";
+    return "未检测页面存储。";
   }
   if (!pageAuth.ok) {
-    return `Page storage check failed: ${pageAuth.error ?? "unknown error"}.`;
+    return `页面存储检测失败：${pageAuth.error ?? "未知错误"}。`;
   }
   const cookieNames = pageAuth.cookieNames?.length ? pageAuth.cookieNames.join(", ") : "none";
   const storageKeys = pageAuth.storageKeys?.length ? pageAuth.storageKeys.slice(0, 12).join(", ") : "none";
   const discovered = Object.keys(pageAuth.values ?? {}).sort();
   return (
-    `Page cookie names: ${cookieNames}. ` +
-    `Page storage keys checked: ${storageKeys}${pageAuth.storageKeys?.length > 12 ? ", ..." : ""}. ` +
-    `Auth values discovered from page context: ${discovered.length ? discovered.join(", ") : "none"}.`
+    `页面 Cookie 名称：${cookieNames}。` +
+    `已检查的页面存储键：${storageKeys}${pageAuth.storageKeys?.length > 12 ? ", ..." : ""}。` +
+    `页面上下文发现的登录字段：${discovered.length ? discovered.join(", ") : "无"}。`
   );
 }
 
 async function openUrl(url) {
   const parsed = new URL(String(url));
   if (parsed.protocol !== "https:" || !parsed.hostname.endsWith("xiaohongshu.com")) {
-    throw new Error("Only xiaohongshu.com URLs can be opened by this bridge.");
+    throw new Error("浏览器助手只能打开 xiaohongshu.com 链接。");
   }
   const tab = await chromeCall(chrome.tabs.create, { url: parsed.toString(), active: true });
   return {
@@ -223,7 +223,7 @@ async function openUrl(url) {
     mode: "current-browser",
     url: parsed.toString(),
     tabId: tab.id,
-    message: "Opened in the current browser."
+    message: "已在当前浏览器打开。"
   };
 }
 

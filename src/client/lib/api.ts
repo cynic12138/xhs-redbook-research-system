@@ -65,6 +65,7 @@ export async function apiDelete<T>(path: string): Promise<T> {
 
 export const api = {
   authStatus: () => apiGet<AuthStatus>("/api/auth/status"),
+  verifyAuth: () => apiPost<AuthStatus>("/api/auth/verify"),
   browserBridgeStatus: () => apiGet<BrowserBridgeStatus>("/api/auth/extension/status"),
   saveCookie: (fields: CookieFields) => apiPost<AuthStatus>("/api/auth/cookie", fields),
   autoReadCookie: () => apiPost<AuthStatus>("/api/auth/browser"),

@@ -35,6 +35,8 @@ export interface AuthStatus {
   user?: UserSummary;
   error?: string;
   checkedAt?: string;
+  needsVerification?: boolean;
+  message?: string;
 }
 
 export interface UserSummary {
@@ -68,8 +70,10 @@ export interface BrowserBridgeStatus {
   browser: BrowserBridgeBrowser;
   extensionVersion?: string;
   lastSeenAt?: string;
+  lastSyncAt?: string;
   permissionStatus: BrowserBridgePermissionStatus;
   message?: string;
+  diagnostic?: string;
 }
 
 export type BrowserOpenMode = "auto" | "current-browser" | "dedicated-edge";
