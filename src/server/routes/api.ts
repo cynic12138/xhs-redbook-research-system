@@ -48,6 +48,8 @@ import { getAiOrchestration, listAiOrchestrations } from "../services/aiOrchestr
 export const api = Router();
 startReplyWorker();
 
+const serverStartedAt = nowIso();
+
 const jobInput = z.object({
   keywords: z.array(z.string()).min(1),
   sort: z.enum(["general", "popular", "latest"]).default("general"),
@@ -189,8 +191,10 @@ api.post("/auth/extension-cookie", async (req, res, next) => {
         browser: body.browser,
         extensionVersion: body.extensionVersion,
         lastSeenAt: nowIso(),
+        lastSyncAt: nowIso(),
         permissionStatus: body.permissionStatus,
-        message: "浏览器助手已同步当前浏览器登录态。"
+        message: "浏览器助手已同步当前浏览器登录态。",
+        diagnostic: ""
       })
     ]);
     res.json(status);
@@ -258,11 +262,54 @@ api.get("/auth/status", async (_req, res) => {
   const configured = Boolean(await getCookieString());
   const latestAuthRisk = await latestAuthRiskAfter(stored.checkedAt);
   const error = latestAuthRisk ?? stored.error;
-  const status = { ...stored, configured, error, connected: Boolean(stored.connected && configured && !error) };
+  const needsVerification = Boolean(configured && (!stored.checkedAt || stored.checkedAt < serverStartedAt));
+  const status = {
+    ...stored,
+    configured,
+    error,
+    needsVerification,
+    message: needsVerification ? "已检测到本地 Cookie，等待重新验证。" : stored.message,
+    connected: Boolean(stored.connected && configured && !error && !needsVerification)
+  };
   if (latestAuthRisk) {
     await store.write("authStatus", { ...status, connected: false, configured });
   }
   res.json(status);
+});
+
+api.post("/auth/verify", async (_req, res) => {
+  const cookieString = await getCookieString();
+  if (!cookieString) {
+    const status = {
+      connected: false,
+      configured: false,
+      checkedAt: nowIso(),
+      needsVerification: false,
+      message: "未检测到本地 Cookie。"
+    };
+    await store.write("authStatus", status);
+    res.json(status);
+    return;
+  }
+
+  try {
+    const user = await redbook.verifyCookie(cookieString);
+    const status = { connected: true, configured: true, user, checkedAt: nowIso(), needsVerification: false };
+    await store.write("authStatus", status);
+    res.json(status);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = {
+      connected: false,
+      configured: true,
+      error: message,
+      checkedAt: nowIso(),
+      needsVerification: false,
+      message: "本地 Cookie 已失效或缺失，请重新同步登录态。"
+    };
+    await store.write("authStatus", status);
+    res.json(status);
+  }
 });
 
 api.post("/search-jobs", async (req, res, next) => {

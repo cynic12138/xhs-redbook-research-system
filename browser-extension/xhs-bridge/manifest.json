@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "XHS Ops Bridge",
-  "description": "Sync the current browser Xiaohongshu login cookies to the local XHS ops app.",
+  "name": "小红书运营台助手",
+  "description": "将当前浏览器的小红书登录态同步到本地小红书运营台。",
   "version": "0.1.2",
   "permissions": ["cookies", "tabs", "storage", "scripting"],
   "host_permissions": [
@@ -22,7 +22,7 @@
     }
   ],
   "action": {
-    "default_title": "XHS Ops Bridge",
+    "default_title": "小红书运营台助手",
     "default_popup": "popup.html"
   }
 }

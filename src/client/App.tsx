@@ -107,6 +107,7 @@ function clearRecoveredBackendError(message: string): string {
 export function App() {
   const [activeModule, setActiveModule] = useState<ModuleKey>("overview");
   const [auth, setAuth] = useState<AuthStatus>({ connected: false, configured: false });
+  const [authVerifyAttempted, setAuthVerifyAttempted] = useState(false);
   const [cookieFields, setCookieFields] = useState({ a1: "", web_session: "", webId: "" });
   const [browserBridge, setBrowserBridge] = useState<BrowserBridgeStatus>({ connected: false, browser: "unknown", permissionStatus: "unknown" });
   const [keywords, setKeywords] = useState("");
@@ -117,6 +118,7 @@ export function App() {
   const [concurrency, setConcurrency] = useState(2);
   const [jobs, setJobs] = useState<SearchJob[]>([]);
   const [activeJobId, setActiveJobId] = useState("");
+  const [showHistoryData, setShowHistoryData] = useState(false);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [notePage, setNotePage] = useState(1);
   const [notePageSize] = useState(20);
@@ -188,17 +190,18 @@ export function App() {
     setAiModels(models);
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
-    setBrowserBridge(bridgeStatus);
+    setBrowserBridge({ ...bridgeStatus, connected: false });
     setError(clearRecoveredBackendError);
-    if (!activeJobId) {
-      const defaultJob = sortedJobs.find((job) => isContextJob(job)) ?? sortedJobs[0];
-      if (defaultJob) {
-        setActiveJobId(defaultJob.id);
-      }
-    }
   }, [activeJobId]);
 
   const loadNotes = useCallback(async () => {
+    if (!activeJobId && !showHistoryData) {
+      setNotes([]);
+      setNotesTotal(0);
+      setNotesTotalPages(1);
+      setSelectedId("");
+      return;
+    }
     const params = new URLSearchParams();
     if (activeJobId) params.set("jobId", activeJobId);
     if (query.trim()) params.set("q", query.trim());
@@ -218,7 +221,7 @@ export function App() {
     if (!data.items.length) {
       setSelectedId("");
     }
-  }, [activeJobId, authorQuery, minLikes, notePage, notePageSize, query, resultSort, resultType, selectedId]);
+  }, [activeJobId, authorQuery, minLikes, notePage, notePageSize, query, resultSort, resultType, selectedId, showHistoryData]);
 
   const loadAnalytics = useCallback(async () => {
     if (!activeJobId) {
@@ -258,6 +261,16 @@ export function App() {
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
   }, [refreshCore]);
+
+  useEffect(() => {
+    if (!auth.needsVerification || authVerifyAttempted) {
+      return;
+    }
+    setAuthVerifyAttempted(true);
+    void run("auth-verify", async () => {
+      setAuth(await api.verifyAuth());
+    });
+  }, [auth.needsVerification, authVerifyAttempted]);
 
   useEffect(() => {
     void loadNotes().catch((err) => setError(err.message));
@@ -318,6 +331,7 @@ export function App() {
       setAiOrchestrations((items) => upsertById(items, orchestration));
       if (orchestration.jobId) {
         setActiveJobId(orchestration.jobId);
+        setShowHistoryData(false);
       }
       if (orchestration.artifactIds.length) {
         const latestArtifactId = orchestration.artifactIds[orchestration.artifactIds.length - 1] ?? "";
@@ -455,13 +469,34 @@ export function App() {
   }
 
   async function refreshBrowserBridge() {
+    setBusy("bridge-check");
+    setError("");
     const savedStatus = await api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus);
-    const runtimeStatus = await callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000).catch(() => undefined);
-    setBrowserBridge(runtimeStatus ? { ...savedStatus, ...runtimeStatus, connected: true } : savedStatus);
+    try {
+      const runtimeStatus = await callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000);
+      setBrowserBridge({
+        ...savedStatus,
+        ...runtimeStatus,
+        connected: true,
+        message: `已检测到${runtimeStatus.browser === "edge" ? " Edge" : runtimeStatus.browser === "chrome" ? " Chrome" : ""} 浏览器助手。`
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setBrowserBridge({
+        ...savedStatus,
+        connected: false,
+        message: "未检测到浏览器助手扩展。",
+        diagnostic: `请确认已在当前浏览器加载 browser-extension/xhs-bridge，并刷新本地运营台页面。${message ? ` (${message})` : ""}`
+      });
+    } finally {
+      setBusy("");
+    }
   }
 
   async function syncBrowserBridgeCookie() {
-    await run("auth", async () => {
+    setBusy("auth");
+    setError("");
+    try {
       const status = await callBrowserBridge<AuthStatus>("syncCookie", undefined, 15000);
       setAuth(status);
       setCookieFields({ a1: "", web_session: "", webId: "" });
@@ -469,11 +504,23 @@ export function App() {
         ...current,
         connected: true,
         lastSeenAt: new Date().toISOString(),
+        lastSyncAt: new Date().toISOString(),
         permissionStatus: "granted",
-        message: "已同步当前浏览器的小红书登录态。"
+        message: "已同步并验证当前浏览器的小红书登录态。",
+        diagnostic: ""
       }));
       await refreshCore();
-    });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setBrowserBridge((current) => ({
+        ...current,
+        message: "同步登录态失败。",
+        diagnostic: message
+      }));
+    } finally {
+      setBusy("");
+    }
   }
 
   async function openOriginalUrl(url: string) {
@@ -496,6 +543,7 @@ export function App() {
         .filter(Boolean);
       const job = await api.createJob({ keywords: inputKeywords, sort, noteType, pages, commentPages, concurrency });
       setActiveJobId(job.id);
+      setShowHistoryData(false);
       setActiveModule("overview");
       await refreshCore();
       await loadNotes();
@@ -910,6 +958,7 @@ export function App() {
         )}
         {activeModule === "notes" && (
           <NotesPage
+            jobs={jobs}
             notes={notes}
             selected={selected}
             query={query}
@@ -928,6 +977,9 @@ export function App() {
             totalPages={notesTotalPages}
             setPage={setNotePage}
             activeJobId={activeJobId}
+            setActiveJobId={setActiveJobId}
+            showHistoryData={showHistoryData}
+            setShowHistoryData={setShowHistoryData}
             clearCurrentNotes={clearCurrentNotes}
             deleteSelectedNote={deleteSelectedNote}
             openOriginalUrl={openOriginalUrl}
@@ -1053,6 +1105,7 @@ export function App() {
         onNewSearch={() => setActiveModule("research")}
         onOpenJob={(jobId) => {
           setActiveJobId(jobId);
+          setShowHistoryData(false);
           setActiveModule("overview");
         }}
         onOpenArtifacts={(artifactId) => {
@@ -1504,6 +1557,7 @@ function ResearchPage(props: {
 }
 
 function NotesPage(props: {
+  jobs: SearchJob[];
   notes: NoteRecord[];
   selected: NoteRecord | null;
   query: string;
@@ -1522,6 +1576,9 @@ function NotesPage(props: {
   totalPages: number;
   setPage: (value: number) => void;
   activeJobId: string;
+  setActiveJobId: (value: string) => void;
+  showHistoryData: boolean;
+  setShowHistoryData: (value: boolean) => void;
   clearCurrentNotes: () => Promise<void>;
   deleteSelectedNote: () => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
@@ -1576,6 +1633,33 @@ function NotesPage(props: {
               <option value="latest">最新</option>
             </select>
           </label>
+        </div>
+        <div className="history-control-row">
+          <label className="field-stack compact-field">
+            <span>数据范围</span>
+            <select
+              value={props.activeJobId || (props.showHistoryData ? "__all__" : "")}
+              onChange={(event) => {
+                props.setPage(1);
+                if (event.target.value === "__all__") {
+                  props.setActiveJobId("");
+                  props.setShowHistoryData(true);
+                  return;
+                }
+                props.setShowHistoryData(false);
+                props.setActiveJobId(event.target.value);
+              }}
+            >
+              <option value="">暂不打开历史数据</option>
+              <option value="__all__">查看全部历史笔记</option>
+              {props.jobs.map((job) => (
+                <option key={job.id} value={job.id}>{jobKeywordLabel(job)}</option>
+              ))}
+            </select>
+          </label>
+          {!props.activeJobId && !props.showHistoryData && (
+            <p className="muted-line">历史笔记已默认收起。请选择一个历史任务，或查看全部历史笔记。</p>
+          )}
         </div>
         <div className="note-list">
           {props.notes.map((note) => (
@@ -2051,9 +2135,13 @@ function renderMarkdownTable(lines: string[], key: string): ReactNode {
   );
 }
 
-function renderInline(text: string): ReactNode[] {
+export function renderInline(text: string): ReactNode[] {
+  return renderInlineTokens(text, "inline");
+}
+
+function renderInlineTokens(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g;
+  const pattern = /`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)|\*\*([^*\n]+?)\*\*|__([^_\n]+?)__|~~([^~\n]+?)~~|\*([^*\n]+?)\*|(?<![A-Za-z0-9])_([^_\n]+?)_(?![A-Za-z0-9])/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
@@ -2061,9 +2149,15 @@ function renderInline(text: string): ReactNode[] {
       nodes.push(text.slice(lastIndex, match.index));
     }
     if (match[1]) {
-      nodes.push(<code key={`code-${match.index}`}>{match[1]}</code>);
+      nodes.push(<code key={`${keyPrefix}-code-${match.index}`}>{match[1]}</code>);
     } else if (match[2] && match[3]) {
-      nodes.push(<a key={`link-${match.index}`} href={match[3]} target="_blank" rel="noreferrer">{match[2]}</a>);
+      nodes.push(<a key={`${keyPrefix}-link-${match.index}`} href={match[3]} target="_blank" rel="noreferrer">{renderInlineTokens(match[2], `${keyPrefix}-link-${match.index}`)}</a>);
+    } else if (match[4] || match[5]) {
+      nodes.push(<strong key={`${keyPrefix}-strong-${match.index}`}>{renderInlineTokens(match[4] ?? match[5] ?? "", `${keyPrefix}-strong-${match.index}`)}</strong>);
+    } else if (match[6]) {
+      nodes.push(<del key={`${keyPrefix}-del-${match.index}`}>{renderInlineTokens(match[6], `${keyPrefix}-del-${match.index}`)}</del>);
+    } else if (match[7] || match[8]) {
+      nodes.push(<em key={`${keyPrefix}-em-${match.index}`}>{renderInlineTokens(match[7] ?? match[8] ?? "", `${keyPrefix}-em-${match.index}`)}</em>);
     }
     lastIndex = pattern.lastIndex;
   }
@@ -3320,21 +3414,25 @@ function AuthPanel({
   busy: string;
 }) {
   return (
-    <section className="surface command-surface">
+    <section className="surface command-surface auth-surface">
       <SectionTitle icon={<ShieldCheck size={18} />} title="登录连接" />
       <div className={`browser-bridge-card ${browserBridge.connected ? "ok" : "pending"}`}>
         <div>
           <strong>浏览器助手 Bridge</strong>
           <p>
-            {browserBridge.connected
-              ? `已连接 ${browserBridge.browser === "edge" ? "Edge" : browserBridge.browser === "chrome" ? "Chrome" : "浏览器"}，可同步当前浏览器登录态。`
-              : "推荐安装本项目浏览器助手扩展，登录当前浏览器的小红书后即可同步 Cookie。"}
+            {browserBridge.message ||
+              (browserBridge.connected
+                ? `已连接 ${browserBridge.browser === "edge" ? "Edge" : browserBridge.browser === "chrome" ? "Chrome" : "浏览器"}，可同步当前浏览器登录态。`
+                : "推荐安装本项目浏览器助手扩展，登录当前浏览器的小红书后即可同步 Cookie。")}
           </p>
-          {browserBridge.lastSeenAt && <small>最近同步：{formatDateTime(browserBridge.lastSeenAt)}</small>}
+          {(browserBridge.lastSyncAt || browserBridge.lastSeenAt) && (
+            <small>{browserBridge.lastSyncAt ? "最近同步" : "最近检测"}：{formatDateTime(browserBridge.lastSyncAt || browserBridge.lastSeenAt || "")}</small>
+          )}
+          {browserBridge.diagnostic && <small className="bridge-diagnostic">{browserBridge.diagnostic}</small>}
         </div>
         <div className="button-row">
-          <button className="ghost-button compact" onClick={() => void refreshBrowserBridge()}>
-            <RefreshCw size={15} />
+          <button className="ghost-button compact" onClick={() => void refreshBrowserBridge()} disabled={busy === "bridge-check"}>
+            {busy === "bridge-check" ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
             检测助手
           </button>
           <button className="primary-button compact" onClick={() => void syncBrowserBridgeCookie()} disabled={busy === "auth" || !browserBridge.connected}>
@@ -3343,6 +3441,7 @@ function AuthPanel({
           </button>
         </div>
       </div>
+      <p className="muted-line">插件使用：在 Edge 扩展页加载 browser-extension/xhs-bridge，刷新本地运营台和小红书页面，再点击“检测助手”。</p>
       <div className="button-row">
         <button className="ghost-button" onClick={() => window.open("https://www.xiaohongshu.com/", "_blank")}>
           <ExternalLink size={16} />
@@ -3369,7 +3468,7 @@ function AuthPanel({
         {busy === "auth" ? <Loader2 className="spin" size={16} /> : <LogIn size={16} />}
         验证
       </button>
-      <StatusRow label="状态" value={auth.connected ? "已连接" : auth.error ? "连接失效" : "未连接"} ok={auth.connected} />
+      <StatusRow label="状态" value={auth.connected ? "已连接" : auth.error ? "连接失效" : auth.needsVerification ? "待验证" : "未连接"} ok={auth.connected} />
       {auth.error && <p className="risk-text">{formatAuthError(auth.error)}</p>}
     </section>
   );

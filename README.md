@@ -28,6 +28,7 @@
 | 浏览器助手扩展 | `browser-extension/xhs-bridge/`，把当前浏览器的小红书登录态同步到本机后端 |
 | 专用登录窗口 | `src/server/services/browserAuthService.ts`，启动独立 Edge profile 读取登录 Cookie |
 | 任务队列 | `src/server/services/jobService.ts`，负责搜索、补详情、评论、作者、分析 |
+| Markdown 阅读器 | 前端内置渲染器，用于 AI 报告、工作流产物和分析面板 |
 | 本地数据 | `data/*.json`，运行时自动生成，已被 Git 忽略 |
 | 本地密钥 | `.env.local`，保存 Cookie 和 AI 模型 Key，已被 Git 忽略 |
 
@@ -80,6 +81,8 @@ Copy-Item .env.example .env.local
 
 本项目使用浏览器 Cookie 登录态，不需要小红书官方 API Key。
 
+后端启动后会把历史 Cookie 标记为“待验证”，前端会自动调用 `POST /api/auth/verify` 重新验证本机 `.env.local` 中的 Cookie。验证通过后恢复为“已连接”；验证失败时，请重新使用浏览器助手扩展、专用 Edge 登录窗口或手动 Cookie。
+
 推荐顺序：
 
 1. 浏览器助手扩展：推荐。适合把当前 Edge/Chrome profile 里的小红书登录态同步到本机后端。
@@ -95,7 +98,9 @@ Copy-Item .env.example .env.local
 4. 点击“加载解压缩的扩展”，选择 `browser-extension/xhs-bridge/`。
 5. 在同一个浏览器 profile 中登录 `https://www.xiaohongshu.com/`。
 6. 回到本项目登录连接区域，点击“检测助手”，再点击“同步登录态”。
-7. 也可以点击扩展图标，在弹窗里点 “Sync current browser login”。
+7. 也可以点击扩展图标，在弹窗里点“同步当前浏览器登录态”。
+
+扩展在浏览器中显示为“小红书运营台助手”。如果刚更新或重新加载过扩展，请同时刷新本地运营台页面和已打开的小红书页面。
 
 扩展只请求这些权限：
 
@@ -176,9 +181,23 @@ npm run dev:client
 5. 选择排序、笔记类型、页数、评论页数和并发。
 6. 创建任务。
 7. 等待任务队列完成：系统会先搜索笔记，再补正文、评论、作者、作者作品，并做本地分析。
-8. 在“笔记库”筛选、查看笔记详情和评论。
+8. 在“笔记库”选择当前任务、某个历史任务或“查看全部历史笔记”，再筛选、查看笔记详情和评论。
 9. 在“爆款拆解”“受众洞察”“竞品作者”“AI 工作台”等模块查看分析结果。
 10. 需要导出时，使用页面上的导出入口，或访问后端导出 API。
+
+## 笔记库和历史数据
+
+笔记库默认不自动展开历史数据，避免第一次打开页面时把旧任务内容误认为当前任务结果。
+
+可选数据范围：
+
+| 范围 | 说明 |
+| --- | --- |
+| 暂不打开历史数据 | 没有当前任务时，笔记列表保持为空 |
+| 查看全部历史笔记 | 从 `data/notes.json` 读取所有已入库笔记 |
+| 指定历史任务 | 只查看某一次关键词任务关联的笔记 |
+
+创建新任务或 AI 编排任务生成新搜索任务后，前端会自动切回当前任务范围。
 
 ## 任务是如何运行的
 
@@ -288,6 +307,8 @@ Authorization: Bearer <apiKey>
 
 前端通过 Server-Sent Events 订阅 `/api/ai/orchestrations/:id/events`，可以在 AI 助手抽屉里看到编排任务的实时步骤进度。
 
+AI 报告和工作流产物使用前端内置 Markdown 阅读器展示。当前支持标题、列表、引用、代码块、表格、链接、行内代码、粗体、斜体和删除线；导出接口仍返回原始 Markdown。
+
 ## 常用脚本
 
 | 命令 | 用途 |
@@ -326,7 +347,7 @@ npm start
 | `data/aiModels.json` | AI 模型配置，不含明文 Key |
 | `data/aiReports.json` | AI 或本地 Markdown 报告 |
 | `data/aiArtifacts.json` | AI 工作流产物 |
-| `data/browserBridgeStatus.json` | 浏览器助手最近同步状态 |
+| `data/browserBridgeStatus.json` | 浏览器助手最近检测和同步状态 |
 | `data/media-cache/` | 媒体代理缓存 |
 | `data/xhs-login-edge-profile/` | 专用 Edge 登录窗口 profile |
 
@@ -343,6 +364,7 @@ GET /api/ai/artifacts/:id/export
 登录/浏览器辅助接口：
 
 ```text
+POST /api/auth/verify
 GET /api/auth/extension/status
 POST /api/auth/extension-cookie
 POST /api/auth/browser-session
@@ -375,11 +397,12 @@ PORT=8788
 优先处理：
 
 1. 确认后端 `8787` 已启动。
-2. 如果使用扩展，确认扩展已加载、当前浏览器已登录小红书，并刷新过小红书标签页。
-3. 回到本项目点击“检测助手”和“同步登录态”。
-4. 如果扩展失败，尝试专用 Edge 登录窗口。
-5. 仍失败时，手动复制 `a1` 和 `web_session`。
-6. 保存后重启后端。
+2. 如果页面显示“待验证”，先等待自动复验；如果变成“连接失效”，继续下面步骤。
+3. 如果使用扩展，确认扩展已加载、当前浏览器已登录小红书，并刷新过小红书标签页。
+4. 回到本项目点击“检测助手”和“同步登录态”。
+5. 如果扩展失败，尝试专用 Edge 登录窗口。
+6. 仍失败时，手动复制 `a1` 和 `web_session`。
+7. 保存后重启后端。
 
 ### 浏览器助手未连接
 
