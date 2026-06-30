@@ -594,6 +594,13 @@ export function App() {
     });
   }
 
+  async function refreshSelectedNoteMedia(noteId: string) {
+    await run("media-refresh", async () => {
+      await api.refreshNoteMedia(noteId);
+      await loadNotes();
+    });
+  }
+
   async function openDatasetManager() {
     if (!activeJobId) return;
     await run("clear-preview", async () => {
@@ -1021,6 +1028,7 @@ export function App() {
             setNoteScopePanelOpen={setNoteScopePanelOpen}
             openDatasetManager={openDatasetManager}
             deleteSelectedNote={deleteSelectedNote}
+            refreshNoteMedia={refreshSelectedNoteMedia}
             openOriginalUrl={openOriginalUrl}
             runWorkflow={runWorkflow}
             busy={busy}
@@ -1639,6 +1647,7 @@ function NotesPage(props: {
   setNoteScopePanelOpen: (value: boolean) => void;
   openDatasetManager: () => Promise<void>;
   deleteSelectedNote: () => Promise<void>;
+  refreshNoteMedia: (noteId: string) => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   runWorkflow: RunWorkflow;
   busy: string;
@@ -1750,7 +1759,14 @@ function NotesPage(props: {
           </div>
         </div>
       </section>
-      <NoteDetail note={props.selected} onDelete={props.deleteSelectedNote} openOriginalUrl={props.openOriginalUrl} runWorkflow={props.runWorkflow} busy={props.busy} />
+      <NoteDetail
+        note={props.selected}
+        onDelete={props.deleteSelectedNote}
+        refreshNoteMedia={props.refreshNoteMedia}
+        openOriginalUrl={props.openOriginalUrl}
+        runWorkflow={props.runWorkflow}
+        busy={props.busy}
+      />
     </div>
   );
 }
@@ -3670,12 +3686,14 @@ function ModelsPage(props: {
 function NoteDetail({
   note,
   onDelete,
+  refreshNoteMedia,
   openOriginalUrl,
   runWorkflow,
   busy
 }: {
   note: NoteRecord | null;
   onDelete: () => Promise<void>;
+  refreshNoteMedia: (noteId: string) => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   runWorkflow: RunWorkflow;
   busy: string;
@@ -3688,6 +3706,7 @@ function NoteDetail({
     );
   }
   const mediaImages = noteMediaImages(note);
+  const hasMedia = Boolean(note.videoUrl || mediaImages.length);
   return (
     <section className="surface detail-panel">
       <SectionTitle
@@ -3726,6 +3745,21 @@ function NoteDetail({
           暂无可加载媒体
         </div>
       )}
+      <div className={`media-health-card ${hasMedia ? "info" : "warn"}`}>
+        <ImageIcon size={16} />
+        <div>
+          <strong>{hasMedia ? "历史媒体可能会过期" : "媒体暂不可用"}</strong>
+          <span>
+            {hasMedia
+              ? "如果图片或视频显示异常，可以刷新媒体；文本、评论和互动数据仍可继续用于分析。"
+              : "可能是历史媒体链接过期、CDN 防盗链或登录态变化。可尝试刷新媒体，也可以打开原帖查看。"}
+          </span>
+        </div>
+        <button className="ghost-button compact" onClick={() => void refreshNoteMedia(note.id)} disabled={busy === "media-refresh"}>
+          {busy === "media-refresh" ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+          刷新媒体
+        </button>
+      </div>
       <h2>{note.title}</h2>
       {note.desc ? (
         <p className="body-text">{note.desc}</p>

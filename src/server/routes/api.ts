@@ -18,7 +18,7 @@ import {
 } from "../services/queryService.js";
 import { redbookCapabilities } from "../services/capabilities.js";
 import { buildHealthCheck } from "../services/healthService.js";
-import { proxyMedia } from "../services/mediaService.js";
+import { proxyMedia, refreshNoteMedia } from "../services/mediaService.js";
 import { isAuthRisk, markAuthDisconnected } from "../services/authState.js";
 import { browserAuth } from "../services/browserAuthService.js";
 import {
@@ -395,6 +395,14 @@ api.get("/notes/:id", async (req, res) => {
     return;
   }
   res.json(detail);
+});
+
+api.post("/notes/:id/media-refresh", async (req, res, next) => {
+  try {
+    res.json(await refreshNoteMedia(req.params.id));
+  } catch (error) {
+    next(error);
+  }
 });
 
 api.delete("/notes", async (req, res, next) => {

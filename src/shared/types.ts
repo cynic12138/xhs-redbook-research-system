@@ -318,6 +318,12 @@ export interface NoteScopeClearPreview {
   aiReportsLinked: number;
 }
 
+export interface NoteMediaRefreshResult {
+  note: NoteRecord;
+  refreshed: boolean;
+  message: string;
+}
+
 export interface SearchJobInput {
   keywords: string[];
   sort: SearchSort;

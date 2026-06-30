@@ -1234,6 +1234,50 @@ label {
   background: #fbfcfd;
 }
 
+.media-health-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.media-health-card.warn {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.media-health-card > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #2563eb;
+}
+
+.media-health-card.warn > svg {
+  color: #b45309;
+}
+
+.media-health-card > div {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 3px;
+}
+
+.media-health-card strong {
+  color: #101828;
+  font-size: 13px;
+}
+
+.media-health-card span {
+  color: #4a5568;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .body-text {
   margin: 0 0 14px;
   color: #334155;

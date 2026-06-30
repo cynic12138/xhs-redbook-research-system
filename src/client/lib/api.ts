@@ -21,6 +21,7 @@ import type {
   BrowserOpenMode,
   BrowserOpenResult,
   HealthReportRecord,
+  NoteMediaRefreshResult,
   NoteScopeClearPreview,
   NoteScopeSummary,
   NoteRecord,
@@ -86,6 +87,7 @@ export const api = {
   listNoteScopes: () => apiGet<NoteScopeSummary[]>("/api/note-scopes"),
   getNoteScopeClearPreview: (jobId: string) => apiGet<NoteScopeClearPreview>(`/api/note-scopes/${encodeURIComponent(jobId)}/clear-preview`),
   deleteNote: (noteId: string) => apiDelete<{ deleted: number }>(`/api/notes/${encodeURIComponent(noteId)}`),
+  refreshNoteMedia: (noteId: string) => apiPost<NoteMediaRefreshResult>(`/api/notes/${encodeURIComponent(noteId)}/media-refresh`),
   clearNotes: (jobId?: string, deleteAiArtifacts = false) =>
     apiDelete<{ deleted: number }>(
       `/api/notes${jobId ? `?jobId=${encodeURIComponent(jobId)}${deleteAiArtifacts ? "&deleteAiArtifacts=true" : ""}` : ""}`
