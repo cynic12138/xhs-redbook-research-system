@@ -70,6 +70,39 @@ describe("AI tool calling compatibility layer", () => {
     ).toThrow("Unsupported argument");
   });
 
+  it("allows whitelisted content studio tools", () => {
+    const calls = parseAiToolCalls({
+      tool_calls: [
+        {
+          id: "call_content",
+          type: "function",
+          function: {
+            name: "review_xhs_draft",
+            arguments: JSON.stringify({
+              playbookId: "playbook1",
+              title: "孕妈分享",
+              body: "这是一篇需要审稿的小红书笔记。",
+              tags: ["孕期好物"]
+            })
+          }
+        }
+      ]
+    });
+
+    expect(calls).toEqual([
+      {
+        id: "call_content",
+        name: "review_xhs_draft",
+        arguments: {
+          playbookId: "playbook1",
+          title: "孕妈分享",
+          body: "这是一篇需要审稿的小红书笔记。",
+          tags: ["孕期好物"]
+        }
+      }
+    ]);
+  });
+
   it("uses valid tool-call keywords before starting the existing controlled orchestration", async () => {
     const store = new LocalStore(await createTempDataDir());
     await store.write("aiModels", [model()]);

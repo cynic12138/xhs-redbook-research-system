@@ -30,7 +30,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
     modelPlaceholder: "gpt-4.1-mini",
-    description: "OpenAI official API.",
+    description: "OpenAI 官方 API。",
     apiKeyHint: "OpenAI API Key"
   },
   {
@@ -39,7 +39,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "DeepSeek",
     baseUrl: "https://api.deepseek.com",
     modelPlaceholder: "deepseek-chat",
-    description: "DeepSeek OpenAI-compatible API.",
+    description: "DeepSeek 兼容 OpenAI 的 API。",
     apiKeyHint: "DeepSeek API Key"
   },
   {
@@ -48,7 +48,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "Qwen / DashScope",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     modelPlaceholder: "qwen-plus",
-    description: "Alibaba Cloud DashScope OpenAI-compatible API.",
+    description: "阿里云百炼 DashScope 兼容 OpenAI 的 API。",
     apiKeyHint: "DashScope API Key",
     regionOptions: [
       { label: "China mainland", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
@@ -61,7 +61,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "MiniMax",
     baseUrl: "https://api.minimax.io/v1",
     modelPlaceholder: "MiniMax-M1",
-    description: "MiniMax OpenAI-compatible API.",
+    description: "MiniMax 兼容 OpenAI 的 API。",
     apiKeyHint: "MiniMax API Key"
   },
   {
@@ -70,7 +70,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "Volcengine Ark",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
     modelPlaceholder: "doubao-seed-1-6-250615",
-    description: "Volcengine Ark OpenAI-compatible API.",
+    description: "火山引擎方舟兼容 OpenAI 的 API。",
     apiKeyHint: "Volcengine Ark API Key"
   },
   {
@@ -79,7 +79,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "Moonshot AI",
     baseUrl: "https://api.moonshot.ai/v1",
     modelPlaceholder: "kimi-k2-0711-preview",
-    description: "Moonshot/Kimi OpenAI-compatible API.",
+    description: "Moonshot/Kimi 兼容 OpenAI 的 API。",
     apiKeyHint: "Moonshot API Key"
   },
   {
@@ -88,7 +88,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "SiliconFlow",
     baseUrl: "https://api.siliconflow.cn/v1",
     modelPlaceholder: "Qwen/Qwen3-32B",
-    description: "SiliconFlow OpenAI-compatible API.",
+    description: "SiliconFlow 兼容 OpenAI 的 API。",
     apiKeyHint: "SiliconFlow API Key"
   },
   {
@@ -97,7 +97,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "xAI",
     baseUrl: "https://api.x.ai/v1",
     modelPlaceholder: "grok-4",
-    description: "xAI OpenAI-compatible API.",
+    description: "xAI 兼容 OpenAI 的 API。",
     apiKeyHint: "xAI API Key"
   },
   {
@@ -106,7 +106,7 @@ export const AI_MODEL_PROVIDER_PRESETS: AiModelProviderPreset[] = [
     provider: "OpenAI-compatible",
     baseUrl: "https://api.openai.com/v1",
     modelPlaceholder: "model-name",
-    description: "Use any OpenAI-compatible gateway or custom endpoint.",
+    description: "使用任意兼容 OpenAI 的网关或自定义接口地址。",
     apiKeyHint: "API Key"
   }
 ];

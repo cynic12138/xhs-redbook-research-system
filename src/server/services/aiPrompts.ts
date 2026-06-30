@@ -77,6 +77,20 @@ const promptInfos: AiPromptInfo[] = [
     version: AI_PROMPT_VERSION,
     inputRequirements: ["选中笔记", "正文与媒体", "互动数据", "高赞评论", "作者信息", "同任务热门笔记"],
     outputSections: ["当前表现判断", "标题诊断", "正文诊断", "媒体诊断", "评论需求", "下一步动作", "风险与限制"]
+  },
+  {
+    key: "draft-review",
+    title: "AI 审稿员",
+    version: AI_PROMPT_VERSION,
+    inputRequirements: ["原始笔记", "产品规则", "禁用词", "替代表达", "当前任务上下文"],
+    outputSections: ["审稿结论", "问题清单", "修改原则", "最小修改版", "标签建议", "二次复核"]
+  },
+  {
+    key: "note-writing",
+    title: "笔记撰写",
+    version: AI_PROMPT_VERSION,
+    inputRequirements: ["结构化 Brief", "产品规则", "热门笔记", "高赞评论", "爆款模板"],
+    outputSections: ["创作角度", "标题", "正文", "标签", "审稿提醒", "可替换版本"]
   }
 ];
 
@@ -86,7 +100,9 @@ const workflowPromptBuilders: Record<AiWorkflowKey, PromptBuilder> = {
   "competitor-analysis": buildCompetitorAnalysisPrompt,
   "viral-deep-dive": buildViralDeepDivePrompt,
   "viral-template": buildViralTemplatePrompt,
-  "note-analysis": buildNoteAnalysisPrompt
+  "note-analysis": buildNoteAnalysisPrompt,
+  "draft-review": buildDraftReviewPrompt,
+  "note-writing": buildNoteWritingPrompt
 };
 
 const promptVariables = [
@@ -263,7 +279,40 @@ const defaultPromptTemplates: Record<AiWorkflowKey, string> = {
 同任务热门笔记：{topNotes}
 补充要求：{focus}
 
-请输出：# 单篇笔记优化分析，并包含当前表现判断、标题诊断、正文诊断、媒体诊断、评论需求、下一步动作、风险与限制。`
+请输出：# 单篇笔记优化分析，并包含当前表现判断、标题诊断、正文诊断、媒体诊断、评论需求、下一步动作、风险与限制。`,
+  "draft-review": `你是一名小红书 AI 审稿员，擅长在保留原稿真实感的前提下，识别广告腔、敏感功效、绝对化表达和人设不一致问题。
+
+统一规则：
+- 必须保留原稿叙事和用户经历，不要把素人稿改成硬广。
+- 必须指出命中的风险词、风险原因和替代表达。
+- 医疗、功效、绝对化和强促销表达必须弱化为个人体验或生活场景。
+- 输出中文 Markdown。
+- 不允许建议自动发布、自动评论、自动点赞、自动收藏。
+
+输入数据：
+任务信息：{job}
+热门笔记：{topNotes}
+高赞评论：{topComments}
+补充要求或原稿：{focus}
+
+请输出：# AI 审稿报告，并包含审稿结论、问题清单、修改原则、最小修改版、口语自然版、标签建议、二次复核。`,
+  "note-writing": `你是一名小红书内容撰写顾问，擅长基于结构化 Brief、用户痛点、热门笔记和评论原话生成真实分享型种草笔记。
+
+统一规则：
+- 不要编造未提供的产品功效、医学结论、用户经历或数据。
+- 避免硬广、绝对化、医疗功效和强促销表达。
+- 必须包含身份、场景、为什么需要、真实使用感和自然结尾。
+- 输出中文 Markdown。
+- 不允许建议自动发布、自动评论、自动点赞、自动收藏。
+
+输入数据：
+任务信息：{job}
+热门笔记：{topNotes}
+高赞评论：{topComments}
+爆款模板候选：{templates}
+创作 Brief：{focus}
+
+请输出：# 小红书笔记草稿，并包含创作角度、标题、正文、标签、审稿提醒、可替换版本。`
 };
 
 export function buildReportPrompt(
@@ -594,6 +643,89 @@ function buildNoteAnalysisPrompt(context: AiPromptContext, focus?: string): stri
 
 ## 7. 风险与限制
 说明数据不足、样本偏差和不建议操作。`;
+}
+
+function buildDraftReviewPrompt(context: AiPromptContext, focus?: string): string {
+  return `${baseInstruction("小红书 AI 审稿员")}
+
+你的任务：
+对用户提供的小红书笔记原稿做审稿和最小改稿。不要把原稿重写成硬广，要保留人设、经历和叙事顺序。
+
+审稿原则：
+- 识别广告腔、绝对化用语、医疗功效、虚假承诺、低质重复、格式不完整。
+- 对每个问题说明命中内容、风险原因、替代表达。
+- 修改稿必须更口语、更生活化、更像真实分享。
+- 不能新增未经证实的产品功效、数据或用户经历。
+
+输入数据：
+当前任务：${json(compactJob(context.job))}
+热门笔记：${json(context.notes.slice(0, 16).map(compactNote))}
+高赞评论：${json(context.comments.slice(0, 24).map(compactComment))}
+原稿或补充要求：${focus?.trim() || "用户尚未提供原稿，请提醒用户粘贴标题、正文和标签。"}
+
+请按以下 Markdown 结构输出：
+# AI 审稿报告
+
+## 1. 审稿结论
+给出风险等级、能否进入人工复核、最需要改的 3 个点。
+
+## 2. 问题清单
+用表格输出：位置、命中内容、风险类型、修改建议。
+
+## 3. 修改原则
+说明哪些地方只做最小修改，哪些必须删除或弱化。
+
+## 4. 最小修改版
+输出标题、正文、标签。
+
+## 5. 口语自然版
+在不改变事实的前提下输出一个更生活化版本。
+
+## 6. 二次复核
+说明修改后是否仍有敏感词、硬广感或事实缺口。`;
+}
+
+function buildNoteWritingPrompt(context: AiPromptContext, focus?: string): string {
+  return `${baseInstruction("小红书笔记撰写顾问")}
+
+你的任务：
+基于用户的结构化 Brief、当前任务中的热门笔记和高赞评论，生成真实分享型小红书笔记草稿。
+
+创作原则：
+- 先写真实人设和生活场景，再自然带到产品。
+- 不要把产品卖点写成医学功效或绝对承诺。
+- 避免“闭眼冲、救命神器、封神、百分百有效”等硬广表达。
+- 标题要像用户分享，不要像广告标题。
+- 生成后必须附带审稿提醒。
+
+输入数据：
+当前任务：${json(compactJob(context.job))}
+关键词指标：${json(context.analytics?.keywords.slice(0, 12) ?? [])}
+爆款模板候选：${json(context.analytics?.templates.slice(0, 8) ?? [])}
+热门笔记：${json(context.notes.slice(0, 20).map(compactNote))}
+高赞评论：${json(context.comments.slice(0, 30).map(compactComment))}
+创作 Brief：${focus?.trim() || "用户尚未提供 Brief，请提醒用户补充身份、痛点、场景、了解渠道和产品特点。"}
+
+请按以下 Markdown 结构输出：
+# 小红书笔记草稿
+
+## 1. 创作角度
+说明选择这个角度的依据，标注来自 Brief、热门笔记还是评论需求。
+
+## 2. 标题
+给出 5 个标题，分别偏生活分享、避坑、清单、反差、问答。
+
+## 3. 正文
+输出 1 篇完整正文，包含身份、场景、为什么需要、使用感、自然结尾。
+
+## 4. 标签
+输出 8-12 个标签。
+
+## 5. 审稿提醒
+列出发布前必须人工确认的事实和风险。
+
+## 6. 可替换版本
+给出一个更口语版和一个更保守合规版。`;
 }
 
 function baseInstruction(role: string): string {

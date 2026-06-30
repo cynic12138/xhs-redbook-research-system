@@ -53,6 +53,17 @@ import {
 } from "../services/aiService.js";
 import { createAiOrchestrationWithToolsFallback, probeAiModelTools } from "../services/aiToolCallingService.js";
 import { getAiOrchestration, listAiOrchestrations } from "../services/aiOrchestratorService.js";
+import {
+  deleteContentPlaybook,
+  generateContentDraft,
+  listContentDrafts,
+  listContentPlaybooks,
+  listContentReviews,
+  reviewContentDraftBatch,
+  reviewContentDraft,
+  runContentAssistant,
+  saveContentPlaybook
+} from "../services/contentStudioService.js";
 
 export const api = Router();
 startReplyWorker();
@@ -87,7 +98,7 @@ const replyPlanInput = z.object({
 });
 
 const aiWorkflowInput = z.object({
-  workflowKey: z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis"]),
+  workflowKey: z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis", "draft-review", "note-writing"]),
   jobId: z.string().optional(),
   noteId: z.string().optional(),
   modelId: z.string().optional(),
@@ -115,7 +126,81 @@ const aiOrchestrationInput = z
     modelId: value.modelId
   }));
 
-const aiPromptKey = z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis"]);
+const aiPromptKey = z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis", "draft-review", "note-writing"]);
+
+const contentReplacementInput = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  reason: z.string().optional()
+});
+
+const contentPlaybookInput = z.object({
+  name: z.string().min(1),
+  productName: z.string().min(1),
+  category: z.string().optional(),
+  forbiddenTerms: z.array(z.string()).optional(),
+  sensitiveClaims: z.array(z.string()).optional(),
+  allowedSellingPoints: z.array(z.string()).optional(),
+  requiredSections: z.array(z.string()).optional(),
+  toneWords: z.array(z.string()).optional(),
+  personas: z.array(z.string()).optional(),
+  scenarios: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  replacements: z.array(contentReplacementInput).optional()
+});
+
+const contentBriefInput = z.object({
+  playbookId: z.string().optional(),
+  productName: z.string().min(1),
+  persona: z.string().min(1),
+  painPoint: z.string().min(1),
+  scenario: z.string().min(1),
+  channel: z.string().min(1),
+  sellingPoints: z.array(z.string()).default([]),
+  tone: z.string().min(1),
+  length: z.enum(["short", "medium", "long"]).default("medium"),
+  keywords: z.array(z.string()).default([]),
+  jobId: z.string().optional()
+});
+
+const contentDraftInput = z.object({
+  playbookId: z.string().optional(),
+  jobId: z.string().optional(),
+  modelId: z.string().optional(),
+  brief: contentBriefInput
+});
+
+const contentReviewInput = z.object({
+  playbookId: z.string().optional(),
+  jobId: z.string().optional(),
+  noteId: z.string().optional(),
+  draftId: z.string().optional(),
+  modelId: z.string().optional(),
+  title: z.string().optional(),
+  body: z.string().min(1),
+  tags: z.array(z.string()).optional(),
+  mode: z.enum(["minimal", "natural", "safe"]).optional()
+});
+
+const contentReviewBatchInput = z.object({
+  playbookId: z.string().optional(),
+  jobId: z.string().optional(),
+  modelId: z.string().optional(),
+  items: z.array(z.object({
+    id: z.string().optional(),
+    title: z.string().optional(),
+    body: z.string().min(1),
+    tags: z.array(z.string()).optional()
+  })).min(1).max(20),
+  mode: z.enum(["minimal", "natural", "safe"]).optional()
+});
+
+const contentAssistantInput = z.object({
+  message: z.string().min(1),
+  jobId: z.string().optional(),
+  modelId: z.string().optional(),
+  playbookId: z.string().optional()
+});
 
 const extensionCookieInput = z.object({
   a1: z.string().min(1),
@@ -457,6 +542,74 @@ api.post("/comment-actions/:id/approve", async (req, res, next) => {
   try {
     const body = z.object({ content: z.string().optional() }).parse(req.body ?? {});
     res.json(await approveReplyAction(req.params.id, body.content));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/content/playbooks", async (_req, res) => {
+  res.json(await listContentPlaybooks());
+});
+
+api.post("/content/playbooks", async (req, res, next) => {
+  try {
+    res.status(201).json(await saveContentPlaybook(contentPlaybookInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.put("/content/playbooks/:id", async (req, res, next) => {
+  try {
+    res.json(await saveContentPlaybook(contentPlaybookInput.parse(req.body), req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.delete("/content/playbooks/:id", async (req, res, next) => {
+  try {
+    res.json(await deleteContentPlaybook(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/content/drafts", async (_req, res) => {
+  res.json(await listContentDrafts());
+});
+
+api.post("/content/drafts", async (req, res, next) => {
+  try {
+    res.status(201).json(await generateContentDraft(contentDraftInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/content/reviews", async (_req, res) => {
+  res.json(await listContentReviews());
+});
+
+api.post("/content/reviews", async (req, res, next) => {
+  try {
+    res.status(201).json(await reviewContentDraft(contentReviewInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/content/reviews/batch", async (req, res, next) => {
+  try {
+    res.status(201).json(await reviewContentDraftBatch(contentReviewBatchInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/content/assistant/run", async (req, res, next) => {
+  try {
+    res.status(201).json(await runContentAssistant(contentAssistantInput.parse(req.body)));
   } catch (error) {
     next(error);
   }

@@ -77,7 +77,7 @@ describe("AI prompt library", () => {
   it("describes every workflow prompt for the frontend", () => {
     const infos = listAiPromptInfos();
 
-    expect(infos).toHaveLength(6);
+    expect(infos).toHaveLength(8);
     expect(infos.every((info) => info.version && info.inputRequirements.length && info.outputSections.length)).toBe(true);
     expect(infos.map((info) => info.key)).toContain("content-planning");
   });
@@ -89,7 +89,9 @@ describe("AI prompt library", () => {
       ["competitor-analysis", "# 竞品分析报告"],
       ["viral-deep-dive", "# 单篇爆款拆解"],
       ["viral-template", "# 爆款模板库"],
-      ["note-analysis", "# 单篇笔记优化分析"]
+      ["note-analysis", "# 单篇笔记优化分析"],
+      ["draft-review", "# AI 审稿报告"],
+      ["note-writing", "# 小红书笔记草稿"]
     ];
 
     for (const [key, heading] of expectations) {

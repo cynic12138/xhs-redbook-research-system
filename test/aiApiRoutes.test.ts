@@ -361,6 +361,150 @@ describe("browser bridge API routes", () => {
   });
 });
 
+describe("content studio API routes", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  it("creates a content review through the API route", async () => {
+    vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      listContentPlaybooks: vi.fn(),
+      saveContentPlaybook: vi.fn(),
+      deleteContentPlaybook: vi.fn(),
+      listContentDrafts: vi.fn(),
+      generateContentDraft: vi.fn(),
+      listContentReviews: vi.fn(),
+      runContentAssistant: vi.fn(),
+      reviewContentDraftBatch: vi.fn(async (input) => ({
+        reviews: input.items.map((item: { id?: string; title?: string; body: string; tags?: string[] }, index: number) => ({
+          id: `review_batch_${index}`,
+          originalTitle: item.title,
+          originalBody: item.body,
+          originalTags: item.tags ?? [],
+          risk: index === 0 ? "medium" : "pass",
+          score: index === 0 ? 76 : 92,
+          issues: [],
+          revisedTitle: item.title ?? "修改稿",
+          revisedBody: item.body,
+          revisedTags: item.tags ?? [],
+          source: "local",
+          status: "completed",
+          artifactId: `artifact_batch_${index}`,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z"
+        })),
+        artifacts: input.items.map((_item: unknown, index: number) => ({
+          id: `artifact_batch_${index}`,
+          workflowKey: "draft-review",
+          title: "AI 审稿报告",
+          markdown: "# AI 审稿报告",
+          source: "local",
+          status: "completed",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z"
+        }))
+      })),
+      reviewContentDraft: vi.fn(async (input) => ({
+        review: {
+          id: "review_route",
+          originalBody: input.body,
+          originalTags: input.tags ?? [],
+          risk: "medium",
+          score: 76,
+          issues: [],
+          revisedTitle: input.title ?? "修改稿",
+          revisedBody: input.body,
+          revisedTags: input.tags ?? [],
+          source: "local",
+          status: "completed",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z"
+        },
+        artifact: {
+          id: "artifact_review_route",
+          workflowKey: "draft-review",
+          title: "AI 审稿报告",
+          markdown: "# AI 审稿报告",
+          source: "local",
+          status: "completed",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z"
+        }
+      }))
+    }));
+    const app = await createApp();
+    const response = await requestJson(app, "/api/content/reviews", {
+      method: "POST",
+      body: { title: "测试标题", body: "这是一篇需要审稿的小红书笔记。", tags: ["好物"] }
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      review: { id: "review_route", risk: "medium" },
+      artifact: { workflowKey: "draft-review" }
+    });
+  });
+
+  it("creates batch content reviews through the API route", async () => {
+    vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      listContentPlaybooks: vi.fn(),
+      saveContentPlaybook: vi.fn(),
+      deleteContentPlaybook: vi.fn(),
+      listContentDrafts: vi.fn(),
+      generateContentDraft: vi.fn(),
+      listContentReviews: vi.fn(),
+      runContentAssistant: vi.fn(),
+      reviewContentDraft: vi.fn(),
+      reviewContentDraftBatch: vi.fn(async (input) => ({
+        reviews: input.items.map((item: { title?: string; body: string }, index: number) => ({
+          id: `review_batch_${index}`,
+          originalTitle: item.title,
+          originalBody: item.body,
+          originalTags: [],
+          risk: "medium",
+          score: 80,
+          issues: [],
+          revisedTitle: item.title ?? "修改稿",
+          revisedBody: item.body,
+          revisedTags: [],
+          source: "local",
+          status: "completed",
+          artifactId: `artifact_batch_${index}`,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z"
+        })),
+        artifacts: input.items.map((_item: unknown, index: number) => ({
+          id: `artifact_batch_${index}`,
+          workflowKey: "draft-review",
+          title: "AI 审稿报告",
+          markdown: "# AI 审稿报告",
+          source: "local",
+          status: "completed",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z"
+        }))
+      }))
+    }));
+    const app = await createApp();
+    const response = await requestJson(app, "/api/content/reviews/batch", {
+      method: "POST",
+      body: {
+        items: [
+          { title: "第一篇", body: "这是一篇需要审稿的小红书笔记。" },
+          { title: "第二篇", body: "这是另一篇需要审稿的小红书笔记。" }
+        ]
+      }
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      reviews: [{ id: "review_batch_0" }, { id: "review_batch_1" }],
+      artifacts: [{ workflowKey: "draft-review" }, { workflowKey: "draft-review" }]
+    });
+  });
+});
+
 async function createApp(): Promise<Express> {
   const { api } = await import("../src/server/routes/api.js");
   const app = express();

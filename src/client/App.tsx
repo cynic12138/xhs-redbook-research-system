@@ -49,6 +49,10 @@ import type {
   AnalyticsReport,
   AuthStatus,
   BrowserBridgeStatus,
+  ContentDraft,
+  ContentDraftLength,
+  ContentPlaybook,
+  ContentReviewRun,
   HealthReportRecord,
   NoteScopeClearPreview,
   NoteScopeSummary,
@@ -64,11 +68,66 @@ import type {
 import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProviderKey } from "../shared/modelProviders.js";
 import { api } from "./lib/api.js";
 
-type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "prompts" | "ai";
+type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "content" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
 type ModelForm = { providerKey: AiModelProviderKey; name: string; provider: string; baseUrl: string; model: string; apiKey: string };
 type ReaderPreview = { kind: "artifact" | "report"; title: string; markdown: string; meta: string[]; exportUrl: string };
 type RunWorkflow = (workflowKey: AiWorkflowKey, focus?: string) => Promise<AiArtifact | undefined>;
+type ContentBriefForm = {
+  productName: string;
+  persona: string;
+  painPoint: string;
+  scenario: string;
+  channel: string;
+  sellingPoints: string;
+  tone: string;
+  length: ContentDraftLength;
+  keywords: string;
+};
+type ContentReviewForm = { title: string; body: string; tags: string };
+type ContentStudioTab = "review" | "batch" | "write" | "rules" | "results";
+type BatchReviewItem = { id: string; title: string; body: string; tags: string; selected: boolean };
+type ContentPlaybookForm = {
+  name: string;
+  productName: string;
+  category: string;
+  forbiddenTerms: string;
+  sensitiveClaims: string;
+  allowedSellingPoints: string;
+  personas: string;
+  scenarios: string;
+  tags: string;
+};
+type ContentStudioProps = {
+  activeTab: ContentStudioTab;
+  setActiveTab: (value: ContentStudioTab) => void;
+  activeJob?: SearchJob;
+  playbooks: ContentPlaybook[];
+  selectedPlaybookId: string;
+  setSelectedPlaybookId: (value: string) => void;
+  playbookForm: ContentPlaybookForm;
+  setPlaybookForm: (value: ContentPlaybookForm) => void;
+  playbookDirty: boolean;
+  setPlaybookDirty: (value: boolean) => void;
+  briefForm: ContentBriefForm;
+  setBriefForm: (value: ContentBriefForm) => void;
+  reviewForm: ContentReviewForm;
+  setReviewForm: (value: ContentReviewForm) => void;
+  batchItems: BatchReviewItem[];
+  setBatchItems: (value: BatchReviewItem[]) => void;
+  drafts: ContentDraft[];
+  reviews: ContentReviewRun[];
+  artifacts: AiArtifact[];
+  createPlaybook: () => void;
+  deletePlaybook: () => Promise<void>;
+  savePlaybookAsNew: () => Promise<void>;
+  generateDraft: () => Promise<void>;
+  reviewDraft: () => Promise<void>;
+  reviewBatch: (items: BatchReviewItem[]) => Promise<void>;
+  savePlaybook: () => Promise<void>;
+  openArtifact: (artifactId: string) => void;
+  busy: string;
+};
 type AssistantNoticeTone = "info" | "warning" | "error" | "progress";
 type AssistantNotice = {
   key: string;
@@ -88,6 +147,38 @@ const emptyModelForm: ModelForm = {
   apiKey: ""
 };
 
+const defaultContentBriefForm: ContentBriefForm = {
+  productName: "产品",
+  persona: "孕妈",
+  painPoint: "孕期便秘、出门不方便",
+  scenario: "日常分享",
+  channel: "朋友推荐",
+  sellingPoints: "细头设计, 掌心大小, 温和表达",
+  tone: "口语化、真实分享、少广告感",
+  length: "medium",
+  keywords: "日常分享, 好物分享"
+};
+
+const defaultContentReviewForm: ContentReviewForm = {
+  title: "",
+  body: "",
+  tags: ""
+};
+
+const defaultBatchReviewItems: BatchReviewItem[] = [createBatchReviewItem()];
+
+const defaultPlaybookForm: ContentPlaybookForm = {
+  name: "通用种草审稿规则",
+  productName: "产品",
+  category: "小红书种草",
+  forbiddenTerms: "yyds, 封神, 救命神器, 效果拉满, 绝了, 无敌, 性价比天花板, 闭眼冲, 必囤, 无限回购",
+  sensitiveClaims: "治疗, 治愈, 药效, 特效, 根治, 通便特效, 杜绝依赖, 百分百有效",
+  allowedSellingPoints: "真实使用感, 生活场景, 携带方便, 温和表达",
+  personas: "孕妈, 大学生, 上班族",
+  scenarios: "日常分享, 出门携带, 朋友推荐",
+  tags: "日常分享, 好物分享, 真实体验"
+};
+
 const modules: Array<{ key: ModuleKey; label: string; icon: ReactNode }> = [
   { key: "overview", label: "总览", icon: <Activity size={18} /> },
   { key: "research", label: "话题研究", icon: <Compass size={18} /> },
@@ -96,6 +187,7 @@ const modules: Array<{ key: ModuleKey; label: string; icon: ReactNode }> = [
   { key: "audience", label: "受众洞察", icon: <HeartHandshake size={18} /> },
   { key: "competitors", label: "竞品分析", icon: <Layers size={18} /> },
   { key: "comments", label: "评论运营", icon: <MessageSquareReply size={18} /> },
+  { key: "content", label: "内容创作台", icon: <FileText size={18} /> },
   { key: "prompts", label: "Prompt 中心", icon: <KeyRound size={18} /> },
   { key: "ai", label: "AI 工作台", icon: <Bot size={18} /> }
 ];
@@ -147,6 +239,16 @@ export function App() {
   const [selectedPrompt, setSelectedPrompt] = useState<AiPromptDetail | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
   const [aiArtifacts, setAiArtifacts] = useState<AiArtifact[]>([]);
+  const [contentPlaybooks, setContentPlaybooks] = useState<ContentPlaybook[]>([]);
+  const [selectedContentPlaybookId, setSelectedContentPlaybookId] = useState("");
+  const [contentDrafts, setContentDrafts] = useState<ContentDraft[]>([]);
+  const [contentReviews, setContentReviews] = useState<ContentReviewRun[]>([]);
+  const [contentBriefForm, setContentBriefForm] = useState<ContentBriefForm>(defaultContentBriefForm);
+  const [contentReviewForm, setContentReviewForm] = useState<ContentReviewForm>(defaultContentReviewForm);
+  const [contentBatchItems, setContentBatchItems] = useState<BatchReviewItem[]>(defaultBatchReviewItems);
+  const [contentStudioTab, setContentStudioTab] = useState<ContentStudioTab>("review");
+  const [contentPlaybookForm, setContentPlaybookForm] = useState<ContentPlaybookForm>(defaultPlaybookForm);
+  const [contentPlaybookDirty, setContentPlaybookDirty] = useState(false);
   const [aiOrchestrations, setAiOrchestrations] = useState<AiOrchestration[]>([]);
   const [activeOrchestrationId, setActiveOrchestrationId] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -182,9 +284,10 @@ export function App() {
   const selected = notes.find((note) => note.id === selectedId) ?? notes[0] ?? null;
   const defaultModel = aiModels.find((model) => model.isDefault) ?? aiModels[0];
   const selectedModel = aiModels.find((model) => model.id === selectedModelId) ?? defaultModel;
+  const selectedContentPlaybook = selectedContentPlaybookId ? contentPlaybooks.find((playbook) => playbook.id === selectedContentPlaybookId) : undefined;
 
   const refreshCore = useCallback(async () => {
-    const [authStatus, allJobs, caps, models, workflows, prompts, scopes, bridgeStatus] = await Promise.all([
+    const [authStatus, allJobs, caps, models, workflows, prompts, scopes, bridgeStatus, playbooks, drafts, reviews] = await Promise.all([
       api.authStatus(),
       api.listJobs(),
       api.capabilities(),
@@ -192,7 +295,10 @@ export function App() {
       api.listAiWorkflows(),
       api.listAiPrompts(),
       api.listNoteScopes(),
-      api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus)
+      api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus),
+      api.listContentPlaybooks(),
+      api.listContentDrafts(),
+      api.listContentReviews()
     ]);
     const sortedJobs = allJobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     setAuth(authStatus);
@@ -202,9 +308,24 @@ export function App() {
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
     setNoteScopes(scopes);
+    setContentPlaybooks(playbooks);
+    setContentDrafts(drafts);
+    setContentReviews(reviews);
+    const nextPlaybook = selectedContentPlaybookId ? playbooks.find((playbook) => playbook.id === selectedContentPlaybookId) : playbooks[0];
+    if (!contentPlaybookDirty && nextPlaybook) {
+      if (selectedContentPlaybookId !== nextPlaybook.id) setSelectedContentPlaybookId(nextPlaybook.id);
+      setContentPlaybookForm(playbookToForm(nextPlaybook));
+      setContentBriefForm((form) => ({
+        ...form,
+        productName: form.productName === defaultContentBriefForm.productName ? nextPlaybook.productName : form.productName
+      }));
+    } else if (!contentPlaybookDirty && !nextPlaybook) {
+      setSelectedContentPlaybookId("");
+      setContentPlaybookForm(defaultPlaybookForm);
+    }
     setBrowserBridge({ ...bridgeStatus, connected: false });
     setError(clearRecoveredBackendError);
-  }, [activeJobId]);
+  }, [contentPlaybookDirty, selectedContentPlaybookId]);
 
   const loadNotes = useCallback(async () => {
     if (!activeJobId && !activeKeywordScopeId && !showHistoryData) {
@@ -250,16 +371,20 @@ export function App() {
   }, [activeJobId]);
 
   const loadOperations = useCallback(async () => {
-    const [plans, actions, reports, artifacts] = await Promise.all([
+    const [plans, actions, reports, artifacts, drafts, reviews] = await Promise.all([
       api.listReplyPlans(),
       api.listReplyActions(),
       api.listAiReports(activeJobId || undefined),
-      api.listAiArtifacts(activeJobId || undefined)
+      api.listAiArtifacts(activeJobId || undefined),
+      api.listContentDrafts(),
+      api.listContentReviews()
     ]);
     setReplyPlans(plans);
     setReplyActions(actions);
     setAiReports(reports);
     setAiArtifacts(artifacts);
+    setContentDrafts(drafts);
+    setContentReviews(reviews);
   }, [activeJobId]);
 
   const loadOrchestrations = useCallback(async () => {
@@ -649,6 +774,129 @@ export function App() {
     });
   }
 
+  async function refreshContentPlaybooksAfterChange(nextSelectedId?: string) {
+    const playbooks = await api.listContentPlaybooks();
+    setContentPlaybooks(playbooks);
+    const nextPlaybook = (nextSelectedId ? playbooks.find((playbook) => playbook.id === nextSelectedId) : undefined) ?? playbooks[0];
+    if (nextPlaybook) {
+      setSelectedContentPlaybookId(nextPlaybook.id);
+      setContentPlaybookForm(playbookToForm(nextPlaybook));
+    } else {
+      setSelectedContentPlaybookId("");
+      setContentPlaybookForm(defaultPlaybookForm);
+    }
+    setContentPlaybookDirty(false);
+  }
+
+  async function saveContentPlaybookForm() {
+    await run("content-playbook", async () => {
+      const saved = await api.saveContentPlaybook(contentPlaybookInputFromForm(contentPlaybookForm), selectedContentPlaybookId || undefined);
+      await refreshContentPlaybooksAfterChange(saved.id);
+    });
+  }
+
+  async function saveContentPlaybookAsNewForm() {
+    await run("content-playbook-save-as", async () => {
+      const saved = await api.saveContentPlaybook(contentPlaybookInputFromForm(contentPlaybookForm));
+      await refreshContentPlaybooksAfterChange(saved.id);
+    });
+  }
+
+  function createContentPlaybookForm() {
+    setSelectedContentPlaybookId("");
+    setContentPlaybookForm({
+      ...defaultPlaybookForm,
+      name: "新规则库",
+      productName: contentBriefForm.productName || "产品"
+    });
+    setContentPlaybookDirty(true);
+    setContentStudioTab("rules");
+  }
+
+  async function deleteContentPlaybookForm() {
+    if (!selectedContentPlaybookId) return;
+    await run("content-playbook-delete", async () => {
+      await api.deleteContentPlaybook(selectedContentPlaybookId);
+      await refreshContentPlaybooksAfterChange();
+    });
+  }
+
+  async function generateContentDraftFromForm() {
+    await run("content-draft", async () => {
+      const result = await api.generateContentDraft({
+        playbookId: selectedContentPlaybookId || undefined,
+        jobId: contextJobId || undefined,
+        modelId: selectedModel?.id,
+        brief: {
+          ...briefFromForm(contentBriefForm),
+          playbookId: selectedContentPlaybookId || undefined,
+          jobId: contextJobId || undefined
+        }
+      });
+      setContentDrafts((drafts) => [result.draft, ...drafts.filter((draft) => draft.id !== result.draft.id)]);
+      setContentReviews((reviews) => [result.review, ...reviews.filter((review) => review.id !== result.review.id)]);
+      setAiArtifacts((artifacts) => [result.reviewArtifact, result.artifact, ...artifacts.filter((artifact) => artifact.id !== result.artifact.id && artifact.id !== result.reviewArtifact.id)]);
+      setSelectedArtifactId(result.reviewArtifact.id);
+      setSelectedReportId("");
+      setContentStudioTab("results");
+      await loadOperations();
+    });
+  }
+
+  async function reviewContentDraftFromForm() {
+    if (!contentReviewForm.body.trim()) {
+      setError("请先粘贴需要审稿的小红书笔记正文。");
+      return;
+    }
+    await run("content-review", async () => {
+      const result = await api.reviewContentDraft({
+        playbookId: selectedContentPlaybookId || undefined,
+        jobId: contextJobId || undefined,
+        modelId: selectedModel?.id,
+        title: contentReviewForm.title,
+        body: contentReviewForm.body,
+        tags: splitTextList(contentReviewForm.tags),
+        mode: "minimal"
+      });
+      setContentReviews((reviews) => [result.review, ...reviews.filter((review) => review.id !== result.review.id)]);
+      setAiArtifacts((artifacts) => [result.artifact, ...artifacts.filter((artifact) => artifact.id !== result.artifact.id)]);
+      setSelectedArtifactId(result.artifact.id);
+      setSelectedReportId("");
+      setContentStudioTab("results");
+      await loadOperations();
+    });
+  }
+
+  async function reviewSelectedBatchItems(items: BatchReviewItem[]) {
+    const selectedItems = items.filter((item) => item.selected && item.body.trim());
+    if (!selectedItems.length) {
+      setError("请至少勾选一条有正文的笔记。");
+      return;
+    }
+    await run("content-batch-review", async () => {
+      const result = await api.reviewContentDraftBatch({
+        playbookId: selectedContentPlaybookId || undefined,
+        jobId: contextJobId || undefined,
+        modelId: selectedModel?.id,
+        mode: "minimal",
+        items: selectedItems.map((item) => ({
+          id: item.id,
+          title: item.title,
+          body: item.body,
+          tags: splitTextList(item.tags)
+        }))
+      });
+      setContentReviews((reviews) => [...result.reviews, ...reviews.filter((review) => !result.reviews.some((item) => item.id === review.id))]);
+      setAiArtifacts((artifacts) => [...result.artifacts, ...artifacts.filter((artifact) => !result.artifacts.some((item) => item.id === artifact.id))]);
+      if (result.artifacts[0]) {
+        setSelectedArtifactId(result.artifacts[0].id);
+        setSelectedReportId("");
+      }
+      setContentStudioTab("results");
+      await loadOperations();
+    });
+  }
+
   function openNewModel() {
     setEditingModelId("");
     setModelForm(emptyModelForm);
@@ -814,6 +1062,28 @@ export function App() {
     };
     setAssistantMessages((messages) => [...messages, userMessage]);
     setAssistantInput("");
+    if (isContentStudioRequest(content)) {
+      await run("assistant-chat", async () => {
+        const response = await api.runContentAssistant({
+          message: content,
+          jobId: contextJobId || undefined,
+          modelId: selectedModel?.id,
+          playbookId: selectedContentPlaybook?.id
+        });
+        if (!response.message) {
+          throw new Error("内容创作台返回内容为空，请稍后重试或切换模型。");
+        }
+        setAssistantMessages((messages) => [...messages, response.message]);
+        if (response.artifact) {
+          setAiArtifacts((items) => [response.artifact as AiArtifact, ...items.filter((item) => item.id !== response.artifact?.id)]);
+          setSelectedArtifactId(response.artifact.id);
+          setSelectedReportId("");
+        }
+        setActiveModule("content");
+        await loadOperations();
+      });
+      return;
+    }
     if (isControlledOrchestrationRequest(content)) {
       await run("assistant-chat", async () => {
         const orchestration = await api.createAiOrchestration({
@@ -1054,6 +1324,49 @@ export function App() {
             replyPlans={replyPlans}
             replyActions={replyActions}
             approveAction={approveAction}
+            busy={busy}
+          />
+        )}
+        {activeModule === "content" && (
+          <ContentStudioPage
+            activeTab={contentStudioTab}
+            setActiveTab={setContentStudioTab}
+            activeJob={contextJob}
+            playbooks={contentPlaybooks}
+            selectedPlaybookId={selectedContentPlaybook?.id ?? ""}
+            setSelectedPlaybookId={(id) => {
+              setSelectedContentPlaybookId(id);
+              const playbook = contentPlaybooks.find((item) => item.id === id);
+              if (playbook) {
+                setContentPlaybookForm(playbookToForm(playbook));
+                setContentBriefForm((form) => ({ ...form, productName: playbook.productName }));
+              }
+            }}
+            playbookForm={contentPlaybookForm}
+            setPlaybookForm={setContentPlaybookForm}
+            playbookDirty={contentPlaybookDirty}
+            setPlaybookDirty={setContentPlaybookDirty}
+            briefForm={contentBriefForm}
+            setBriefForm={setContentBriefForm}
+            reviewForm={contentReviewForm}
+            setReviewForm={setContentReviewForm}
+            batchItems={contentBatchItems}
+            setBatchItems={setContentBatchItems}
+            drafts={contentDrafts}
+            reviews={contentReviews}
+            artifacts={aiArtifacts}
+            createPlaybook={createContentPlaybookForm}
+            deletePlaybook={deleteContentPlaybookForm}
+            savePlaybookAsNew={saveContentPlaybookAsNewForm}
+            generateDraft={generateContentDraftFromForm}
+            reviewDraft={reviewContentDraftFromForm}
+            reviewBatch={reviewSelectedBatchItems}
+            savePlaybook={saveContentPlaybookForm}
+            openArtifact={(artifactId) => {
+              setSelectedArtifactId(artifactId);
+              setSelectedReportId("");
+              setActiveModule("ai");
+            }}
             busy={busy}
           />
         )}
@@ -2451,6 +2764,313 @@ function isTableSeparator(line: string): boolean {
 
 function parseTableCells(line: string): string[] {
   return line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((cell) => cell.trim());
+}
+
+function ContentStudioPage(props: ContentStudioProps) {
+  const selectedPlaybook = props.playbooks.find((item) => item.id === props.selectedPlaybookId);
+  const ruleLabel = selectedPlaybook?.name ?? (props.selectedPlaybookId ? "规则已不存在" : props.playbookDirty ? `${props.playbookForm.name || "新规则库"}（未保存）` : "默认兜底规则");
+  const selectedCount = props.batchItems.filter((item) => item.selected && item.body.trim()).length;
+  const tabs: Array<{ key: ContentStudioTab; label: string; icon: ReactNode }> = [
+    { key: "review", label: "AI 审稿员", icon: <ShieldCheck size={16} /> },
+    { key: "batch", label: `批量审稿${selectedCount ? ` ${selectedCount}` : ""}`, icon: <Layers size={16} /> },
+    { key: "write", label: "自动撰写", icon: <Sparkles size={16} /> },
+    { key: "rules", label: "规则库", icon: <Library size={16} /> },
+    { key: "results", label: "结果归档", icon: <FileText size={16} /> }
+  ];
+  return (
+    <div className="module-frame content-studio-shell">
+      <section className="surface content-studio-nav">
+        <div className="content-studio-head">
+          <div>
+            <strong>内容创作台</strong>
+            <span>{ruleLabel} · {props.activeJob ? jobKeywordLabel(props.activeJob) : "无任务上下文"}</span>
+          </div>
+          <button className="ghost-button compact" onClick={() => props.setActiveTab("rules")}>
+            <Library size={14} />
+            管理规则
+          </button>
+        </div>
+        <div className="content-tab-row" role="tablist" aria-label="内容创作台子页面">
+          {tabs.map((tab) => (
+            <button key={tab.key} className={props.activeTab === tab.key ? "active" : ""} onClick={() => props.setActiveTab(tab.key)}>
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {props.activeTab === "review" && <ContentReviewPane {...props} />}
+      {props.activeTab === "batch" && <ContentBatchReviewPane {...props} />}
+      {props.activeTab === "write" && <ContentWritingPane {...props} />}
+      {props.activeTab === "rules" && <ContentRulesPane {...props} />}
+      {props.activeTab === "results" && <ContentResultsPane {...props} />}
+    </div>
+  );
+}
+
+function ContentReviewPane(props: Pick<ContentStudioProps, "reviewForm" | "setReviewForm" | "reviewDraft" | "busy" | "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "reviews" | "openArtifact">) {
+  const updateReview = (key: keyof ContentReviewForm, value: string) => props.setReviewForm({ ...props.reviewForm, [key]: value });
+  return (
+    <div className="content-studio-grid review-first">
+      <section className="surface content-primary-panel">
+        <SectionTitle icon={<ShieldCheck size={18} />} title="AI 审稿员" />
+        <div className="content-field-stack">
+          <label>
+            <span>使用规则</span>
+            <select value={props.selectedPlaybookId} onChange={(event) => props.setSelectedPlaybookId(event.target.value)}>
+              <option value="">默认兜底规则（未保存）</option>
+              {props.playbooks.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>标题</span>
+            <input value={props.reviewForm.title} onChange={(event) => updateReview("title", event.target.value)} />
+          </label>
+          <label>
+            <span>正文</span>
+            <textarea className="content-review-textarea xl" value={props.reviewForm.body} onChange={(event) => updateReview("body", event.target.value)} />
+          </label>
+          <label>
+            <span>标签</span>
+            <input value={props.reviewForm.tags} onChange={(event) => updateReview("tags", event.target.value)} />
+          </label>
+          <button className="primary-button full" onClick={() => void props.reviewDraft()} disabled={props.busy === "content-review" || !props.reviewForm.body.trim()}>
+            {props.busy === "content-review" ? <Loader2 className="spin" size={16} /> : <ShieldCheck size={16} />}
+            审稿并生成修改稿
+          </button>
+        </div>
+      </section>
+      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} />
+    </div>
+  );
+}
+
+function ContentBatchReviewPane(props: Pick<ContentStudioProps, "batchItems" | "setBatchItems" | "reviewBatch" | "busy" | "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "reviews" | "openArtifact">) {
+  const updateItem = (id: string, patch: Partial<BatchReviewItem>) => {
+    props.setBatchItems(props.batchItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+  const addItem = () => props.setBatchItems([...props.batchItems, createBatchReviewItem()]);
+  const removeItem = (id: string) => props.setBatchItems(props.batchItems.length > 1 ? props.batchItems.filter((item) => item.id !== id) : [createBatchReviewItem()]);
+  const allSelected = props.batchItems.every((item) => item.selected);
+  const selectedCount = props.batchItems.filter((item) => item.selected && item.body.trim()).length;
+  return (
+    <div className="content-studio-grid batch-grid">
+      <section className="surface content-primary-panel">
+        <SectionTitle
+          icon={<Layers size={18} />}
+          title="批量审稿"
+          action={
+            <div className="button-row">
+              <button className="ghost-button compact" onClick={() => props.setBatchItems(props.batchItems.map((item) => ({ ...item, selected: !allSelected })))}>
+                <Square size={14} />
+                {allSelected ? "取消全选" : "全选"}
+              </button>
+              <button className="ghost-button compact" onClick={addItem}>
+                <FileText size={14} />
+                添加
+              </button>
+            </div>
+          }
+        />
+        <div className="content-field-stack">
+          <label>
+            <span>使用规则</span>
+            <select value={props.selectedPlaybookId} onChange={(event) => props.setSelectedPlaybookId(event.target.value)}>
+              <option value="">默认兜底规则（未保存）</option>
+              {props.playbooks.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
+            </select>
+          </label>
+          <div className="batch-review-list">
+            {props.batchItems.map((item, index) => (
+              <div key={item.id} className={item.selected ? "batch-review-row selected" : "batch-review-row"}>
+                <label className="batch-check">
+                  <input type="checkbox" checked={item.selected} onChange={(event) => updateItem(item.id, { selected: event.target.checked })} />
+                  <span>{index + 1}</span>
+                </label>
+                <div className="batch-fields">
+                  <input value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value })} placeholder="标题" />
+                  <textarea value={item.body} onChange={(event) => updateItem(item.id, { body: event.target.value })} placeholder="正文" />
+                  <input value={item.tags} onChange={(event) => updateItem(item.id, { tags: event.target.value })} placeholder="标签" />
+                </div>
+                <button className="ghost-button compact danger" onClick={() => removeItem(item.id)} aria-label="移除">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="primary-button full" onClick={() => void props.reviewBatch(props.batchItems)} disabled={props.busy === "content-batch-review" || selectedCount === 0}>
+            {props.busy === "content-batch-review" ? <Loader2 className="spin" size={16} /> : <ShieldCheck size={16} />}
+            审稿已勾选内容{selectedCount ? `（${selectedCount}）` : ""}
+          </button>
+        </div>
+      </section>
+      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} />
+    </div>
+  );
+}
+
+function ContentWritingPane(props: Pick<ContentStudioProps, "activeJob" | "briefForm" | "setBriefForm" | "generateDraft" | "busy" | "drafts" | "openArtifact">) {
+  const updateBrief = (key: keyof ContentBriefForm, value: string) => props.setBriefForm({ ...props.briefForm, [key]: value } as ContentBriefForm);
+  const latestDraft = props.drafts[0];
+  return (
+    <div className="content-studio-grid">
+      <section className="surface content-primary-panel">
+        <SectionTitle icon={<Sparkles size={18} />} title="自动撰写小红书笔记" />
+        <div className="content-field-stack">
+          <div className="section-mini-head">
+            <strong>结构化 Brief</strong>
+            <span>{props.activeJob ? jobKeywordLabel(props.activeJob) : "无任务上下文"}</span>
+          </div>
+          <div className="form-grid content-brief-grid">
+            <label><span>产品</span><input value={props.briefForm.productName} onChange={(event) => updateBrief("productName", event.target.value)} /></label>
+            <label><span>身份</span><input value={props.briefForm.persona} onChange={(event) => updateBrief("persona", event.target.value)} /></label>
+            <label><span>痛点</span><input value={props.briefForm.painPoint} onChange={(event) => updateBrief("painPoint", event.target.value)} /></label>
+            <label><span>场景</span><input value={props.briefForm.scenario} onChange={(event) => updateBrief("scenario", event.target.value)} /></label>
+            <label><span>了解渠道</span><input value={props.briefForm.channel} onChange={(event) => updateBrief("channel", event.target.value)} /></label>
+            <label>
+              <span>篇幅</span>
+              <select value={props.briefForm.length} onChange={(event) => props.setBriefForm({ ...props.briefForm, length: event.target.value as ContentDraftLength })}>
+                <option value="short">短</option>
+                <option value="medium">中</option>
+                <option value="long">长</option>
+              </select>
+            </label>
+          </div>
+          <label><span>产品特点</span><textarea value={props.briefForm.sellingPoints} onChange={(event) => updateBrief("sellingPoints", event.target.value)} /></label>
+          <label><span>关键词/标签</span><input value={props.briefForm.keywords} onChange={(event) => updateBrief("keywords", event.target.value)} /></label>
+          <button className="primary-button full" onClick={() => void props.generateDraft()} disabled={props.busy === "content-draft"}>
+            {props.busy === "content-draft" ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+            生成草稿并审稿
+          </button>
+        </div>
+      </section>
+      <section className="surface content-side-panel">
+        <SectionTitle icon={<FileText size={18} />} title="最近草稿" />
+        {latestDraft ? (
+          <div className="content-preview-box">
+            <strong>{latestDraft.title}</strong>
+            <p>{latestDraft.body.slice(0, 260)}</p>
+            <small>{latestDraft.tags.map((tag) => `#${tag}`).join(" ")}</small>
+            {latestDraft.artifactId && <button className="ghost-button full" onClick={() => props.openArtifact(latestDraft.artifactId!)}><Eye size={14} />打开草稿产物</button>}
+          </div>
+        ) : (
+          <EmptyState text="暂无草稿" />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "playbookForm" | "setPlaybookForm" | "playbookDirty" | "setPlaybookDirty" | "createPlaybook" | "deletePlaybook" | "savePlaybook" | "savePlaybookAsNew" | "busy">) {
+  const updatePlaybook = (key: keyof ContentPlaybookForm, value: string) => {
+    props.setPlaybookForm({ ...props.playbookForm, [key]: value });
+    props.setPlaybookDirty(true);
+  };
+  return (
+    <div className="content-studio-grid rules-grid">
+      <section className="surface content-side-panel">
+        <SectionTitle icon={<Library size={18} />} title="规则库列表" action={<button className="ghost-button compact" onClick={props.createPlaybook}><FileText size={14} />新建</button>} />
+        <div className="rule-card-list">
+          {props.playbooks.map((playbook) => (
+            <button key={playbook.id} className={props.selectedPlaybookId === playbook.id ? "rule-card active" : "rule-card"} onClick={() => {
+              props.setSelectedPlaybookId(playbook.id);
+              props.setPlaybookForm(playbookToForm(playbook));
+              props.setPlaybookDirty(false);
+            }}>
+              <strong>{playbook.name}</strong>
+              <small>{playbook.productName} · {playbook.category}</small>
+              <small>禁用 {playbook.forbiddenTerms.length} · 敏感 {playbook.sensitiveClaims.length}</small>
+            </button>
+          ))}
+          {!props.playbooks.length && <EmptyState text="暂无已保存规则，点击新建或直接编辑右侧模板后保存" />}
+        </div>
+      </section>
+      <section className="surface content-primary-panel">
+        <SectionTitle
+          icon={<ShieldCheck size={18} />}
+          title={props.selectedPlaybookId ? `编辑规则${props.playbookDirty ? "（未保存）" : ""}` : "新建规则（未保存）"}
+          action={
+            <div className="button-row">
+              <button className="ghost-button compact danger" onClick={() => void props.deletePlaybook()} disabled={!props.selectedPlaybookId || props.busy === "content-playbook-delete"}>
+                {props.busy === "content-playbook-delete" ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                删除
+              </button>
+              <button className="ghost-button compact" onClick={() => void props.savePlaybookAsNew()} disabled={props.busy === "content-playbook-save-as"}>
+                {props.busy === "content-playbook-save-as" ? <Loader2 className="spin" size={14} /> : <FileText size={14} />}
+                另存为新规则
+              </button>
+              <button className="primary-button compact" onClick={() => void props.savePlaybook()} disabled={props.busy === "content-playbook"}>
+                {props.busy === "content-playbook" ? <Loader2 className="spin" size={14} /> : <ShieldCheck size={14} />}
+                {props.selectedPlaybookId ? "保存修改" : "保存新规则"}
+              </button>
+            </div>
+          }
+        />
+        <div className="content-field-stack rules-editor-grid">
+          <label><span>名称</span><input value={props.playbookForm.name} onChange={(event) => updatePlaybook("name", event.target.value)} /></label>
+          <label><span>产品</span><input value={props.playbookForm.productName} onChange={(event) => updatePlaybook("productName", event.target.value)} /></label>
+          <label><span>行业</span><input value={props.playbookForm.category} onChange={(event) => updatePlaybook("category", event.target.value)} /></label>
+          <label><span>人设</span><textarea value={props.playbookForm.personas} onChange={(event) => updatePlaybook("personas", event.target.value)} /></label>
+          <label><span>场景</span><textarea value={props.playbookForm.scenarios} onChange={(event) => updatePlaybook("scenarios", event.target.value)} /></label>
+          <label><span>标签</span><textarea value={props.playbookForm.tags} onChange={(event) => updatePlaybook("tags", event.target.value)} /></label>
+          <label><span>禁用词</span><textarea value={props.playbookForm.forbiddenTerms} onChange={(event) => updatePlaybook("forbiddenTerms", event.target.value)} /></label>
+          <label><span>敏感功效</span><textarea value={props.playbookForm.sensitiveClaims} onChange={(event) => updatePlaybook("sensitiveClaims", event.target.value)} /></label>
+          <label><span>可说卖点</span><textarea value={props.playbookForm.allowedSellingPoints} onChange={(event) => updatePlaybook("allowedSellingPoints", event.target.value)} /></label>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews" | "artifacts" | "openArtifact">) {
+  return (
+    <div className="content-studio-grid results-grid">
+      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} />
+      <section className="surface content-primary-panel">
+        <SectionTitle icon={<FileText size={18} />} title="草稿归档" />
+        <div className="resource-list">
+          {props.drafts.map((draft) => (
+            <div key={draft.id} className="resource-row">
+              <button className="resource-select" onClick={() => draft.artifactId && props.openArtifact(draft.artifactId)}>
+                <strong>{draft.title}</strong>
+                <small>{draft.source === "ai" ? "AI 生成" : "本地规则"} · {new Date(draft.createdAt).toLocaleString()}</small>
+                <small>{draft.tags.map((tag) => `#${tag}`).join(" ")}</small>
+              </button>
+            </div>
+          ))}
+          {!props.drafts.length && <EmptyState text="暂无草稿" />}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ContentReviewSidePanel({ reviews, openArtifact }: { reviews: ContentReviewRun[]; openArtifact: (artifactId: string) => void }) {
+  return (
+    <section className="surface content-side-panel">
+      <SectionTitle icon={<FileText size={18} />} title="审稿结果" />
+      <div className="content-result-stack">
+        <div className="artifact-context">
+          <StatusRow label="审稿" value={`${reviews.length}`} ok={reviews.length > 0} />
+          <StatusRow label="高风险" value={`${reviews.filter((review) => review.risk === "high").length}`} ok={!reviews.some((review) => review.risk === "high")} />
+          <StatusRow label="通过" value={`${reviews.filter((review) => review.risk === "pass").length}`} ok={reviews.some((review) => review.risk === "pass")} />
+        </div>
+        <div className="resource-list compact-list">
+          {reviews.slice(0, 10).map((review) => (
+            <div key={review.id} className="resource-row">
+              <button className="resource-select" onClick={() => review.artifactId && openArtifact(review.artifactId)}>
+                <strong>{review.revisedTitle || review.originalTitle || "AI 审稿报告"}</strong>
+                <small>{contentRiskLabel(review.risk)} · {review.score}/100 · 问题 {review.issues.length}</small>
+                <small>{new Date(review.createdAt).toLocaleString()}</small>
+              </button>
+            </div>
+          ))}
+          {!reviews.length && <EmptyState text="暂无审稿结果" />}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function PromptCenterPage({
@@ -3970,9 +4590,77 @@ function isAiWorkflowKey(value: AiArtifact["workflowKey"]): value is AiWorkflowK
   return value !== "assistant";
 }
 
+function playbookToForm(playbook: ContentPlaybook): ContentPlaybookForm {
+  return {
+    name: playbook.name,
+    productName: playbook.productName,
+    category: playbook.category,
+    forbiddenTerms: playbook.forbiddenTerms.join(", "),
+    sensitiveClaims: playbook.sensitiveClaims.join(", "),
+    allowedSellingPoints: playbook.allowedSellingPoints.join(", "),
+    personas: playbook.personas.join(", "),
+    scenarios: playbook.scenarios.join(", "),
+    tags: playbook.tags.join(", ")
+  };
+}
+
+function contentPlaybookInputFromForm(form: ContentPlaybookForm) {
+  return {
+    name: form.name,
+    productName: form.productName,
+    category: form.category,
+    forbiddenTerms: splitTextList(form.forbiddenTerms),
+    sensitiveClaims: splitTextList(form.sensitiveClaims),
+    allowedSellingPoints: splitTextList(form.allowedSellingPoints),
+    personas: splitTextList(form.personas),
+    scenarios: splitTextList(form.scenarios),
+    tags: splitTextList(form.tags)
+  };
+}
+
+function briefFromForm(form: ContentBriefForm) {
+  return {
+    productName: form.productName,
+    persona: form.persona,
+    painPoint: form.painPoint,
+    scenario: form.scenario,
+    channel: form.channel,
+    sellingPoints: splitTextList(form.sellingPoints),
+    tone: form.tone,
+    length: form.length,
+    keywords: splitTextList(form.keywords)
+  };
+}
+
+function splitTextList(value: string): string[] {
+  return value.split(/[,\n，、#]/u).map((item) => item.trim()).filter(Boolean);
+}
+
+function createBatchReviewItem(): BatchReviewItem {
+  return {
+    id: `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    title: "",
+    body: "",
+    tags: "",
+    selected: true
+  };
+}
+
+function contentRiskLabel(risk: ContentReviewRun["risk"]): string {
+  if (risk === "pass") return "通过";
+  if (risk === "low") return "低风险";
+  if (risk === "medium") return "中风险";
+  return "高风险";
+}
+
 function isControlledOrchestrationRequest(content: string): boolean {
   const text = content.trim();
   return /抓取|搜索/.test(text) && /关键词/.test(text) && /话题|机会|爆款|评论|选题|分析/.test(text);
+}
+
+function isContentStudioRequest(content: string): boolean {
+  const text = content.trim();
+  return /审稿|审核|改稿|润色|撰写|写一篇|写小红书|生成草稿|自动写|笔记草稿/.test(text) && /小红书|笔记|种草|草稿|文案/.test(text);
 }
 
 function callBrowserBridge<T = unknown>(action: string, payload?: unknown, timeoutMs = 3000): Promise<T> {

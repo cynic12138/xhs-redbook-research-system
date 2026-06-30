@@ -27,7 +27,13 @@ export type AiWorkflowKey =
   | "competitor-analysis"
   | "viral-deep-dive"
   | "viral-template"
-  | "note-analysis";
+  | "note-analysis"
+  | "draft-review"
+  | "note-writing";
+export type ContentIssueSeverity = "info" | "warning" | "blocker";
+export type ContentReviewRisk = "pass" | "low" | "medium" | "high";
+export type ContentDraftLength = "short" | "medium" | "long";
+export type ContentDraftStatus = "draft" | "reviewed";
 
 export interface AuthStatus {
   connected: boolean;
@@ -394,7 +400,7 @@ export interface AiWorkflowDefinition {
   key: AiWorkflowKey;
   title: string;
   description: string;
-  module: "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "ai";
+  module: "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "content" | "ai";
   requires: Array<"job" | "note" | "comments" | "authors" | "analytics">;
 }
 
@@ -516,6 +522,158 @@ export interface AiOrchestrationCreateInput {
   instruction: string;
   keywords?: string[];
   modelId?: string;
+}
+
+export interface ContentReplacementRule {
+  from: string;
+  to: string;
+  reason?: string;
+}
+
+export interface ContentPlaybook {
+  id: string;
+  name: string;
+  productName: string;
+  category: string;
+  forbiddenTerms: string[];
+  sensitiveClaims: string[];
+  allowedSellingPoints: string[];
+  requiredSections: string[];
+  toneWords: string[];
+  personas: string[];
+  scenarios: string[];
+  tags: string[];
+  replacements: ContentReplacementRule[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentPlaybookInput {
+  name: string;
+  productName: string;
+  category?: string;
+  forbiddenTerms?: string[];
+  sensitiveClaims?: string[];
+  allowedSellingPoints?: string[];
+  requiredSections?: string[];
+  toneWords?: string[];
+  personas?: string[];
+  scenarios?: string[];
+  tags?: string[];
+  replacements?: ContentReplacementRule[];
+}
+
+export interface ContentBrief {
+  playbookId?: string;
+  productName: string;
+  persona: string;
+  painPoint: string;
+  scenario: string;
+  channel: string;
+  sellingPoints: string[];
+  tone: string;
+  length: ContentDraftLength;
+  keywords: string[];
+  jobId?: string;
+}
+
+export interface ContentDraftInput {
+  playbookId?: string;
+  jobId?: string;
+  modelId?: string;
+  brief: ContentBrief;
+}
+
+export interface ContentReviewInput {
+  playbookId?: string;
+  jobId?: string;
+  noteId?: string;
+  draftId?: string;
+  modelId?: string;
+  title?: string;
+  body: string;
+  tags?: string[];
+  mode?: "minimal" | "natural" | "safe";
+}
+
+export interface ContentReviewBatchItem {
+  id?: string;
+  title?: string;
+  body: string;
+  tags?: string[];
+}
+
+export interface ContentReviewBatchInput {
+  playbookId?: string;
+  jobId?: string;
+  modelId?: string;
+  items: ContentReviewBatchItem[];
+  mode?: "minimal" | "natural" | "safe";
+}
+
+export interface ContentReviewIssue {
+  id: string;
+  severity: ContentIssueSeverity;
+  category: string;
+  message: string;
+  evidence?: string;
+  suggestion?: string;
+}
+
+export interface ContentReviewRun {
+  id: string;
+  playbookId?: string;
+  jobId?: string;
+  noteId?: string;
+  draftId?: string;
+  originalTitle?: string;
+  originalBody: string;
+  originalTags: string[];
+  risk: ContentReviewRisk;
+  score: number;
+  issues: ContentReviewIssue[];
+  revisedTitle: string;
+  revisedBody: string;
+  revisedTags: string[];
+  artifactId?: string;
+  modelId?: string;
+  source: AiArtifactSource;
+  status: AiArtifactStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentDraft {
+  id: string;
+  playbookId?: string;
+  jobId?: string;
+  title: string;
+  body: string;
+  tags: string[];
+  brief: ContentBrief;
+  reviewId?: string;
+  artifactId?: string;
+  source: AiArtifactSource;
+  status: ContentDraftStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentReviewResult {
+  review: ContentReviewRun;
+  artifact: AiArtifact;
+}
+
+export interface ContentDraftResult {
+  draft: ContentDraft;
+  review: ContentReviewRun;
+  artifact: AiArtifact;
+  reviewArtifact: AiArtifact;
+}
+
+export interface ContentReviewBatchResult {
+  reviews: ContentReviewRun[];
+  artifacts: AiArtifact[];
 }
 
 export interface ReplyCandidate {

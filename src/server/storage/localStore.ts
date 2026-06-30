@@ -15,6 +15,9 @@ import type {
   BrowserBridgeStatus,
   BoardRecord,
   CommentRecord,
+  ContentDraft,
+  ContentPlaybook,
+  ContentReviewRun,
   FavoriteNoteRecord,
   HealthReportRecord,
   NoteRecord,
@@ -45,6 +48,9 @@ type CollectionName =
   | "healthReports"
   | "boards"
   | "favoriteNotes"
+  | "contentPlaybooks"
+  | "contentDrafts"
+  | "contentReviews"
   | "rateLimit";
 
 interface DataShape {
@@ -68,6 +74,9 @@ interface DataShape {
   healthReports: HealthReportRecord[];
   boards: BoardRecord[];
   favoriteNotes: FavoriteNoteRecord[];
+  contentPlaybooks: ContentPlaybook[];
+  contentDrafts: ContentDraft[];
+  contentReviews: ContentReviewRun[];
   rateLimit: {
     budgetDate: string;
     consumedToday: number;
@@ -95,6 +104,9 @@ const defaults: DataShape = {
   healthReports: [],
   boards: [],
   favoriteNotes: [],
+  contentPlaybooks: [],
+  contentDrafts: [],
+  contentReviews: [],
   rateLimit: {
     budgetDate: new Date().toISOString().slice(0, 10),
     consumedToday: 0

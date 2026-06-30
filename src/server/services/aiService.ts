@@ -83,6 +83,20 @@ const workflowDefinitions: AiWorkflowDefinition[] = [
     description: "分析选中笔记的标题、正文、评论需求和可改写方向。",
     module: "notes",
     requires: ["note", "comments"]
+  },
+  {
+    key: "draft-review",
+    title: "AI 审稿员",
+    description: "按产品规则、平台风险和小红书表达习惯审稿，并给出最小修改版。",
+    module: "content",
+    requires: []
+  },
+  {
+    key: "note-writing",
+    title: "笔记撰写",
+    description: "基于结构化 Brief、热门笔记和评论需求生成小红书笔记草稿。",
+    module: "content",
+    requires: []
   }
 ];
 
@@ -634,6 +648,12 @@ function localActionsFor(key: AiWorkflowDefinition["key"], selected?: NoteRecord
   }
   if (key === "viral-deep-dive" || key === "viral-template") {
     return `- 复盘标题钩子、正文开头、评论触发点。\n- ${selected ? `以《${selected.title}》为样本生成 3 个同结构选题。` : "先选择一篇高热笔记再做单篇拆解。"}`;
+  }
+  if (key === "draft-review") {
+    return "- 粘贴原始笔记后，按规则库输出风险项、修改理由和最小修改版。\n- 修改后再做一次规则复核，发布前仍需人工确认。";
+  }
+  if (key === "note-writing") {
+    return "- 用身份、痛点、场景、了解渠道和产品卖点生成真实分享型草稿。\n- 草稿生成后进入 AI 审稿员复核，避免硬广和敏感功效表达。";
   }
   return "- 分析标题是否清楚、正文是否有信息密度、评论是否暴露未满足需求。\n- 输出 3 个改写方向供人工选择。";
 }
