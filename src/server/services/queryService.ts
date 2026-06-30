@@ -1,4 +1,4 @@
-import type { AnalyticsReport, NotesPageResult, NotesQuery, NoteRecord } from "../../shared/types.js";
+import type { AnalyticsReport, NoteScopeSummary, NotesPageResult, NotesQuery, NoteRecord } from "../../shared/types.js";
 import { clamp, nowIso } from "../../shared/utils.js";
 import { buildAnalytics } from "./analysis.js";
 import { jobs } from "./jobService.js";
@@ -48,6 +48,78 @@ export async function listNotesPage(query: NotesQuery, page = 1, pageSize = 20):
     pageSize: safePageSize,
     totalPages
   };
+}
+
+export async function listNoteScopes(localStore = store): Promise<NoteScopeSummary[]> {
+  const [searchJobs, notes, queueItems, aiArtifacts, aiReports] = await Promise.all([
+    localStore.read("searchJobs"),
+    localStore.read("notes"),
+    localStore.read("queueItems"),
+    localStore.read("aiArtifacts"),
+    localStore.read("aiReports")
+  ]);
+
+  const duplicateCounts = new Map<string, number>();
+  for (const job of searchJobs) {
+    const key = keywordGroupKey(job.keywords);
+    duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
+  }
+
+  const allScope: NoteScopeSummary = {
+    id: "__all__",
+    type: "all",
+    label: "全部历史笔记",
+    keywords: [],
+    noteCount: notes.length,
+    queueTotal: queueItems.length,
+    queueErrors: queueItems.filter((item) => item.status === "error").length,
+    aiArtifactCount: aiArtifacts.length,
+    aiReportCount: aiReports.length,
+    duplicateCount: 0,
+    isDuplicate: false,
+    updatedAt: newestIso([
+      ...notes.map((note) => note.updatedAt),
+      ...searchJobs.map((job) => job.updatedAt),
+      ...aiArtifacts.map((artifact) => artifact.updatedAt),
+      ...aiReports.map((report) => report.updatedAt)
+    ])
+  };
+
+  const jobScopes = searchJobs
+    .map((job): NoteScopeSummary => {
+      const jobNotes = notes.filter((note) => note.jobIds.includes(job.id));
+      const jobQueueItems = queueItems.filter((item) => item.jobId === job.id);
+      const jobArtifacts = aiArtifacts.filter((artifact) => artifact.jobId === job.id);
+      const jobReports = aiReports.filter((report) => report.jobId === job.id);
+      const queueErrors = jobQueueItems.filter((item) => item.status === "error").length;
+      const duplicateCount = duplicateCounts.get(keywordGroupKey(job.keywords)) ?? 1;
+      return {
+        id: job.id,
+        type: "job",
+        jobId: job.id,
+        label: job.keywords.join(" / ") || job.id,
+        keywords: job.keywords,
+        status: job.status,
+        noteCount: jobNotes.length,
+        queueTotal: jobQueueItems.length,
+        queueErrors,
+        aiArtifactCount: jobArtifacts.length,
+        aiReportCount: jobReports.length,
+        createdAt: job.createdAt,
+        updatedAt: newestIso([
+          job.updatedAt,
+          ...jobNotes.map((note) => note.updatedAt),
+          ...jobArtifacts.map((artifact) => artifact.updatedAt),
+          ...jobReports.map((report) => report.updatedAt)
+        ]),
+        duplicateCount,
+        isDuplicate: duplicateCount > 1,
+        emptyReason: jobNotes.length ? undefined : noteScopeEmptyReason(job.status, queueErrors)
+      };
+    })
+    .sort((a, b) => (b.updatedAt ?? b.createdAt ?? "").localeCompare(a.updatedAt ?? a.createdAt ?? ""));
+
+  return [allScope, ...jobScopes];
 }
 
 export async function getNoteDetail(noteId: string): Promise<unknown> {
@@ -180,6 +252,22 @@ export async function buildExport(jobId: string, format: "json" | "csv" | "html"
     type: "application/json; charset=utf-8",
     name: `${jobId}.json`
   };
+}
+
+function keywordGroupKey(keywords: string[]): string {
+  return keywords.map((keyword) => keyword.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-CN")).join("\u0001");
+}
+
+function newestIso(values: Array<string | undefined>): string | undefined {
+  return values.filter((value): value is string => Boolean(value)).sort((a, b) => b.localeCompare(a))[0];
+}
+
+function noteScopeEmptyReason(status: string, queueErrors: number): string {
+  if (status === "failed") return "任务失败，未入库笔记";
+  if (queueErrors > 0) return "任务存在抓取错误，未入库笔记";
+  if (status === "paused") return "任务暂停，暂无笔记";
+  if (status === "running" || status === "queued") return "任务尚未完成，暂无笔记";
+  return "暂无入库笔记";
 }
 
 function csvCell(value: string): string {

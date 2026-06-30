@@ -6,7 +6,7 @@ import { store } from "../storage/localStore.js";
 import { saveCookieString, getCookieString } from "../utils/env.js";
 import { jobs } from "../services/jobService.js";
 import { redbook } from "../services/redbookService.js";
-import { buildExport, clearNotes, deleteNote, getAnalytics, getNoteDetail, listNotesPage } from "../services/queryService.js";
+import { buildExport, clearNotes, deleteNote, getAnalytics, getNoteDetail, listNoteScopes, listNotesPage } from "../services/queryService.js";
 import { redbookCapabilities } from "../services/capabilities.js";
 import { buildHealthCheck } from "../services/healthService.js";
 import { proxyMedia } from "../services/mediaService.js";
@@ -363,6 +363,10 @@ api.get("/notes", async (req, res) => {
     sort: asSort(req.query.sort)
   };
   res.json(await listNotesPage(query, numberQuery(req.query.page), numberQuery(req.query.pageSize)));
+});
+
+api.get("/note-scopes", async (_req, res) => {
+  res.json(await listNoteScopes());
 });
 
 api.get("/notes/:id", async (req, res) => {

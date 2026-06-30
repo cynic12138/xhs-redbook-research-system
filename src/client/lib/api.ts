@@ -21,6 +21,7 @@ import type {
   BrowserOpenMode,
   BrowserOpenResult,
   HealthReportRecord,
+  NoteScopeSummary,
   NoteRecord,
   NotesPageResult,
   RedbookCapability,
@@ -81,6 +82,7 @@ export const api = {
   resumeJob: (jobId: string) => apiPost<SearchJob>(`/api/search-jobs/${jobId}/resume`),
   stopJob: (jobId: string) => apiPost<SearchJob>(`/api/search-jobs/${jobId}/stop`),
   listNotes: (params: URLSearchParams) => apiGet<NotesPageResult>(`/api/notes?${params.toString()}`),
+  listNoteScopes: () => apiGet<NoteScopeSummary[]>("/api/note-scopes"),
   deleteNote: (noteId: string) => apiDelete<{ deleted: number }>(`/api/notes/${encodeURIComponent(noteId)}`),
   clearNotes: (jobId?: string) =>
     apiDelete<{ deleted: number }>(`/api/notes${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ""}`),

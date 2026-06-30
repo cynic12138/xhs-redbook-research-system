@@ -284,6 +284,25 @@ export interface NotesPageResult {
   totalPages: number;
 }
 
+export interface NoteScopeSummary {
+  id: string;
+  type: "all" | "job";
+  jobId?: string;
+  label: string;
+  keywords: string[];
+  status?: JobStatus;
+  noteCount: number;
+  queueTotal: number;
+  queueErrors: number;
+  aiArtifactCount: number;
+  aiReportCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+  duplicateCount: number;
+  isDuplicate: boolean;
+  emptyReason?: string;
+}
+
 export interface SearchJobInput {
   keywords: string[];
   sort: SearchSort;

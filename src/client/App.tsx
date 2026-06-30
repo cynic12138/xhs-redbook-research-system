@@ -50,6 +50,7 @@ import type {
   AuthStatus,
   BrowserBridgeStatus,
   HealthReportRecord,
+  NoteScopeSummary,
   NoteRecord,
   NoteTypeFilter,
   RedbookCapability,
@@ -121,6 +122,8 @@ export function App() {
   const [jobs, setJobs] = useState<SearchJob[]>([]);
   const [activeJobId, setActiveJobId] = useState("");
   const [showHistoryData, setShowHistoryData] = useState(false);
+  const [noteScopes, setNoteScopes] = useState<NoteScopeSummary[]>([]);
+  const [noteScopePanelOpen, setNoteScopePanelOpen] = useState(false);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [notePage, setNotePage] = useState(1);
   const [notePageSize] = useState(20);
@@ -176,13 +179,14 @@ export function App() {
   const selectedModel = aiModels.find((model) => model.id === selectedModelId) ?? defaultModel;
 
   const refreshCore = useCallback(async () => {
-    const [authStatus, allJobs, caps, models, workflows, prompts, bridgeStatus] = await Promise.all([
+    const [authStatus, allJobs, caps, models, workflows, prompts, scopes, bridgeStatus] = await Promise.all([
       api.authStatus(),
       api.listJobs(),
       api.capabilities(),
       api.listAiModels(),
       api.listAiWorkflows(),
       api.listAiPrompts(),
+      api.listNoteScopes(),
       api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus)
     ]);
     const sortedJobs = allJobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -192,6 +196,7 @@ export function App() {
     setAiModels(models);
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
+    setNoteScopes(scopes);
     setBrowserBridge({ ...bridgeStatus, connected: false });
     setError(clearRecoveredBackendError);
   }, [activeJobId]);
@@ -964,6 +969,7 @@ export function App() {
         {activeModule === "notes" && (
           <NotesPage
             jobs={jobs}
+            noteScopes={noteScopes}
             notes={notes}
             selected={selected}
             query={query}
@@ -985,6 +991,8 @@ export function App() {
             setActiveJobId={setActiveJobId}
             showHistoryData={showHistoryData}
             setShowHistoryData={setShowHistoryData}
+            noteScopePanelOpen={noteScopePanelOpen}
+            setNoteScopePanelOpen={setNoteScopePanelOpen}
             clearCurrentNotes={clearCurrentNotes}
             deleteSelectedNote={deleteSelectedNote}
             openOriginalUrl={openOriginalUrl}
@@ -1563,6 +1571,7 @@ function ResearchPage(props: {
 
 function NotesPage(props: {
   jobs: SearchJob[];
+  noteScopes: NoteScopeSummary[];
   notes: NoteRecord[];
   selected: NoteRecord | null;
   query: string;
@@ -1584,12 +1593,17 @@ function NotesPage(props: {
   setActiveJobId: (value: string) => void;
   showHistoryData: boolean;
   setShowHistoryData: (value: boolean) => void;
+  noteScopePanelOpen: boolean;
+  setNoteScopePanelOpen: (value: boolean) => void;
   clearCurrentNotes: () => Promise<void>;
   deleteSelectedNote: () => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   runWorkflow: RunWorkflow;
   busy: string;
 }) {
+  const clearDisabled = !props.activeJobId || props.busy === "clear-notes" || props.total === 0;
+  const clearLabel = props.activeJobId ? "清空当前任务" : props.showHistoryData ? "先选择单个任务" : "请选择任务";
+
   return (
     <div className="notes-layout">
       <section className="surface notes-panel">
@@ -1600,10 +1614,11 @@ function NotesPage(props: {
             <button
               className="ghost-button compact danger"
               onClick={() => void props.clearCurrentNotes()}
-              disabled={!props.activeJobId || props.busy === "clear-notes" || props.total === 0}
+              title={props.activeJobId ? "只清空当前选中任务关联的笔记" : "全部历史视图不能直接清空，请先选择单个任务"}
+              disabled={clearDisabled}
             >
               {props.busy === "clear-notes" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-              清空当前任务
+              {clearLabel}
             </button>
           }
         />
@@ -1639,33 +1654,17 @@ function NotesPage(props: {
             </select>
           </label>
         </div>
-        <div className="history-control-row">
-          <label className="field-stack compact-field">
-            <span>数据范围</span>
-            <select
-              value={props.activeJobId || (props.showHistoryData ? "__all__" : "")}
-              onChange={(event) => {
-                props.setPage(1);
-                if (event.target.value === "__all__") {
-                  props.setActiveJobId("");
-                  props.setShowHistoryData(true);
-                  return;
-                }
-                props.setShowHistoryData(false);
-                props.setActiveJobId(event.target.value);
-              }}
-            >
-              <option value="">暂不打开历史数据</option>
-              <option value="__all__">查看全部历史笔记</option>
-              {props.jobs.map((job) => (
-                <option key={job.id} value={job.id}>{jobKeywordLabel(job)}</option>
-              ))}
-            </select>
-          </label>
-          {!props.activeJobId && !props.showHistoryData && (
-            <p className="muted-line">历史笔记已默认收起。请选择一个历史任务，或查看全部历史笔记。</p>
-          )}
-        </div>
+        <NoteScopePicker
+          scopes={props.noteScopes}
+          jobs={props.jobs}
+          activeJobId={props.activeJobId}
+          setActiveJobId={props.setActiveJobId}
+          showHistoryData={props.showHistoryData}
+          setShowHistoryData={props.setShowHistoryData}
+          pageReset={() => props.setPage(1)}
+          open={props.noteScopePanelOpen}
+          setOpen={props.setNoteScopePanelOpen}
+        />
         <div className="note-list">
           {props.notes.map((note) => (
             <button
@@ -1710,6 +1709,179 @@ function NotesPage(props: {
       <NoteDetail note={props.selected} onDelete={props.deleteSelectedNote} openOriginalUrl={props.openOriginalUrl} runWorkflow={props.runWorkflow} busy={props.busy} />
     </div>
   );
+}
+
+function NoteScopePicker(props: {
+  scopes: NoteScopeSummary[];
+  jobs: SearchJob[];
+  activeJobId: string;
+  setActiveJobId: (value: string) => void;
+  showHistoryData: boolean;
+  setShowHistoryData: (value: boolean) => void;
+  pageReset: () => void;
+  open: boolean;
+  setOpen: (value: boolean) => void;
+}) {
+  const scopes = props.scopes.length ? props.scopes : buildFallbackNoteScopes(props.jobs);
+  const allScope = scopes.find((scope) => scope.type === "all") ?? buildAllNoteScope(0);
+  const jobScopes = scopes.filter((scope) => scope.type === "job");
+  const filledScopes = jobScopes.filter((scope) => scope.noteCount > 0);
+  const emptyScopes = jobScopes.filter((scope) => scope.noteCount === 0);
+  const currentScope = props.activeJobId
+    ? jobScopes.find((scope) => scope.jobId === props.activeJobId)
+    : props.showHistoryData
+      ? allScope
+      : undefined;
+  const currentLabel = currentScope?.label ?? "暂不打开历史数据";
+  const currentMeta = currentScope ? noteScopeMeta(currentScope) : "不会加载历史笔记，适合从新任务开始";
+
+  const chooseNone = () => {
+    props.pageReset();
+    props.setActiveJobId("");
+    props.setShowHistoryData(false);
+    props.setOpen(false);
+  };
+
+  const chooseAll = () => {
+    props.pageReset();
+    props.setActiveJobId("");
+    props.setShowHistoryData(true);
+    props.setOpen(false);
+  };
+
+  const chooseJob = (jobId: string) => {
+    props.pageReset();
+    props.setShowHistoryData(false);
+    props.setActiveJobId(jobId);
+    props.setOpen(false);
+  };
+
+  return (
+    <div className="note-scope-bar">
+      <div className="note-scope-current">
+        <button className="note-scope-trigger" type="button" onClick={() => props.setOpen(!props.open)} aria-expanded={props.open}>
+          <span>数据范围</span>
+          <strong>{currentLabel}</strong>
+          <small>{currentMeta}</small>
+        </button>
+        <div className="note-scope-actions">
+          <button className="ghost-button compact" type="button" onClick={chooseNone}>
+            暂不打开历史
+          </button>
+          <button className="ghost-button compact" type="button" onClick={chooseAll}>
+            全部历史 {formatNumber(allScope.noteCount)}
+          </button>
+        </div>
+      </div>
+      {!props.activeJobId && !props.showHistoryData && (
+        <p className="muted-line">历史笔记默认收起。选择某个任务可查看其入库笔记，选择全部历史可跨任务检索。</p>
+      )}
+      {props.open && (
+        <div className="note-scope-popover" role="dialog" aria-label="选择笔记数据范围">
+          <div className="note-scope-section">
+            <span className="scope-section-title">常用范围</span>
+            <ScopeOption scope={allScope} active={props.showHistoryData && !props.activeJobId} onClick={chooseAll} />
+          </div>
+          <div className="note-scope-section">
+            <span className="scope-section-title">有笔记的历史任务</span>
+            <div className="note-scope-list">
+              {filledScopes.map((scope) => (
+                <ScopeOption key={scope.id} scope={scope} active={scope.jobId === props.activeJobId} onClick={() => scope.jobId && chooseJob(scope.jobId)} />
+              ))}
+              {!filledScopes.length && <span className="scope-empty-line">暂无已入库的历史任务</span>}
+            </div>
+          </div>
+          {!!emptyScopes.length && (
+            <details className="note-scope-empty-group">
+              <summary>空任务 / 抓取失败任务 {emptyScopes.length}</summary>
+              <div className="note-scope-list compact">
+                {emptyScopes.map((scope) => (
+                  <ScopeOption key={scope.id} scope={scope} active={scope.jobId === props.activeJobId} onClick={() => scope.jobId && chooseJob(scope.jobId)} />
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScopeOption(props: { scope: NoteScopeSummary; active: boolean; onClick: () => void }) {
+  return (
+    <button className={`note-scope-option ${props.active ? "active" : ""}`} type="button" onClick={props.onClick}>
+      <span>
+        <strong>{props.scope.label}</strong>
+        <small>{noteScopeMeta(props.scope)}</small>
+      </span>
+      <span className="scope-badges">
+        {props.scope.isDuplicate && <em>重复 {props.scope.duplicateCount}</em>}
+        {props.scope.status && <em>{jobStatusLabel(props.scope.status)}</em>}
+        {props.active && <CheckCircle2 size={15} />}
+      </span>
+      {props.scope.emptyReason && <small className="scope-reason">{props.scope.emptyReason}</small>}
+    </button>
+  );
+}
+
+function buildFallbackNoteScopes(jobs: SearchJob[]): NoteScopeSummary[] {
+  return [
+    buildAllNoteScope(0),
+    ...jobs.map((job) => ({
+      id: job.id,
+      type: "job" as const,
+      jobId: job.id,
+      label: jobKeywordLabel(job),
+      keywords: job.keywords,
+      status: job.status,
+      noteCount: 0,
+      queueTotal: job.progress.total,
+      queueErrors: job.progress.error,
+      aiArtifactCount: 0,
+      aiReportCount: 0,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      duplicateCount: 1,
+      isDuplicate: false,
+      emptyReason: "等待范围摘要加载"
+    }))
+  ];
+}
+
+function buildAllNoteScope(noteCount: number): NoteScopeSummary {
+  return {
+    id: "__all__",
+    type: "all",
+    label: "全部历史笔记",
+    keywords: [],
+    noteCount,
+    queueTotal: 0,
+    queueErrors: 0,
+    aiArtifactCount: 0,
+    aiReportCount: 0,
+    duplicateCount: 0,
+    isDuplicate: false
+  };
+}
+
+function noteScopeMeta(scope: NoteScopeSummary): string {
+  const parts = [`${formatNumber(scope.noteCount)} 条笔记`];
+  if (scope.queueErrors) parts.push(`${formatNumber(scope.queueErrors)} 个错误`);
+  const aiCount = scope.aiArtifactCount + scope.aiReportCount;
+  if (aiCount) parts.push(`${formatNumber(aiCount)} 个 AI 产物`);
+  if (scope.updatedAt) parts.push(formatDateTime(scope.updatedAt));
+  return parts.join(" · ");
+}
+
+function jobStatusLabel(status: SearchJob["status"]): string {
+  const labels: Record<SearchJob["status"], string> = {
+    queued: "等待",
+    running: "运行中",
+    paused: "暂停",
+    completed: "完成",
+    failed: "失败"
+  };
+  return labels[status];
 }
 
 function NoteMediaThumb({ note }: { note: NoteRecord }) {
