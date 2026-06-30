@@ -365,6 +365,7 @@ api.post("/search-jobs/:id/stop", async (req, res) => {
 api.get("/notes", async (req, res) => {
   const query: NotesQuery = {
     jobId: stringQuery(req.query.jobId),
+    jobIds: stringListQuery(req.query.jobIds),
     q: stringQuery(req.query.q),
     type: asNoteType(req.query.type),
     author: stringQuery(req.query.author),
@@ -782,6 +783,12 @@ api.get("/redbook/following", async (req, res, next) => {
 
 function stringQuery(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringListQuery(value: unknown): string[] | undefined {
+  if (typeof value !== "string") return undefined;
+  const items = value.split(",").map((item) => item.trim()).filter(Boolean);
+  return items.length ? items : undefined;
 }
 
 function numberQuery(value: unknown): number | undefined {

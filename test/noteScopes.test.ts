@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AiArtifact, AiReport, NoteRecord, QueueItem, SearchJob } from "../src/shared/types.js";
 import { LocalStore } from "../src/server/storage/localStore.js";
-import { clearNotes, getNoteScopeClearPreview, listNoteScopes } from "../src/server/services/queryService.js";
+import { clearNotes, getNoteScopeClearPreview, listNoteScopes, listNotes } from "../src/server/services/queryService.js";
 
 describe("note scope summaries", () => {
   it("summarizes all notes, duplicate keyword jobs, empty jobs, and AI artifact counts", async () => {
@@ -23,6 +23,7 @@ describe("note scope summaries", () => {
 
     const scopes = await listNoteScopes(store);
     const allScope = scopes.find((scope) => scope.type === "all");
+    const keywordScope = scopes.find((scope) => scope.type === "keyword");
     const olderScope = scopes.find((scope) => scope.jobId === "job-older");
     const newerScope = scopes.find((scope) => scope.jobId === "job-newer");
 
@@ -31,6 +32,9 @@ describe("note scope summaries", () => {
     expect(olderScope?.noteCount).toBe(1);
     expect(olderScope?.aiArtifactCount).toBe(1);
     expect(olderScope?.aiReportCount).toBe(1);
+    expect(keywordScope?.relatedJobIds).toEqual(["job-newer", "job-older"]);
+    expect(keywordScope?.noteCount).toBe(1);
+    expect(await listNotes({ jobIds: keywordScope?.relatedJobIds, sort: "hot" }, store)).toHaveLength(1);
     expect(olderScope?.isDuplicate).toBe(true);
     expect(olderScope?.duplicateCount).toBe(2);
     expect(newerScope?.noteCount).toBe(0);

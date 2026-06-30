@@ -269,6 +269,7 @@ export interface ViralAnalysis {
 
 export interface NotesQuery {
   jobId?: string;
+  jobIds?: string[];
   q?: string;
   type?: NoteTypeFilter;
   author?: string;
@@ -286,8 +287,9 @@ export interface NotesPageResult {
 
 export interface NoteScopeSummary {
   id: string;
-  type: "all" | "job";
+  type: "all" | "keyword" | "job";
   jobId?: string;
+  relatedJobIds?: string[];
   label: string;
   keywords: string[];
   status?: JobStatus;

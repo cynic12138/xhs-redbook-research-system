@@ -122,6 +122,7 @@ export function App() {
   const [concurrency, setConcurrency] = useState(2);
   const [jobs, setJobs] = useState<SearchJob[]>([]);
   const [activeJobId, setActiveJobId] = useState("");
+  const [activeKeywordScopeId, setActiveKeywordScopeId] = useState("");
   const [showHistoryData, setShowHistoryData] = useState(false);
   const [noteScopes, setNoteScopes] = useState<NoteScopeSummary[]>([]);
   const [noteScopePanelOpen, setNoteScopePanelOpen] = useState(false);
@@ -206,7 +207,7 @@ export function App() {
   }, [activeJobId]);
 
   const loadNotes = useCallback(async () => {
-    if (!activeJobId && !showHistoryData) {
+    if (!activeJobId && !activeKeywordScopeId && !showHistoryData) {
       setNotes([]);
       setNotesTotal(0);
       setNotesTotalPages(1);
@@ -215,6 +216,12 @@ export function App() {
     }
     const params = new URLSearchParams();
     if (activeJobId) params.set("jobId", activeJobId);
+    if (activeKeywordScopeId && !activeJobId) {
+      const keywordScope = noteScopes.find((scope) => scope.id === activeKeywordScopeId);
+      if (keywordScope?.relatedJobIds?.length) {
+        params.set("jobIds", keywordScope.relatedJobIds.join(","));
+      }
+    }
     if (query.trim()) params.set("q", query.trim());
     if (authorQuery.trim()) params.set("author", authorQuery.trim());
     if (resultType !== "all") params.set("type", resultType);
@@ -232,7 +239,7 @@ export function App() {
     if (!data.items.length) {
       setSelectedId("");
     }
-  }, [activeJobId, authorQuery, minLikes, notePage, notePageSize, query, resultSort, resultType, selectedId, showHistoryData]);
+  }, [activeJobId, activeKeywordScopeId, authorQuery, minLikes, notePage, notePageSize, noteScopes, query, resultSort, resultType, selectedId, showHistoryData]);
 
   const loadAnalytics = useCallback(async () => {
     if (!activeJobId) {
@@ -267,7 +274,7 @@ export function App() {
 
   useEffect(() => {
     setNotePage(1);
-  }, [activeJobId, authorQuery, minLikes, query, resultSort, resultType]);
+  }, [activeJobId, activeKeywordScopeId, authorQuery, minLikes, query, resultSort, resultType]);
 
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
@@ -554,6 +561,7 @@ export function App() {
         .filter(Boolean);
       const job = await api.createJob({ keywords: inputKeywords, sort, noteType, pages, commentPages, concurrency });
       setActiveJobId(job.id);
+      setActiveKeywordScopeId("");
       setShowHistoryData(false);
       setActiveModule("overview");
       await refreshCore();
@@ -1005,6 +1013,8 @@ export function App() {
             setPage={setNotePage}
             activeJobId={activeJobId}
             setActiveJobId={setActiveJobId}
+            activeKeywordScopeId={activeKeywordScopeId}
+            setActiveKeywordScopeId={setActiveKeywordScopeId}
             showHistoryData={showHistoryData}
             setShowHistoryData={setShowHistoryData}
             noteScopePanelOpen={noteScopePanelOpen}
@@ -1621,6 +1631,8 @@ function NotesPage(props: {
   setPage: (value: number) => void;
   activeJobId: string;
   setActiveJobId: (value: string) => void;
+  activeKeywordScopeId: string;
+  setActiveKeywordScopeId: (value: string) => void;
   showHistoryData: boolean;
   setShowHistoryData: (value: boolean) => void;
   noteScopePanelOpen: boolean;
@@ -1632,7 +1644,7 @@ function NotesPage(props: {
   busy: string;
 }) {
   const clearDisabled = !props.activeJobId || props.busy === "clear-notes" || props.total === 0;
-  const clearLabel = props.activeJobId ? "清空当前任务" : props.showHistoryData ? "先选择单个任务" : "请选择任务";
+  const clearLabel = props.activeJobId ? "清空当前任务" : props.showHistoryData || props.activeKeywordScopeId ? "先选择单个任务" : "请选择任务";
 
   return (
     <div className="notes-layout">
@@ -1689,6 +1701,8 @@ function NotesPage(props: {
           jobs={props.jobs}
           activeJobId={props.activeJobId}
           setActiveJobId={props.setActiveJobId}
+          activeKeywordScopeId={props.activeKeywordScopeId}
+          setActiveKeywordScopeId={props.setActiveKeywordScopeId}
           showHistoryData={props.showHistoryData}
           setShowHistoryData={props.setShowHistoryData}
           pageReset={() => props.setPage(1)}
@@ -1746,6 +1760,8 @@ function NoteScopePicker(props: {
   jobs: SearchJob[];
   activeJobId: string;
   setActiveJobId: (value: string) => void;
+  activeKeywordScopeId: string;
+  setActiveKeywordScopeId: (value: string) => void;
   showHistoryData: boolean;
   setShowHistoryData: (value: boolean) => void;
   pageReset: () => void;
@@ -1754,11 +1770,14 @@ function NoteScopePicker(props: {
 }) {
   const scopes = props.scopes.length ? props.scopes : buildFallbackNoteScopes(props.jobs);
   const allScope = scopes.find((scope) => scope.type === "all") ?? buildAllNoteScope(0);
+  const keywordScopes = scopes.filter((scope) => scope.type === "keyword");
   const jobScopes = scopes.filter((scope) => scope.type === "job");
   const filledScopes = jobScopes.filter((scope) => scope.noteCount > 0);
   const emptyScopes = jobScopes.filter((scope) => scope.noteCount === 0);
   const currentScope = props.activeJobId
     ? jobScopes.find((scope) => scope.jobId === props.activeJobId)
+    : props.activeKeywordScopeId
+      ? keywordScopes.find((scope) => scope.id === props.activeKeywordScopeId)
     : props.showHistoryData
       ? allScope
       : undefined;
@@ -1768,6 +1787,7 @@ function NoteScopePicker(props: {
   const chooseNone = () => {
     props.pageReset();
     props.setActiveJobId("");
+    props.setActiveKeywordScopeId("");
     props.setShowHistoryData(false);
     props.setOpen(false);
   };
@@ -1775,12 +1795,22 @@ function NoteScopePicker(props: {
   const chooseAll = () => {
     props.pageReset();
     props.setActiveJobId("");
+    props.setActiveKeywordScopeId("");
     props.setShowHistoryData(true);
+    props.setOpen(false);
+  };
+
+  const chooseKeyword = (scopeId: string) => {
+    props.pageReset();
+    props.setActiveJobId("");
+    props.setActiveKeywordScopeId(scopeId);
+    props.setShowHistoryData(false);
     props.setOpen(false);
   };
 
   const chooseJob = (jobId: string) => {
     props.pageReset();
+    props.setActiveKeywordScopeId("");
     props.setShowHistoryData(false);
     props.setActiveJobId(jobId);
     props.setOpen(false);
@@ -1803,7 +1833,7 @@ function NoteScopePicker(props: {
           </button>
         </div>
       </div>
-      {!props.activeJobId && !props.showHistoryData && (
+      {!props.activeJobId && !props.activeKeywordScopeId && !props.showHistoryData && (
         <p className="muted-line">历史笔记默认收起。选择某个任务可查看其入库笔记，选择全部历史可跨任务检索。</p>
       )}
       {props.open && (
@@ -1821,6 +1851,16 @@ function NoteScopePicker(props: {
               {!filledScopes.length && <span className="scope-empty-line">暂无已入库的历史任务</span>}
             </div>
           </div>
+          {!!keywordScopes.length && (
+            <div className="note-scope-section">
+              <span className="scope-section-title">重复关键词组</span>
+              <div className="note-scope-list">
+                {keywordScopes.map((scope) => (
+                  <ScopeOption key={scope.id} scope={scope} active={scope.id === props.activeKeywordScopeId} onClick={() => chooseKeyword(scope.id)} />
+                ))}
+              </div>
+            </div>
+          )}
           {!!emptyScopes.length && (
             <details className="note-scope-empty-group">
               <summary>空任务 / 抓取失败任务 {emptyScopes.length}</summary>
