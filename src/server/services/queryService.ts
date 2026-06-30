@@ -1,17 +1,18 @@
-import type { AnalyticsReport, NotesPageResult, NotesQuery, NoteRecord } from "../../shared/types.js";
+import type { AnalyticsReport, NoteScopeClearPreview, NoteScopeSummary, NotesPageResult, NotesQuery, NoteRecord } from "../../shared/types.js";
 import { clamp, nowIso } from "../../shared/utils.js";
 import { buildAnalytics } from "./analysis.js";
 import { jobs } from "./jobService.js";
 import { store } from "../storage/localStore.js";
 
-export async function listNotes(query: NotesQuery): Promise<NoteRecord[]> {
-  const notes = await store.read("notes");
+export async function listNotes(query: NotesQuery, localStore = store): Promise<NoteRecord[]> {
+  const notes = await localStore.read("notes");
   const q = query.q?.trim().toLowerCase();
   const author = query.author?.trim().toLowerCase();
   const minLikes = Number(query.minLikes ?? 0);
 
   const filtered = notes.filter((note) => {
     if (query.jobId && !note.jobIds.includes(query.jobId)) return false;
+    if (query.jobIds?.length && !note.jobIds.some((jobId) => query.jobIds?.includes(jobId))) return false;
     if (query.type && query.type !== "all") {
       if (query.type === "image" && note.type !== "normal") return false;
       if (query.type === "video" && note.type !== "video") return false;
@@ -50,6 +51,114 @@ export async function listNotesPage(query: NotesQuery, page = 1, pageSize = 20):
   };
 }
 
+export async function listNoteScopes(localStore = store): Promise<NoteScopeSummary[]> {
+  const [searchJobs, notes, queueItems, aiArtifacts, aiReports] = await Promise.all([
+    localStore.read("searchJobs"),
+    localStore.read("notes"),
+    localStore.read("queueItems"),
+    localStore.read("aiArtifacts"),
+    localStore.read("aiReports")
+  ]);
+
+  const duplicateCounts = new Map<string, number>();
+  const groupedJobs = new Map<string, typeof searchJobs>();
+  for (const job of searchJobs) {
+    const key = keywordGroupKey(job.keywords);
+    duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
+    groupedJobs.set(key, [...(groupedJobs.get(key) ?? []), job]);
+  }
+
+  const allScope: NoteScopeSummary = {
+    id: "__all__",
+    type: "all",
+    label: "全部历史笔记",
+    keywords: [],
+    noteCount: notes.length,
+    queueTotal: queueItems.length,
+    queueErrors: queueItems.filter((item) => item.status === "error").length,
+    aiArtifactCount: aiArtifacts.length,
+    aiReportCount: aiReports.length,
+    duplicateCount: 0,
+    isDuplicate: false,
+    updatedAt: newestIso([
+      ...notes.map((note) => note.updatedAt),
+      ...searchJobs.map((job) => job.updatedAt),
+      ...aiArtifacts.map((artifact) => artifact.updatedAt),
+      ...aiReports.map((report) => report.updatedAt)
+    ])
+  };
+
+  const keywordScopes = [...groupedJobs.entries()]
+    .filter(([, groupJobs]) => groupJobs.length > 1)
+    .map(([key, groupJobs]): NoteScopeSummary => {
+      const relatedJobIds = groupJobs.map((job) => job.id);
+      const relatedJobIdSet = new Set(relatedJobIds);
+      const groupNotes = notes.filter((note) => note.jobIds.some((jobId) => relatedJobIdSet.has(jobId)));
+      const groupQueueItems = queueItems.filter((item) => relatedJobIdSet.has(item.jobId));
+      const groupArtifacts = aiArtifacts.filter((artifact) => artifact.jobId && relatedJobIdSet.has(artifact.jobId));
+      const groupReports = aiReports.filter((report) => relatedJobIdSet.has(report.jobId));
+      return {
+        id: `keyword:${Buffer.from(key, "utf8").toString("base64url")}`,
+        type: "keyword",
+        relatedJobIds,
+        label: groupJobs[0]?.keywords.join(" / ") || "重复关键词组",
+        keywords: groupJobs[0]?.keywords ?? [],
+        noteCount: groupNotes.length,
+        queueTotal: groupQueueItems.length,
+        queueErrors: groupQueueItems.filter((item) => item.status === "error").length,
+        aiArtifactCount: groupArtifacts.length,
+        aiReportCount: groupReports.length,
+        createdAt: newestIso(groupJobs.map((job) => job.createdAt)),
+        updatedAt: newestIso([
+          ...groupJobs.map((job) => job.updatedAt),
+          ...groupNotes.map((note) => note.updatedAt),
+          ...groupArtifacts.map((artifact) => artifact.updatedAt),
+          ...groupReports.map((report) => report.updatedAt)
+        ]),
+        duplicateCount: groupJobs.length,
+        isDuplicate: true,
+        emptyReason: groupNotes.length ? undefined : "该关键词组暂无入库笔记"
+      };
+    })
+    .sort((a, b) => (b.updatedAt ?? b.createdAt ?? "").localeCompare(a.updatedAt ?? a.createdAt ?? ""));
+
+  const jobScopes = searchJobs
+    .map((job): NoteScopeSummary => {
+      const jobNotes = notes.filter((note) => note.jobIds.includes(job.id));
+      const jobQueueItems = queueItems.filter((item) => item.jobId === job.id);
+      const jobArtifacts = aiArtifacts.filter((artifact) => artifact.jobId === job.id);
+      const jobReports = aiReports.filter((report) => report.jobId === job.id);
+      const queueErrors = jobQueueItems.filter((item) => item.status === "error").length;
+      const duplicateCount = duplicateCounts.get(keywordGroupKey(job.keywords)) ?? 1;
+      return {
+        id: job.id,
+        type: "job",
+        jobId: job.id,
+        label: job.keywords.join(" / ") || job.id,
+        keywords: job.keywords,
+        status: job.status,
+        noteCount: jobNotes.length,
+        queueTotal: jobQueueItems.length,
+        queueErrors,
+        aiArtifactCount: jobArtifacts.length,
+        aiReportCount: jobReports.length,
+        createdAt: job.createdAt,
+        updatedAt: newestIso([
+          job.updatedAt,
+          ...jobNotes.map((note) => note.updatedAt),
+          ...jobArtifacts.map((artifact) => artifact.updatedAt),
+          ...jobReports.map((report) => report.updatedAt)
+        ]),
+        duplicateCount,
+        isDuplicate: duplicateCount > 1,
+        emptyReason: jobNotes.length ? undefined : noteScopeEmptyReason(job.status, queueErrors)
+      };
+    })
+    .sort((a, b) => (b.updatedAt ?? b.createdAt ?? "").localeCompare(a.updatedAt ?? a.createdAt ?? ""));
+
+  return [allScope, ...keywordScopes, ...jobScopes];
+}
+
 export async function getNoteDetail(noteId: string): Promise<unknown> {
   const [notes, comments, authors, authorPosts] = await Promise.all([
     store.read("notes"),
@@ -69,6 +178,36 @@ export async function getNoteDetail(noteId: string): Promise<unknown> {
   };
 }
 
+export async function getNoteScopeClearPreview(jobId: string, localStore = store): Promise<NoteScopeClearPreview | undefined> {
+  const [searchJobs, notes, comments, queueItems, analysisReports, aiArtifacts, aiReports] = await Promise.all([
+    localStore.read("searchJobs"),
+    localStore.read("notes"),
+    localStore.read("comments"),
+    localStore.read("queueItems"),
+    localStore.read("analysisReports"),
+    localStore.read("aiArtifacts"),
+    localStore.read("aiReports")
+  ]);
+  const job = searchJobs.find((item) => item.id === jobId);
+  if (!job) {
+    return undefined;
+  }
+  const affected = notes.filter((note) => note.jobIds.includes(jobId));
+  const orphanIds = new Set(affected.filter((note) => note.jobIds.length === 1).map((note) => note.id));
+  return {
+    jobId,
+    label: job.keywords.join(" / ") || job.id,
+    affectedNotes: affected.length,
+    detachedNotes: affected.length - orphanIds.size,
+    orphanNotes: orphanIds.size,
+    commentsToDelete: comments.filter((comment) => orphanIds.has(comment.noteId)).length,
+    queueItemsToDelete: queueItems.filter((item) => item.jobId === jobId).length,
+    analysisReportsToDelete: analysisReports.filter((report) => report.jobId === jobId).length,
+    aiArtifactsLinked: aiArtifacts.filter((artifact) => artifact.jobId === jobId).length,
+    aiReportsLinked: aiReports.filter((report) => report.jobId === jobId).length
+  };
+}
+
 export async function deleteNote(noteId: string): Promise<{ deleted: number }> {
   const notes = await store.read("notes");
   const target = notes.find((note) => note.id === noteId);
@@ -84,14 +223,18 @@ export async function deleteNote(noteId: string): Promise<{ deleted: number }> {
   return { deleted: 1 };
 }
 
-export async function clearNotes(jobId?: string): Promise<{ deleted: number }> {
-  const notes = await store.read("notes");
+export async function clearNotes(
+  jobId?: string,
+  options: { deleteAiArtifacts?: boolean } = {},
+  localStore = store
+): Promise<{ deleted: number }> {
+  const notes = await localStore.read("notes");
   const affected = jobId ? notes.filter((note) => note.jobIds.includes(jobId)) : notes;
   const affectedIds = new Set(affected.map((note) => note.id));
 
   let deletedIds = new Set<string>();
   if (jobId) {
-    await store.update("notes", (items) =>
+    await localStore.update("notes", (items) =>
       items
         .map((note) =>
           note.jobIds.includes(jobId)
@@ -104,24 +247,32 @@ export async function clearNotes(jobId?: string): Promise<{ deleted: number }> {
         )
         .filter((note) => note.jobIds.length)
     );
-    const remaining = await store.read("notes");
+    const remaining = await localStore.read("notes");
     const remainingIds = new Set(remaining.map((note) => note.id));
     deletedIds = new Set([...affectedIds].filter((id) => !remainingIds.has(id)));
-    await store.update("queueItems", (items) => items.filter((item) => item.jobId !== jobId));
-    await store.update("analysisReports", (reports) => reports.filter((report) => report.jobId !== jobId));
-    await jobs.refreshProgress(jobId);
+    await localStore.update("queueItems", (items) => items.filter((item) => item.jobId !== jobId));
+    await localStore.update("analysisReports", (reports) => reports.filter((report) => report.jobId !== jobId));
+    if (options.deleteAiArtifacts) {
+      await localStore.update("aiArtifacts", (artifacts) => artifacts.filter((artifact) => artifact.jobId !== jobId));
+      await localStore.update("aiReports", (reports) => reports.filter((report) => report.jobId !== jobId));
+    }
+    if (localStore === store) {
+      await jobs.refreshProgress(jobId);
+    }
   } else {
     deletedIds = affectedIds;
-    await store.write("notes", []);
-    await store.write("comments", []);
-    await store.write("queueItems", []);
-    await store.write("analysisReports", []);
-    const allJobs = await store.read("searchJobs");
-    await Promise.all(allJobs.map((job) => jobs.refreshProgress(job.id)));
+    await localStore.write("notes", []);
+    await localStore.write("comments", []);
+    await localStore.write("queueItems", []);
+    await localStore.write("analysisReports", []);
+    if (localStore === store) {
+      const allJobs = await localStore.read("searchJobs");
+      await Promise.all(allJobs.map((job) => jobs.refreshProgress(job.id)));
+    }
   }
 
   if (deletedIds.size) {
-    await store.update("comments", (comments) => comments.filter((comment) => !deletedIds.has(comment.noteId)));
+    await localStore.update("comments", (comments) => comments.filter((comment) => !deletedIds.has(comment.noteId)));
   }
 
   return { deleted: affected.length };
@@ -180,6 +331,22 @@ export async function buildExport(jobId: string, format: "json" | "csv" | "html"
     type: "application/json; charset=utf-8",
     name: `${jobId}.json`
   };
+}
+
+function keywordGroupKey(keywords: string[]): string {
+  return keywords.map((keyword) => keyword.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-CN")).join("\u0001");
+}
+
+function newestIso(values: Array<string | undefined>): string | undefined {
+  return values.filter((value): value is string => Boolean(value)).sort((a, b) => b.localeCompare(a))[0];
+}
+
+function noteScopeEmptyReason(status: string, queueErrors: number): string {
+  if (status === "failed") return "任务失败，未入库笔记";
+  if (queueErrors > 0) return "任务存在抓取错误，未入库笔记";
+  if (status === "paused") return "任务暂停，暂无笔记";
+  if (status === "running" || status === "queued") return "任务尚未完成，暂无笔记";
+  return "暂无入库笔记";
 }
 
 function csvCell(value: string): string {

@@ -269,6 +269,7 @@ export interface ViralAnalysis {
 
 export interface NotesQuery {
   jobId?: string;
+  jobIds?: string[];
   q?: string;
   type?: NoteTypeFilter;
   author?: string;
@@ -282,6 +283,45 @@ export interface NotesPageResult {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+export interface NoteScopeSummary {
+  id: string;
+  type: "all" | "keyword" | "job";
+  jobId?: string;
+  relatedJobIds?: string[];
+  label: string;
+  keywords: string[];
+  status?: JobStatus;
+  noteCount: number;
+  queueTotal: number;
+  queueErrors: number;
+  aiArtifactCount: number;
+  aiReportCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+  duplicateCount: number;
+  isDuplicate: boolean;
+  emptyReason?: string;
+}
+
+export interface NoteScopeClearPreview {
+  jobId: string;
+  label: string;
+  affectedNotes: number;
+  detachedNotes: number;
+  orphanNotes: number;
+  commentsToDelete: number;
+  queueItemsToDelete: number;
+  analysisReportsToDelete: number;
+  aiArtifactsLinked: number;
+  aiReportsLinked: number;
+}
+
+export interface NoteMediaRefreshResult {
+  note: NoteRecord;
+  refreshed: boolean;
+  message: string;
 }
 
 export interface SearchJobInput {

@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
-import type { NoteRecord } from "../../shared/types.js";
+import type { NoteMediaRefreshResult, NoteRecord } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
 import { store } from "../storage/localStore.js";
 import { getMediaAutoRefresh } from "../utils/env.js";
@@ -80,31 +80,39 @@ async function refreshMediaUrl(
     return undefined;
   }
 
+  const refreshed = await refreshNoteMedia(context.noteId);
+  return selectReplacementMedia(refreshed.note, failedUrl, context);
+}
+
+export async function refreshNoteMedia(noteId: string): Promise<NoteMediaRefreshResult> {
   const notes = await store.read("notes");
-  const existing = notes.find((note) => note.id === context.noteId);
+  const existing = notes.find((note) => note.id === noteId);
   if (!existing?.webUrl) {
-    return undefined;
+    throw new Error("note is missing web url");
   }
 
   const raw = await redbook.read(existing.webUrl);
   const refreshed = normalizeNote(raw, existing.keywords[0] ?? "", existing.jobIds[0] ?? "media-refresh", existing);
   if (!refreshed) {
-    return undefined;
+    throw new Error("unable to refresh note media");
   }
 
+  const updated = {
+    ...existing,
+    ...refreshed,
+    id: existing.id,
+    updatedAt: nowIso()
+  };
+
   await store.update("notes", (current) =>
-    current.map((note) =>
-      note.id === refreshed.id
-        ? {
-            ...note,
-            ...refreshed,
-            updatedAt: nowIso()
-          }
-        : note
-    )
+    current.map((note) => (note.id === existing.id ? updated : note))
   );
 
-  return selectReplacementMedia(refreshed, failedUrl, context);
+  return {
+    note: updated,
+    refreshed: true,
+    message: "媒体信息已刷新"
+  };
 }
 
 function selectReplacementMedia(

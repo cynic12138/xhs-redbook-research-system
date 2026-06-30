@@ -50,6 +50,8 @@ import type {
   AuthStatus,
   BrowserBridgeStatus,
   HealthReportRecord,
+  NoteScopeClearPreview,
+  NoteScopeSummary,
   NoteRecord,
   NoteTypeFilter,
   RedbookCapability,
@@ -59,11 +61,12 @@ import type {
   SearchJob,
   SearchSort
 } from "../shared/types.js";
+import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProviderKey } from "../shared/modelProviders.js";
 import { api } from "./lib/api.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
-type ModelForm = { name: string; provider: string; baseUrl: string; model: string; apiKey: string };
+type ModelForm = { providerKey: AiModelProviderKey; name: string; provider: string; baseUrl: string; model: string; apiKey: string };
 type ReaderPreview = { kind: "artifact" | "report"; title: string; markdown: string; meta: string[]; exportUrl: string };
 type RunWorkflow = (workflowKey: AiWorkflowKey, focus?: string) => Promise<AiArtifact | undefined>;
 type AssistantNoticeTone = "info" | "warning" | "error" | "progress";
@@ -77,9 +80,10 @@ type AssistantNotice = {
 };
 
 const emptyModelForm: ModelForm = {
+  providerKey: "deepseek",
   name: "",
-  provider: "OpenAI-compatible",
-  baseUrl: "https://api.openai.com/v1",
+  provider: "DeepSeek",
+  baseUrl: "https://api.deepseek.com",
   model: "",
   apiKey: ""
 };
@@ -118,7 +122,13 @@ export function App() {
   const [concurrency, setConcurrency] = useState(2);
   const [jobs, setJobs] = useState<SearchJob[]>([]);
   const [activeJobId, setActiveJobId] = useState("");
+  const [activeKeywordScopeId, setActiveKeywordScopeId] = useState("");
   const [showHistoryData, setShowHistoryData] = useState(false);
+  const [noteScopes, setNoteScopes] = useState<NoteScopeSummary[]>([]);
+  const [noteScopePanelOpen, setNoteScopePanelOpen] = useState(false);
+  const [datasetManagerOpen, setDatasetManagerOpen] = useState(false);
+  const [datasetClearPreview, setDatasetClearPreview] = useState<NoteScopeClearPreview | null>(null);
+  const [deleteDatasetAiArtifacts, setDeleteDatasetAiArtifacts] = useState(false);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [notePage, setNotePage] = useState(1);
   const [notePageSize] = useState(20);
@@ -174,13 +184,14 @@ export function App() {
   const selectedModel = aiModels.find((model) => model.id === selectedModelId) ?? defaultModel;
 
   const refreshCore = useCallback(async () => {
-    const [authStatus, allJobs, caps, models, workflows, prompts, bridgeStatus] = await Promise.all([
+    const [authStatus, allJobs, caps, models, workflows, prompts, scopes, bridgeStatus] = await Promise.all([
       api.authStatus(),
       api.listJobs(),
       api.capabilities(),
       api.listAiModels(),
       api.listAiWorkflows(),
       api.listAiPrompts(),
+      api.listNoteScopes(),
       api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus)
     ]);
     const sortedJobs = allJobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -190,12 +201,13 @@ export function App() {
     setAiModels(models);
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
+    setNoteScopes(scopes);
     setBrowserBridge({ ...bridgeStatus, connected: false });
     setError(clearRecoveredBackendError);
   }, [activeJobId]);
 
   const loadNotes = useCallback(async () => {
-    if (!activeJobId && !showHistoryData) {
+    if (!activeJobId && !activeKeywordScopeId && !showHistoryData) {
       setNotes([]);
       setNotesTotal(0);
       setNotesTotalPages(1);
@@ -204,6 +216,12 @@ export function App() {
     }
     const params = new URLSearchParams();
     if (activeJobId) params.set("jobId", activeJobId);
+    if (activeKeywordScopeId && !activeJobId) {
+      const keywordScope = noteScopes.find((scope) => scope.id === activeKeywordScopeId);
+      if (keywordScope?.relatedJobIds?.length) {
+        params.set("jobIds", keywordScope.relatedJobIds.join(","));
+      }
+    }
     if (query.trim()) params.set("q", query.trim());
     if (authorQuery.trim()) params.set("author", authorQuery.trim());
     if (resultType !== "all") params.set("type", resultType);
@@ -221,7 +239,7 @@ export function App() {
     if (!data.items.length) {
       setSelectedId("");
     }
-  }, [activeJobId, authorQuery, minLikes, notePage, notePageSize, query, resultSort, resultType, selectedId, showHistoryData]);
+  }, [activeJobId, activeKeywordScopeId, authorQuery, minLikes, notePage, notePageSize, noteScopes, query, resultSort, resultType, selectedId, showHistoryData]);
 
   const loadAnalytics = useCallback(async () => {
     if (!activeJobId) {
@@ -256,7 +274,7 @@ export function App() {
 
   useEffect(() => {
     setNotePage(1);
-  }, [activeJobId, authorQuery, minLikes, query, resultSort, resultType]);
+  }, [activeJobId, activeKeywordScopeId, authorQuery, minLikes, query, resultSort, resultType]);
 
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
@@ -543,6 +561,7 @@ export function App() {
         .filter(Boolean);
       const job = await api.createJob({ keywords: inputKeywords, sort, noteType, pages, commentPages, concurrency });
       setActiveJobId(job.id);
+      setActiveKeywordScopeId("");
       setShowHistoryData(false);
       setActiveModule("overview");
       await refreshCore();
@@ -575,10 +594,29 @@ export function App() {
     });
   }
 
+  async function refreshSelectedNoteMedia(noteId: string) {
+    await run("media-refresh", async () => {
+      await api.refreshNoteMedia(noteId);
+      await loadNotes();
+    });
+  }
+
+  async function openDatasetManager() {
+    if (!activeJobId) return;
+    await run("clear-preview", async () => {
+      setDatasetClearPreview(await api.getNoteScopeClearPreview(activeJobId));
+      setDeleteDatasetAiArtifacts(false);
+      setDatasetManagerOpen(true);
+    });
+  }
+
   async function clearCurrentNotes() {
     if (!activeJobId) return;
     await run("clear-notes", async () => {
-      await api.clearNotes(activeJobId);
+      await api.clearNotes(activeJobId, deleteDatasetAiArtifacts);
+      setDatasetManagerOpen(false);
+      setDatasetClearPreview(null);
+      setDeleteDatasetAiArtifacts(false);
       setSelectedId("");
       await refreshCore();
       await loadNotes();
@@ -618,8 +656,10 @@ export function App() {
   }
 
   function openEditModel(model: AiModelConfig) {
+    const providerPreset = findModelProviderPreset(model.provider, model.baseUrl, model.model);
     setEditingModelId(model.id);
     setModelForm({
+      providerKey: providerPreset.key,
       name: model.name,
       provider: model.provider,
       baseUrl: model.baseUrl,
@@ -631,8 +671,9 @@ export function App() {
 
   async function saveModel() {
     await run("model", async () => {
+      const { providerKey: _providerKey, ...modelInput } = modelForm;
       const input = {
-        ...modelForm,
+        ...modelInput,
         isDefault: editingModelId ? undefined : aiModels.length === 0,
         temperature: 0.4,
         maxTokens: 4000
@@ -959,6 +1000,7 @@ export function App() {
         {activeModule === "notes" && (
           <NotesPage
             jobs={jobs}
+            noteScopes={noteScopes}
             notes={notes}
             selected={selected}
             query={query}
@@ -978,10 +1020,15 @@ export function App() {
             setPage={setNotePage}
             activeJobId={activeJobId}
             setActiveJobId={setActiveJobId}
+            activeKeywordScopeId={activeKeywordScopeId}
+            setActiveKeywordScopeId={setActiveKeywordScopeId}
             showHistoryData={showHistoryData}
             setShowHistoryData={setShowHistoryData}
-            clearCurrentNotes={clearCurrentNotes}
+            noteScopePanelOpen={noteScopePanelOpen}
+            setNoteScopePanelOpen={setNoteScopePanelOpen}
+            openDatasetManager={openDatasetManager}
             deleteSelectedNote={deleteSelectedNote}
+            refreshNoteMedia={refreshSelectedNoteMedia}
             openOriginalUrl={openOriginalUrl}
             runWorkflow={runWorkflow}
             busy={busy}
@@ -1073,6 +1120,20 @@ export function App() {
           modelMessages={modelMessages}
           busy={busy}
           onClose={() => setModelSettingsOpen(false)}
+        />
+      )}
+      {datasetManagerOpen && datasetClearPreview && (
+        <DatasetManagerDialog
+          preview={datasetClearPreview}
+          deleteAiArtifacts={deleteDatasetAiArtifacts}
+          setDeleteAiArtifacts={setDeleteDatasetAiArtifacts}
+          busy={busy}
+          onConfirm={clearCurrentNotes}
+          onClose={() => {
+            setDatasetManagerOpen(false);
+            setDatasetClearPreview(null);
+            setDeleteDatasetAiArtifacts(false);
+          }}
         />
       )}
       {!assistantOpen && (
@@ -1558,6 +1619,7 @@ function ResearchPage(props: {
 
 function NotesPage(props: {
   jobs: SearchJob[];
+  noteScopes: NoteScopeSummary[];
   notes: NoteRecord[];
   selected: NoteRecord | null;
   query: string;
@@ -1577,14 +1639,22 @@ function NotesPage(props: {
   setPage: (value: number) => void;
   activeJobId: string;
   setActiveJobId: (value: string) => void;
+  activeKeywordScopeId: string;
+  setActiveKeywordScopeId: (value: string) => void;
   showHistoryData: boolean;
   setShowHistoryData: (value: boolean) => void;
-  clearCurrentNotes: () => Promise<void>;
+  noteScopePanelOpen: boolean;
+  setNoteScopePanelOpen: (value: boolean) => void;
+  openDatasetManager: () => Promise<void>;
   deleteSelectedNote: () => Promise<void>;
+  refreshNoteMedia: (noteId: string) => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   runWorkflow: RunWorkflow;
   busy: string;
 }) {
+  const clearDisabled = !props.activeJobId || props.busy === "clear-notes" || props.total === 0;
+  const clearLabel = props.activeJobId ? "清空当前任务" : props.showHistoryData || props.activeKeywordScopeId ? "先选择单个任务" : "请选择任务";
+
   return (
     <div className="notes-layout">
       <section className="surface notes-panel">
@@ -1594,11 +1664,12 @@ function NotesPage(props: {
           action={
             <button
               className="ghost-button compact danger"
-              onClick={() => void props.clearCurrentNotes()}
-              disabled={!props.activeJobId || props.busy === "clear-notes" || props.total === 0}
+              onClick={() => void props.openDatasetManager()}
+              title={props.activeJobId ? "只清空当前选中任务关联的笔记" : "全部历史视图不能直接清空，请先选择单个任务"}
+              disabled={clearDisabled}
             >
               {props.busy === "clear-notes" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-              清空当前任务
+              {props.activeJobId ? "管理当前数据集" : clearLabel}
             </button>
           }
         />
@@ -1634,33 +1705,19 @@ function NotesPage(props: {
             </select>
           </label>
         </div>
-        <div className="history-control-row">
-          <label className="field-stack compact-field">
-            <span>数据范围</span>
-            <select
-              value={props.activeJobId || (props.showHistoryData ? "__all__" : "")}
-              onChange={(event) => {
-                props.setPage(1);
-                if (event.target.value === "__all__") {
-                  props.setActiveJobId("");
-                  props.setShowHistoryData(true);
-                  return;
-                }
-                props.setShowHistoryData(false);
-                props.setActiveJobId(event.target.value);
-              }}
-            >
-              <option value="">暂不打开历史数据</option>
-              <option value="__all__">查看全部历史笔记</option>
-              {props.jobs.map((job) => (
-                <option key={job.id} value={job.id}>{jobKeywordLabel(job)}</option>
-              ))}
-            </select>
-          </label>
-          {!props.activeJobId && !props.showHistoryData && (
-            <p className="muted-line">历史笔记已默认收起。请选择一个历史任务，或查看全部历史笔记。</p>
-          )}
-        </div>
+        <NoteScopePicker
+          scopes={props.noteScopes}
+          jobs={props.jobs}
+          activeJobId={props.activeJobId}
+          setActiveJobId={props.setActiveJobId}
+          activeKeywordScopeId={props.activeKeywordScopeId}
+          setActiveKeywordScopeId={props.setActiveKeywordScopeId}
+          showHistoryData={props.showHistoryData}
+          setShowHistoryData={props.setShowHistoryData}
+          pageReset={() => props.setPage(1)}
+          open={props.noteScopePanelOpen}
+          setOpen={props.setNoteScopePanelOpen}
+        />
         <div className="note-list">
           {props.notes.map((note) => (
             <button
@@ -1702,9 +1759,215 @@ function NotesPage(props: {
           </div>
         </div>
       </section>
-      <NoteDetail note={props.selected} onDelete={props.deleteSelectedNote} openOriginalUrl={props.openOriginalUrl} runWorkflow={props.runWorkflow} busy={props.busy} />
+      <NoteDetail
+        note={props.selected}
+        onDelete={props.deleteSelectedNote}
+        refreshNoteMedia={props.refreshNoteMedia}
+        openOriginalUrl={props.openOriginalUrl}
+        runWorkflow={props.runWorkflow}
+        busy={props.busy}
+      />
     </div>
   );
+}
+
+function NoteScopePicker(props: {
+  scopes: NoteScopeSummary[];
+  jobs: SearchJob[];
+  activeJobId: string;
+  setActiveJobId: (value: string) => void;
+  activeKeywordScopeId: string;
+  setActiveKeywordScopeId: (value: string) => void;
+  showHistoryData: boolean;
+  setShowHistoryData: (value: boolean) => void;
+  pageReset: () => void;
+  open: boolean;
+  setOpen: (value: boolean) => void;
+}) {
+  const scopes = props.scopes.length ? props.scopes : buildFallbackNoteScopes(props.jobs);
+  const allScope = scopes.find((scope) => scope.type === "all") ?? buildAllNoteScope(0);
+  const keywordScopes = scopes.filter((scope) => scope.type === "keyword");
+  const jobScopes = scopes.filter((scope) => scope.type === "job");
+  const filledScopes = jobScopes.filter((scope) => scope.noteCount > 0);
+  const emptyScopes = jobScopes.filter((scope) => scope.noteCount === 0);
+  const currentScope = props.activeJobId
+    ? jobScopes.find((scope) => scope.jobId === props.activeJobId)
+    : props.activeKeywordScopeId
+      ? keywordScopes.find((scope) => scope.id === props.activeKeywordScopeId)
+    : props.showHistoryData
+      ? allScope
+      : undefined;
+  const currentLabel = currentScope?.label ?? "暂不打开历史数据";
+  const currentMeta = currentScope ? noteScopeMeta(currentScope) : "不会加载历史笔记，适合从新任务开始";
+
+  const chooseNone = () => {
+    props.pageReset();
+    props.setActiveJobId("");
+    props.setActiveKeywordScopeId("");
+    props.setShowHistoryData(false);
+    props.setOpen(false);
+  };
+
+  const chooseAll = () => {
+    props.pageReset();
+    props.setActiveJobId("");
+    props.setActiveKeywordScopeId("");
+    props.setShowHistoryData(true);
+    props.setOpen(false);
+  };
+
+  const chooseKeyword = (scopeId: string) => {
+    props.pageReset();
+    props.setActiveJobId("");
+    props.setActiveKeywordScopeId(scopeId);
+    props.setShowHistoryData(false);
+    props.setOpen(false);
+  };
+
+  const chooseJob = (jobId: string) => {
+    props.pageReset();
+    props.setActiveKeywordScopeId("");
+    props.setShowHistoryData(false);
+    props.setActiveJobId(jobId);
+    props.setOpen(false);
+  };
+
+  return (
+    <div className="note-scope-bar">
+      <div className="note-scope-current">
+        <button className="note-scope-trigger" type="button" onClick={() => props.setOpen(!props.open)} aria-expanded={props.open}>
+          <span>数据范围</span>
+          <strong>{currentLabel}</strong>
+          <small>{currentMeta}</small>
+        </button>
+        <div className="note-scope-actions">
+          <button className="ghost-button compact" type="button" onClick={chooseNone}>
+            暂不打开历史
+          </button>
+          <button className="ghost-button compact" type="button" onClick={chooseAll}>
+            全部历史 {formatNumber(allScope.noteCount)}
+          </button>
+        </div>
+      </div>
+      {!props.activeJobId && !props.activeKeywordScopeId && !props.showHistoryData && (
+        <p className="muted-line">历史笔记默认收起。选择某个任务可查看其入库笔记，选择全部历史可跨任务检索。</p>
+      )}
+      {props.open && (
+        <div className="note-scope-popover" role="dialog" aria-label="选择笔记数据范围">
+          <div className="note-scope-section">
+            <span className="scope-section-title">常用范围</span>
+            <ScopeOption scope={allScope} active={props.showHistoryData && !props.activeJobId} onClick={chooseAll} />
+          </div>
+          <div className="note-scope-section">
+            <span className="scope-section-title">有笔记的历史任务</span>
+            <div className="note-scope-list">
+              {filledScopes.map((scope) => (
+                <ScopeOption key={scope.id} scope={scope} active={scope.jobId === props.activeJobId} onClick={() => scope.jobId && chooseJob(scope.jobId)} />
+              ))}
+              {!filledScopes.length && <span className="scope-empty-line">暂无已入库的历史任务</span>}
+            </div>
+          </div>
+          {!!keywordScopes.length && (
+            <div className="note-scope-section">
+              <span className="scope-section-title">重复关键词组</span>
+              <div className="note-scope-list">
+                {keywordScopes.map((scope) => (
+                  <ScopeOption key={scope.id} scope={scope} active={scope.id === props.activeKeywordScopeId} onClick={() => chooseKeyword(scope.id)} />
+                ))}
+              </div>
+            </div>
+          )}
+          {!!emptyScopes.length && (
+            <details className="note-scope-empty-group">
+              <summary>空任务 / 抓取失败任务 {emptyScopes.length}</summary>
+              <div className="note-scope-list compact">
+                {emptyScopes.map((scope) => (
+                  <ScopeOption key={scope.id} scope={scope} active={scope.jobId === props.activeJobId} onClick={() => scope.jobId && chooseJob(scope.jobId)} />
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScopeOption(props: { scope: NoteScopeSummary; active: boolean; onClick: () => void }) {
+  return (
+    <button className={`note-scope-option ${props.active ? "active" : ""}`} type="button" onClick={props.onClick}>
+      <span>
+        <strong>{props.scope.label}</strong>
+        <small>{noteScopeMeta(props.scope)}</small>
+      </span>
+      <span className="scope-badges">
+        {props.scope.isDuplicate && <em>重复 {props.scope.duplicateCount}</em>}
+        {props.scope.status && <em>{jobStatusLabel(props.scope.status)}</em>}
+        {props.active && <CheckCircle2 size={15} />}
+      </span>
+      {props.scope.emptyReason && <small className="scope-reason">{props.scope.emptyReason}</small>}
+    </button>
+  );
+}
+
+function buildFallbackNoteScopes(jobs: SearchJob[]): NoteScopeSummary[] {
+  return [
+    buildAllNoteScope(0),
+    ...jobs.map((job) => ({
+      id: job.id,
+      type: "job" as const,
+      jobId: job.id,
+      label: jobKeywordLabel(job),
+      keywords: job.keywords,
+      status: job.status,
+      noteCount: 0,
+      queueTotal: job.progress.total,
+      queueErrors: job.progress.error,
+      aiArtifactCount: 0,
+      aiReportCount: 0,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      duplicateCount: 1,
+      isDuplicate: false,
+      emptyReason: "等待范围摘要加载"
+    }))
+  ];
+}
+
+function buildAllNoteScope(noteCount: number): NoteScopeSummary {
+  return {
+    id: "__all__",
+    type: "all",
+    label: "全部历史笔记",
+    keywords: [],
+    noteCount,
+    queueTotal: 0,
+    queueErrors: 0,
+    aiArtifactCount: 0,
+    aiReportCount: 0,
+    duplicateCount: 0,
+    isDuplicate: false
+  };
+}
+
+function noteScopeMeta(scope: NoteScopeSummary): string {
+  const parts = [`${formatNumber(scope.noteCount)} 条笔记`];
+  if (scope.queueErrors) parts.push(`${formatNumber(scope.queueErrors)} 个错误`);
+  const aiCount = scope.aiArtifactCount + scope.aiReportCount;
+  if (aiCount) parts.push(`${formatNumber(aiCount)} 个 AI 产物`);
+  if (scope.updatedAt) parts.push(formatDateTime(scope.updatedAt));
+  return parts.join(" · ");
+}
+
+function jobStatusLabel(status: SearchJob["status"]): string {
+  const labels: Record<SearchJob["status"], string> = {
+    queued: "等待",
+    running: "运行中",
+    paused: "暂停",
+    completed: "完成",
+    failed: "失败"
+  };
+  return labels[status];
 }
 
 function NoteMediaThumb({ note }: { note: NoteRecord }) {
@@ -2956,6 +3219,72 @@ function AiAssistantEntry({ onOpen, context }: { onOpen: () => void; context: st
   );
 }
 
+function DatasetManagerDialog(props: {
+  preview: NoteScopeClearPreview;
+  deleteAiArtifacts: boolean;
+  setDeleteAiArtifacts: (value: boolean) => void;
+  busy: string;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const deleting = props.busy === "clear-notes";
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="管理当前数据集">
+      <section className="dataset-dialog">
+        <SectionTitle
+          icon={<Trash2 size={18} />}
+          title="管理当前数据集"
+          action={
+            <button className="ghost-button compact" onClick={props.onClose} disabled={deleting}>
+              <X size={14} />
+              关闭
+            </button>
+          }
+        />
+        <div className="dataset-dialog-summary">
+          <span>当前任务</span>
+          <strong>{props.preview.label}</strong>
+          <small>该操作会移除当前任务与笔记的关联；只有不再属于任何任务的笔记才会被真正删除。</small>
+        </div>
+        <div className="dataset-impact-grid">
+          <Metric label="影响笔记" value={formatNumber(props.preview.affectedNotes)} />
+          <Metric label="仅解除关联" value={formatNumber(props.preview.detachedNotes)} />
+          <Metric label="真正删除笔记" value={formatNumber(props.preview.orphanNotes)} />
+          <Metric label="删除评论" value={formatNumber(props.preview.commentsToDelete)} />
+        </div>
+        <div className="dataset-impact-list">
+          <span>将清理队列：{formatNumber(props.preview.queueItemsToDelete)} 条</span>
+          <span>将删除本地分析报告：{formatNumber(props.preview.analysisReportsToDelete)} 个</span>
+          <span>关联 AI 产物：{formatNumber(props.preview.aiArtifactsLinked)} 个</span>
+          <span>关联 AI 报告：{formatNumber(props.preview.aiReportsLinked)} 个</span>
+        </div>
+        <label className="dataset-checkbox">
+          <input
+            type="checkbox"
+            checked={props.deleteAiArtifacts}
+            onChange={(event) => props.setDeleteAiArtifacts(event.target.checked)}
+            disabled={deleting || (!props.preview.aiArtifactsLinked && !props.preview.aiReportsLinked)}
+          />
+          <span>同时删除该任务关联的 AI 产物和 AI 报告</span>
+        </label>
+        <div className="dataset-warning">
+          <AlertTriangle size={16} />
+          <span>这是数据清理操作，不只是隐藏列表。确认前请检查上方影响范围。</span>
+        </div>
+        <div className="dialog-actions">
+          <button className="ghost-button" onClick={props.onClose} disabled={deleting}>
+            取消
+          </button>
+          <button className="primary-button danger" onClick={() => void props.onConfirm()} disabled={deleting}>
+            {deleting ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
+            确认清理当前数据集
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ModelSettingsDrawer(props: {
   models: AiModelConfig[];
   modelForm: ModelForm;
@@ -2975,7 +3304,18 @@ function ModelSettingsDrawer(props: {
   onClose: () => void;
 }) {
   const defaultModel = props.models.find((model) => model.isDefault) ?? props.models[0];
+  const selectedPreset = AI_MODEL_PROVIDER_PRESETS.find((preset) => preset.key === props.modelForm.providerKey) ?? AI_MODEL_PROVIDER_PRESETS[0];
   const update = (key: keyof ModelForm, value: string) => props.setModelForm({ ...props.modelForm, [key]: value });
+  const selectProvider = (providerKey: AiModelProviderKey) => {
+    const preset = AI_MODEL_PROVIDER_PRESETS.find((item) => item.key === providerKey) ?? AI_MODEL_PROVIDER_PRESETS[0];
+    props.setModelForm({
+      ...props.modelForm,
+      providerKey: preset.key,
+      provider: preset.provider,
+      baseUrl: preset.baseUrl,
+      name: props.modelForm.name || preset.name
+    });
+  };
   return (
     <div className="settings-drawer-backdrop" role="dialog" aria-modal="true">
       <aside className="settings-drawer">
@@ -2989,10 +3329,10 @@ function ModelSettingsDrawer(props: {
             </button>
           }
         />
-        <div className="drawer-summary">
+        <div className="drawer-summary model-default-card">
           <span>默认模型</span>
           <strong>{defaultModel ? `${defaultModel.name} · ${defaultModel.model}` : "未配置"}</strong>
-          <small>{defaultModel?.apiKeyMasked || "新增模型后即可用于 AI 工作流"}</small>
+          <small>{defaultModel ? `${findModelProviderPreset(defaultModel.provider, defaultModel.baseUrl, defaultModel.model).name} · ${defaultModel.apiKeyMasked || "未配置 Key"}` : "新增模型后即可用于 AI 助手、AI 工作流和报告生成。"}</small>
         </div>
         <div className="drawer-toolbar">
           <button className="primary-button compact" onClick={props.openNewModel}>
@@ -3011,31 +3351,57 @@ function ModelSettingsDrawer(props: {
           <section className="model-editor-card">
             <div className="model-editor-head">
               <strong>{props.editingModelId ? "编辑模型" : "新增模型"}</strong>
-              <small>{props.editingModelId ? "不填写 API Key 时保留原密钥" : "OpenAI-compatible 接口均可接入"}</small>
+              <small>{props.editingModelId ? "不填写 API Key 时保留原密钥。" : "选择厂商后自动填入接口地址，只需补充 API Key 和模型名称。"}</small>
             </div>
+            <div className="provider-preset-grid" aria-label="模型厂商">
+              {AI_MODEL_PROVIDER_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={props.modelForm.providerKey === preset.key ? "provider-preset active" : "provider-preset"}
+                  onClick={() => selectProvider(preset.key)}
+                >
+                  <strong>{preset.name}</strong>
+                  <small>{preset.description}</small>
+                </button>
+              ))}
+            </div>
+            {selectedPreset.regionOptions && (
+              <label className="field-stack compact-field">
+                <span>区域</span>
+                <select value={props.modelForm.baseUrl} onChange={(event) => update("baseUrl", event.target.value)}>
+                  {selectedPreset.regionOptions.map((option) => (
+                    <option key={option.baseUrl} value={option.baseUrl}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="field-stack compact-field">
               <span>名称</span>
-              <input value={props.modelForm.name} onChange={(event) => update("name", event.target.value)} placeholder="例如 DeepSeek" />
+              <input value={props.modelForm.name} onChange={(event) => update("name", event.target.value)} placeholder={`例如 ${selectedPreset.name}`} />
             </label>
             <label className="field-stack compact-field">
-              <span>Provider</span>
-              <input value={props.modelForm.provider} onChange={(event) => update("provider", event.target.value)} placeholder="OpenAI-compatible" />
-            </label>
-            <label className="field-stack compact-field">
-              <span>Base URL</span>
-              <input value={props.modelForm.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder="https://api.openai.com/v1" />
-            </label>
-            <label className="field-stack compact-field">
-              <span>Model</span>
-              <input value={props.modelForm.model} onChange={(event) => update("model", event.target.value)} placeholder="deepseek-v4-pro" />
+              <span>模型名称</span>
+              <input value={props.modelForm.model} onChange={(event) => update("model", event.target.value)} placeholder={selectedPreset.modelPlaceholder} />
             </label>
             <label className="field-stack compact-field">
               <span>API Key</span>
-              <input value={props.modelForm.apiKey} onChange={(event) => update("apiKey", event.target.value)} placeholder="保存后只显示 masked key" type="password" />
+              <input value={props.modelForm.apiKey} onChange={(event) => update("apiKey", event.target.value)} placeholder={props.editingModelId ? "留空则保留原 API Key" : selectedPreset.apiKeyHint} type="password" />
             </label>
+            <details className="model-advanced-settings" open={props.modelForm.providerKey === "custom"}>
+              <summary>高级设置</summary>
+              <label className="field-stack compact-field">
+                <span>Provider</span>
+                <input value={props.modelForm.provider} onChange={(event) => update("provider", event.target.value)} placeholder="OpenAI-compatible" />
+              </label>
+              <label className="field-stack compact-field">
+                <span>Base URL</span>
+                <input value={props.modelForm.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder="https://api.openai.com/v1" />
+              </label>
+            </details>
             <button
               className="primary-button full"
-              disabled={!props.modelForm.name || !props.modelForm.model || props.busy === "model"}
+              disabled={!props.modelForm.name || !props.modelForm.model || !props.modelForm.baseUrl || props.busy === "model"}
               onClick={() => void props.saveModel()}
             >
               {props.busy === "model" ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
@@ -3047,41 +3413,46 @@ function ModelSettingsDrawer(props: {
         <section className="drawer-section">
           <SectionTitle icon={<Settings size={16} />} title="已配置模型" />
           <div className="drawer-model-list">
-            {props.models.map((model) => (
-              <div key={model.id} className={model.isDefault ? "drawer-model-row active" : "drawer-model-row"}>
-                <div className="drawer-model-main">
-                  <strong>{model.name}</strong>
-                  <span>{model.provider} · {model.model}</span>
-                  <small>{model.apiKeyMasked || "未配置 Key"}</small>
-                  {props.modelMessages[model.id] && (
-                    <small className={props.modelMessages[model.id].ok ? "model-test ok" : "model-test warn"}>
-                      {props.modelMessages[model.id].message}
-                    </small>
-                  )}
-                </div>
-                <div className="drawer-model-actions">
-                  {!model.isDefault && (
-                    <button className="ghost-button compact" onClick={() => void props.setDefaultModel(model.id)} disabled={props.busy === `default-model-${model.id}`}>
-                      默认
+            {props.models.map((model) => {
+              const preset = findModelProviderPreset(model.provider, model.baseUrl, model.model);
+              const message = props.modelMessages[model.id];
+              return (
+                <div key={model.id} className={model.isDefault ? "drawer-model-row active" : "drawer-model-row"}>
+                  <div className="drawer-model-main">
+                    <span className="provider-badge">{preset.name}{model.isDefault ? " · 默认" : ""}</span>
+                    <strong>{model.name}</strong>
+                    <span>{model.model}</span>
+                    <small>{model.apiKeyMasked || "未配置 Key"}</small>
+                    {message && (
+                      <small className={message.ok ? "model-test ok" : "model-test warn"}>
+                        {message.message}
+                      </small>
+                    )}
+                  </div>
+                  <div className="drawer-model-actions">
+                    {!model.isDefault && (
+                      <button className="ghost-button compact" onClick={() => void props.setDefaultModel(model.id)} disabled={props.busy === `default-model-${model.id}`}>
+                        默认
+                      </button>
+                    )}
+                    <button className="ghost-button compact" onClick={() => props.openEditModel(model)}>
+                      编辑
                     </button>
-                  )}
-                  <button className="ghost-button compact" onClick={() => props.openEditModel(model)}>
-                    编辑
-                  </button>
-                  <button className="ghost-button compact" onClick={() => void props.testModel(model.id)} disabled={props.busy === `test-${model.id}`}>
-                    {props.busy === `test-${model.id}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
-                    测试
-                  </button>
-                  <button className="ghost-button compact" onClick={() => void props.probeModelTools(model.id)} disabled={props.busy === `tools-probe-${model.id}`}>
-                    {props.busy === `tools-probe-${model.id}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-                    工具检测
-                  </button>
-                  <button className="ghost-button compact danger" onClick={() => void props.deleteModel(model.id)} disabled={props.busy === `delete-model-${model.id}`}>
-                    {props.busy === `delete-model-${model.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
-                  </button>
+                    <button className="ghost-button compact" onClick={() => void props.testModel(model.id)} disabled={props.busy === `test-${model.id}`}>
+                      {props.busy === `test-${model.id}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                      测试
+                    </button>
+                    <button className="ghost-button compact" onClick={() => void props.probeModelTools(model.id)} disabled={props.busy === `tools-probe-${model.id}`}>
+                      {props.busy === `tools-probe-${model.id}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                      工具检测
+                    </button>
+                    <button className="ghost-button compact danger" onClick={() => void props.deleteModel(model.id)} disabled={props.busy === `delete-model-${model.id}`} aria-label={`删除 ${model.name}`}>
+                      {props.busy === `delete-model-${model.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {!props.models.length && <EmptyState text="暂无模型，点击上方新增模型开始接入" />}
           </div>
         </section>
@@ -3315,12 +3686,14 @@ function ModelsPage(props: {
 function NoteDetail({
   note,
   onDelete,
+  refreshNoteMedia,
   openOriginalUrl,
   runWorkflow,
   busy
 }: {
   note: NoteRecord | null;
   onDelete: () => Promise<void>;
+  refreshNoteMedia: (noteId: string) => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   runWorkflow: RunWorkflow;
   busy: string;
@@ -3333,6 +3706,7 @@ function NoteDetail({
     );
   }
   const mediaImages = noteMediaImages(note);
+  const hasMedia = Boolean(note.videoUrl || mediaImages.length);
   return (
     <section className="surface detail-panel">
       <SectionTitle
@@ -3371,6 +3745,21 @@ function NoteDetail({
           暂无可加载媒体
         </div>
       )}
+      <div className={`media-health-card ${hasMedia ? "info" : "warn"}`}>
+        <ImageIcon size={16} />
+        <div>
+          <strong>{hasMedia ? "历史媒体可能会过期" : "媒体暂不可用"}</strong>
+          <span>
+            {hasMedia
+              ? "如果图片或视频显示异常，可以刷新媒体；文本、评论和互动数据仍可继续用于分析。"
+              : "可能是历史媒体链接过期、CDN 防盗链或登录态变化。可尝试刷新媒体，也可以打开原帖查看。"}
+          </span>
+        </div>
+        <button className="ghost-button compact" onClick={() => void refreshNoteMedia(note.id)} disabled={busy === "media-refresh"}>
+          {busy === "media-refresh" ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+          刷新媒体
+        </button>
+      </div>
       <h2>{note.title}</h2>
       {note.desc ? (
         <p className="body-text">{note.desc}</p>

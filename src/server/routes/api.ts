@@ -6,10 +6,19 @@ import { store } from "../storage/localStore.js";
 import { saveCookieString, getCookieString } from "../utils/env.js";
 import { jobs } from "../services/jobService.js";
 import { redbook } from "../services/redbookService.js";
-import { buildExport, clearNotes, deleteNote, getAnalytics, getNoteDetail, listNotesPage } from "../services/queryService.js";
+import {
+  buildExport,
+  clearNotes,
+  deleteNote,
+  getAnalytics,
+  getNoteDetail,
+  getNoteScopeClearPreview,
+  listNoteScopes,
+  listNotesPage
+} from "../services/queryService.js";
 import { redbookCapabilities } from "../services/capabilities.js";
 import { buildHealthCheck } from "../services/healthService.js";
-import { proxyMedia } from "../services/mediaService.js";
+import { proxyMedia, refreshNoteMedia } from "../services/mediaService.js";
 import { isAuthRisk, markAuthDisconnected } from "../services/authState.js";
 import { browserAuth } from "../services/browserAuthService.js";
 import {
@@ -356,6 +365,7 @@ api.post("/search-jobs/:id/stop", async (req, res) => {
 api.get("/notes", async (req, res) => {
   const query: NotesQuery = {
     jobId: stringQuery(req.query.jobId),
+    jobIds: stringListQuery(req.query.jobIds),
     q: stringQuery(req.query.q),
     type: asNoteType(req.query.type),
     author: stringQuery(req.query.author),
@@ -363,6 +373,19 @@ api.get("/notes", async (req, res) => {
     sort: asSort(req.query.sort)
   };
   res.json(await listNotesPage(query, numberQuery(req.query.page), numberQuery(req.query.pageSize)));
+});
+
+api.get("/note-scopes", async (_req, res) => {
+  res.json(await listNoteScopes());
+});
+
+api.get("/note-scopes/:jobId/clear-preview", async (req, res) => {
+  const preview = await getNoteScopeClearPreview(req.params.jobId);
+  if (!preview) {
+    res.status(404).json({ error: "Note scope not found" });
+    return;
+  }
+  res.json(preview);
 });
 
 api.get("/notes/:id", async (req, res) => {
@@ -374,13 +397,21 @@ api.get("/notes/:id", async (req, res) => {
   res.json(detail);
 });
 
+api.post("/notes/:id/media-refresh", async (req, res, next) => {
+  try {
+    res.json(await refreshNoteMedia(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
 api.delete("/notes", async (req, res, next) => {
   try {
     const jobId = stringQuery(req.query.jobId);
     if (jobId) {
       await jobs.stop(jobId);
     }
-    res.json(await clearNotes(jobId));
+    res.json(await clearNotes(jobId, { deleteAiArtifacts: booleanQuery(req.query.deleteAiArtifacts) }));
   } catch (error) {
     next(error);
   }
@@ -762,9 +793,19 @@ function stringQuery(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function stringListQuery(value: unknown): string[] | undefined {
+  if (typeof value !== "string") return undefined;
+  const items = value.split(",").map((item) => item.trim()).filter(Boolean);
+  return items.length ? items : undefined;
+}
+
 function numberQuery(value: unknown): number | undefined {
   const parsed = typeof value === "string" ? Number(value) : undefined;
   return parsed && Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function booleanQuery(value: unknown): boolean {
+  return value === true || value === "true" || value === "1" || value === "yes";
 }
 
 function asNoteType(value: unknown): NotesQuery["type"] {
