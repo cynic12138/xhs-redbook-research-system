@@ -59,11 +59,12 @@ import type {
   SearchJob,
   SearchSort
 } from "../shared/types.js";
+import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProviderKey } from "../shared/modelProviders.js";
 import { api } from "./lib/api.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
-type ModelForm = { name: string; provider: string; baseUrl: string; model: string; apiKey: string };
+type ModelForm = { providerKey: AiModelProviderKey; name: string; provider: string; baseUrl: string; model: string; apiKey: string };
 type ReaderPreview = { kind: "artifact" | "report"; title: string; markdown: string; meta: string[]; exportUrl: string };
 type RunWorkflow = (workflowKey: AiWorkflowKey, focus?: string) => Promise<AiArtifact | undefined>;
 type AssistantNoticeTone = "info" | "warning" | "error" | "progress";
@@ -77,9 +78,10 @@ type AssistantNotice = {
 };
 
 const emptyModelForm: ModelForm = {
+  providerKey: "deepseek",
   name: "",
-  provider: "OpenAI-compatible",
-  baseUrl: "https://api.openai.com/v1",
+  provider: "DeepSeek",
+  baseUrl: "https://api.deepseek.com",
   model: "",
   apiKey: ""
 };
@@ -618,8 +620,10 @@ export function App() {
   }
 
   function openEditModel(model: AiModelConfig) {
+    const providerPreset = findModelProviderPreset(model.provider, model.baseUrl, model.model);
     setEditingModelId(model.id);
     setModelForm({
+      providerKey: providerPreset.key,
       name: model.name,
       provider: model.provider,
       baseUrl: model.baseUrl,
@@ -631,8 +635,9 @@ export function App() {
 
   async function saveModel() {
     await run("model", async () => {
+      const { providerKey: _providerKey, ...modelInput } = modelForm;
       const input = {
-        ...modelForm,
+        ...modelInput,
         isDefault: editingModelId ? undefined : aiModels.length === 0,
         temperature: 0.4,
         maxTokens: 4000
@@ -2975,7 +2980,18 @@ function ModelSettingsDrawer(props: {
   onClose: () => void;
 }) {
   const defaultModel = props.models.find((model) => model.isDefault) ?? props.models[0];
+  const selectedPreset = AI_MODEL_PROVIDER_PRESETS.find((preset) => preset.key === props.modelForm.providerKey) ?? AI_MODEL_PROVIDER_PRESETS[0];
   const update = (key: keyof ModelForm, value: string) => props.setModelForm({ ...props.modelForm, [key]: value });
+  const selectProvider = (providerKey: AiModelProviderKey) => {
+    const preset = AI_MODEL_PROVIDER_PRESETS.find((item) => item.key === providerKey) ?? AI_MODEL_PROVIDER_PRESETS[0];
+    props.setModelForm({
+      ...props.modelForm,
+      providerKey: preset.key,
+      provider: preset.provider,
+      baseUrl: preset.baseUrl,
+      name: props.modelForm.name || preset.name
+    });
+  };
   return (
     <div className="settings-drawer-backdrop" role="dialog" aria-modal="true">
       <aside className="settings-drawer">
@@ -2989,10 +3005,10 @@ function ModelSettingsDrawer(props: {
             </button>
           }
         />
-        <div className="drawer-summary">
+        <div className="drawer-summary model-default-card">
           <span>默认模型</span>
           <strong>{defaultModel ? `${defaultModel.name} · ${defaultModel.model}` : "未配置"}</strong>
-          <small>{defaultModel?.apiKeyMasked || "新增模型后即可用于 AI 工作流"}</small>
+          <small>{defaultModel ? `${findModelProviderPreset(defaultModel.provider, defaultModel.baseUrl, defaultModel.model).name} · ${defaultModel.apiKeyMasked || "未配置 Key"}` : "新增模型后即可用于 AI 助手、AI 工作流和报告生成。"}</small>
         </div>
         <div className="drawer-toolbar">
           <button className="primary-button compact" onClick={props.openNewModel}>
@@ -3011,31 +3027,57 @@ function ModelSettingsDrawer(props: {
           <section className="model-editor-card">
             <div className="model-editor-head">
               <strong>{props.editingModelId ? "编辑模型" : "新增模型"}</strong>
-              <small>{props.editingModelId ? "不填写 API Key 时保留原密钥" : "OpenAI-compatible 接口均可接入"}</small>
+              <small>{props.editingModelId ? "不填写 API Key 时保留原密钥。" : "选择厂商后自动填入接口地址，只需补充 API Key 和模型名称。"}</small>
             </div>
+            <div className="provider-preset-grid" aria-label="模型厂商">
+              {AI_MODEL_PROVIDER_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={props.modelForm.providerKey === preset.key ? "provider-preset active" : "provider-preset"}
+                  onClick={() => selectProvider(preset.key)}
+                >
+                  <strong>{preset.name}</strong>
+                  <small>{preset.description}</small>
+                </button>
+              ))}
+            </div>
+            {selectedPreset.regionOptions && (
+              <label className="field-stack compact-field">
+                <span>区域</span>
+                <select value={props.modelForm.baseUrl} onChange={(event) => update("baseUrl", event.target.value)}>
+                  {selectedPreset.regionOptions.map((option) => (
+                    <option key={option.baseUrl} value={option.baseUrl}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="field-stack compact-field">
               <span>名称</span>
-              <input value={props.modelForm.name} onChange={(event) => update("name", event.target.value)} placeholder="例如 DeepSeek" />
+              <input value={props.modelForm.name} onChange={(event) => update("name", event.target.value)} placeholder={`例如 ${selectedPreset.name}`} />
             </label>
             <label className="field-stack compact-field">
-              <span>Provider</span>
-              <input value={props.modelForm.provider} onChange={(event) => update("provider", event.target.value)} placeholder="OpenAI-compatible" />
-            </label>
-            <label className="field-stack compact-field">
-              <span>Base URL</span>
-              <input value={props.modelForm.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder="https://api.openai.com/v1" />
-            </label>
-            <label className="field-stack compact-field">
-              <span>Model</span>
-              <input value={props.modelForm.model} onChange={(event) => update("model", event.target.value)} placeholder="deepseek-v4-pro" />
+              <span>模型名称</span>
+              <input value={props.modelForm.model} onChange={(event) => update("model", event.target.value)} placeholder={selectedPreset.modelPlaceholder} />
             </label>
             <label className="field-stack compact-field">
               <span>API Key</span>
-              <input value={props.modelForm.apiKey} onChange={(event) => update("apiKey", event.target.value)} placeholder="保存后只显示 masked key" type="password" />
+              <input value={props.modelForm.apiKey} onChange={(event) => update("apiKey", event.target.value)} placeholder={props.editingModelId ? "留空则保留原 API Key" : selectedPreset.apiKeyHint} type="password" />
             </label>
+            <details className="model-advanced-settings" open={props.modelForm.providerKey === "custom"}>
+              <summary>高级设置</summary>
+              <label className="field-stack compact-field">
+                <span>Provider</span>
+                <input value={props.modelForm.provider} onChange={(event) => update("provider", event.target.value)} placeholder="OpenAI-compatible" />
+              </label>
+              <label className="field-stack compact-field">
+                <span>Base URL</span>
+                <input value={props.modelForm.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder="https://api.openai.com/v1" />
+              </label>
+            </details>
             <button
               className="primary-button full"
-              disabled={!props.modelForm.name || !props.modelForm.model || props.busy === "model"}
+              disabled={!props.modelForm.name || !props.modelForm.model || !props.modelForm.baseUrl || props.busy === "model"}
               onClick={() => void props.saveModel()}
             >
               {props.busy === "model" ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
@@ -3047,41 +3089,46 @@ function ModelSettingsDrawer(props: {
         <section className="drawer-section">
           <SectionTitle icon={<Settings size={16} />} title="已配置模型" />
           <div className="drawer-model-list">
-            {props.models.map((model) => (
-              <div key={model.id} className={model.isDefault ? "drawer-model-row active" : "drawer-model-row"}>
-                <div className="drawer-model-main">
-                  <strong>{model.name}</strong>
-                  <span>{model.provider} · {model.model}</span>
-                  <small>{model.apiKeyMasked || "未配置 Key"}</small>
-                  {props.modelMessages[model.id] && (
-                    <small className={props.modelMessages[model.id].ok ? "model-test ok" : "model-test warn"}>
-                      {props.modelMessages[model.id].message}
-                    </small>
-                  )}
-                </div>
-                <div className="drawer-model-actions">
-                  {!model.isDefault && (
-                    <button className="ghost-button compact" onClick={() => void props.setDefaultModel(model.id)} disabled={props.busy === `default-model-${model.id}`}>
-                      默认
+            {props.models.map((model) => {
+              const preset = findModelProviderPreset(model.provider, model.baseUrl, model.model);
+              const message = props.modelMessages[model.id];
+              return (
+                <div key={model.id} className={model.isDefault ? "drawer-model-row active" : "drawer-model-row"}>
+                  <div className="drawer-model-main">
+                    <span className="provider-badge">{preset.name}{model.isDefault ? " · 默认" : ""}</span>
+                    <strong>{model.name}</strong>
+                    <span>{model.model}</span>
+                    <small>{model.apiKeyMasked || "未配置 Key"}</small>
+                    {message && (
+                      <small className={message.ok ? "model-test ok" : "model-test warn"}>
+                        {message.message}
+                      </small>
+                    )}
+                  </div>
+                  <div className="drawer-model-actions">
+                    {!model.isDefault && (
+                      <button className="ghost-button compact" onClick={() => void props.setDefaultModel(model.id)} disabled={props.busy === `default-model-${model.id}`}>
+                        默认
+                      </button>
+                    )}
+                    <button className="ghost-button compact" onClick={() => props.openEditModel(model)}>
+                      编辑
                     </button>
-                  )}
-                  <button className="ghost-button compact" onClick={() => props.openEditModel(model)}>
-                    编辑
-                  </button>
-                  <button className="ghost-button compact" onClick={() => void props.testModel(model.id)} disabled={props.busy === `test-${model.id}`}>
-                    {props.busy === `test-${model.id}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
-                    测试
-                  </button>
-                  <button className="ghost-button compact" onClick={() => void props.probeModelTools(model.id)} disabled={props.busy === `tools-probe-${model.id}`}>
-                    {props.busy === `tools-probe-${model.id}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-                    工具检测
-                  </button>
-                  <button className="ghost-button compact danger" onClick={() => void props.deleteModel(model.id)} disabled={props.busy === `delete-model-${model.id}`}>
-                    {props.busy === `delete-model-${model.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
-                  </button>
+                    <button className="ghost-button compact" onClick={() => void props.testModel(model.id)} disabled={props.busy === `test-${model.id}`}>
+                      {props.busy === `test-${model.id}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                      测试
+                    </button>
+                    <button className="ghost-button compact" onClick={() => void props.probeModelTools(model.id)} disabled={props.busy === `tools-probe-${model.id}`}>
+                      {props.busy === `tools-probe-${model.id}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                      工具检测
+                    </button>
+                    <button className="ghost-button compact danger" onClick={() => void props.deleteModel(model.id)} disabled={props.busy === `delete-model-${model.id}`} aria-label={`删除 ${model.name}`}>
+                      {props.busy === `delete-model-${model.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {!props.models.length && <EmptyState text="暂无模型，点击上方新增模型开始接入" />}
           </div>
         </section>

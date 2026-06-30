@@ -1943,6 +1943,8 @@ body {
 .drawer-model-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -2076,6 +2078,70 @@ body {
   gap: 3px;
 }
 
+.provider-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.provider-preset {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  background: #fbfcfd;
+  text-align: left;
+}
+
+.provider-preset:hover {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+.provider-preset.active {
+  border-color: #ff9aae;
+  background: #fff7f9;
+  box-shadow: inset 3px 0 0 #ff3366;
+}
+
+.provider-preset strong {
+  font-size: 13px;
+}
+
+.provider-preset small {
+  color: #687386;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.model-advanced-settings {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px dashed #dfe5ec;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.model-advanced-settings summary {
+  cursor: pointer;
+  color: #334155;
+  font-weight: 700;
+}
+
+.provider-badge {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #c01842;
+  background: #fff0f4;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .drawer-section {
   display: flex;
   min-height: 0;
@@ -2120,6 +2186,17 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.drawer-model-main .provider-badge {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #c01842;
+  background: #fff0f4;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 @media (max-width: 1360px) {
