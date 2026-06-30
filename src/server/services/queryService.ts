@@ -1,4 +1,4 @@
-import type { AnalyticsReport, NoteScopeSummary, NotesPageResult, NotesQuery, NoteRecord } from "../../shared/types.js";
+import type { AnalyticsReport, NoteScopeClearPreview, NoteScopeSummary, NotesPageResult, NotesQuery, NoteRecord } from "../../shared/types.js";
 import { clamp, nowIso } from "../../shared/utils.js";
 import { buildAnalytics } from "./analysis.js";
 import { jobs } from "./jobService.js";
@@ -141,6 +141,36 @@ export async function getNoteDetail(noteId: string): Promise<unknown> {
   };
 }
 
+export async function getNoteScopeClearPreview(jobId: string, localStore = store): Promise<NoteScopeClearPreview | undefined> {
+  const [searchJobs, notes, comments, queueItems, analysisReports, aiArtifacts, aiReports] = await Promise.all([
+    localStore.read("searchJobs"),
+    localStore.read("notes"),
+    localStore.read("comments"),
+    localStore.read("queueItems"),
+    localStore.read("analysisReports"),
+    localStore.read("aiArtifacts"),
+    localStore.read("aiReports")
+  ]);
+  const job = searchJobs.find((item) => item.id === jobId);
+  if (!job) {
+    return undefined;
+  }
+  const affected = notes.filter((note) => note.jobIds.includes(jobId));
+  const orphanIds = new Set(affected.filter((note) => note.jobIds.length === 1).map((note) => note.id));
+  return {
+    jobId,
+    label: job.keywords.join(" / ") || job.id,
+    affectedNotes: affected.length,
+    detachedNotes: affected.length - orphanIds.size,
+    orphanNotes: orphanIds.size,
+    commentsToDelete: comments.filter((comment) => orphanIds.has(comment.noteId)).length,
+    queueItemsToDelete: queueItems.filter((item) => item.jobId === jobId).length,
+    analysisReportsToDelete: analysisReports.filter((report) => report.jobId === jobId).length,
+    aiArtifactsLinked: aiArtifacts.filter((artifact) => artifact.jobId === jobId).length,
+    aiReportsLinked: aiReports.filter((report) => report.jobId === jobId).length
+  };
+}
+
 export async function deleteNote(noteId: string): Promise<{ deleted: number }> {
   const notes = await store.read("notes");
   const target = notes.find((note) => note.id === noteId);
@@ -156,14 +186,18 @@ export async function deleteNote(noteId: string): Promise<{ deleted: number }> {
   return { deleted: 1 };
 }
 
-export async function clearNotes(jobId?: string): Promise<{ deleted: number }> {
-  const notes = await store.read("notes");
+export async function clearNotes(
+  jobId?: string,
+  options: { deleteAiArtifacts?: boolean } = {},
+  localStore = store
+): Promise<{ deleted: number }> {
+  const notes = await localStore.read("notes");
   const affected = jobId ? notes.filter((note) => note.jobIds.includes(jobId)) : notes;
   const affectedIds = new Set(affected.map((note) => note.id));
 
   let deletedIds = new Set<string>();
   if (jobId) {
-    await store.update("notes", (items) =>
+    await localStore.update("notes", (items) =>
       items
         .map((note) =>
           note.jobIds.includes(jobId)
@@ -176,24 +210,32 @@ export async function clearNotes(jobId?: string): Promise<{ deleted: number }> {
         )
         .filter((note) => note.jobIds.length)
     );
-    const remaining = await store.read("notes");
+    const remaining = await localStore.read("notes");
     const remainingIds = new Set(remaining.map((note) => note.id));
     deletedIds = new Set([...affectedIds].filter((id) => !remainingIds.has(id)));
-    await store.update("queueItems", (items) => items.filter((item) => item.jobId !== jobId));
-    await store.update("analysisReports", (reports) => reports.filter((report) => report.jobId !== jobId));
-    await jobs.refreshProgress(jobId);
+    await localStore.update("queueItems", (items) => items.filter((item) => item.jobId !== jobId));
+    await localStore.update("analysisReports", (reports) => reports.filter((report) => report.jobId !== jobId));
+    if (options.deleteAiArtifacts) {
+      await localStore.update("aiArtifacts", (artifacts) => artifacts.filter((artifact) => artifact.jobId !== jobId));
+      await localStore.update("aiReports", (reports) => reports.filter((report) => report.jobId !== jobId));
+    }
+    if (localStore === store) {
+      await jobs.refreshProgress(jobId);
+    }
   } else {
     deletedIds = affectedIds;
-    await store.write("notes", []);
-    await store.write("comments", []);
-    await store.write("queueItems", []);
-    await store.write("analysisReports", []);
-    const allJobs = await store.read("searchJobs");
-    await Promise.all(allJobs.map((job) => jobs.refreshProgress(job.id)));
+    await localStore.write("notes", []);
+    await localStore.write("comments", []);
+    await localStore.write("queueItems", []);
+    await localStore.write("analysisReports", []);
+    if (localStore === store) {
+      const allJobs = await localStore.read("searchJobs");
+      await Promise.all(allJobs.map((job) => jobs.refreshProgress(job.id)));
+    }
   }
 
   if (deletedIds.size) {
-    await store.update("comments", (comments) => comments.filter((comment) => !deletedIds.has(comment.noteId)));
+    await localStore.update("comments", (comments) => comments.filter((comment) => !deletedIds.has(comment.noteId)));
   }
 
   return { deleted: affected.length };

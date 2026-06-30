@@ -303,6 +303,19 @@ export interface NoteScopeSummary {
   emptyReason?: string;
 }
 
+export interface NoteScopeClearPreview {
+  jobId: string;
+  label: string;
+  affectedNotes: number;
+  detachedNotes: number;
+  orphanNotes: number;
+  commentsToDelete: number;
+  queueItemsToDelete: number;
+  analysisReportsToDelete: number;
+  aiArtifactsLinked: number;
+  aiReportsLinked: number;
+}
+
 export interface SearchJobInput {
   keywords: string[];
   sort: SearchSort;

@@ -1756,6 +1756,101 @@ label {
   grid-template-columns: minmax(320px, 0.7fr) minmax(0, 1fr);
 }
 
+.dataset-dialog {
+  display: grid;
+  width: min(620px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  gap: 14px;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid #ffd0dc;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.dataset-dialog-summary {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.dataset-dialog-summary span,
+.dataset-dialog-summary small,
+.dataset-impact-list span,
+.dataset-checkbox span,
+.dataset-warning span {
+  color: #687386;
+  font-size: 13px;
+}
+
+.dataset-dialog-summary strong {
+  color: #101828;
+  font-size: 17px;
+}
+
+.dataset-impact-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dataset-impact-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.dataset-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e5ebf2;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.dataset-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.dataset-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+}
+
+.dataset-warning svg {
+  flex: 0 0 auto;
+  color: #b45309;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.primary-button.danger {
+  background: #dc2626;
+}
+
+.primary-button.danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
 .empty-state {
   display: grid;
   place-items: center;

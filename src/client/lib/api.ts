@@ -21,6 +21,7 @@ import type {
   BrowserOpenMode,
   BrowserOpenResult,
   HealthReportRecord,
+  NoteScopeClearPreview,
   NoteScopeSummary,
   NoteRecord,
   NotesPageResult,
@@ -83,9 +84,12 @@ export const api = {
   stopJob: (jobId: string) => apiPost<SearchJob>(`/api/search-jobs/${jobId}/stop`),
   listNotes: (params: URLSearchParams) => apiGet<NotesPageResult>(`/api/notes?${params.toString()}`),
   listNoteScopes: () => apiGet<NoteScopeSummary[]>("/api/note-scopes"),
+  getNoteScopeClearPreview: (jobId: string) => apiGet<NoteScopeClearPreview>(`/api/note-scopes/${encodeURIComponent(jobId)}/clear-preview`),
   deleteNote: (noteId: string) => apiDelete<{ deleted: number }>(`/api/notes/${encodeURIComponent(noteId)}`),
-  clearNotes: (jobId?: string) =>
-    apiDelete<{ deleted: number }>(`/api/notes${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ""}`),
+  clearNotes: (jobId?: string, deleteAiArtifacts = false) =>
+    apiDelete<{ deleted: number }>(
+      `/api/notes${jobId ? `?jobId=${encodeURIComponent(jobId)}${deleteAiArtifacts ? "&deleteAiArtifacts=true" : ""}` : ""}`
+    ),
   getAnalytics: (jobId: string) => apiGet<AnalyticsReport>(`/api/analytics/${jobId}`),
   capabilities: () => apiGet<RedbookCapability[]>("/api/capabilities"),
   healthCheck: (jobId: string) => apiGet<HealthReportRecord>(`/api/health-check/${jobId}`),

@@ -50,6 +50,7 @@ import type {
   AuthStatus,
   BrowserBridgeStatus,
   HealthReportRecord,
+  NoteScopeClearPreview,
   NoteScopeSummary,
   NoteRecord,
   NoteTypeFilter,
@@ -124,6 +125,9 @@ export function App() {
   const [showHistoryData, setShowHistoryData] = useState(false);
   const [noteScopes, setNoteScopes] = useState<NoteScopeSummary[]>([]);
   const [noteScopePanelOpen, setNoteScopePanelOpen] = useState(false);
+  const [datasetManagerOpen, setDatasetManagerOpen] = useState(false);
+  const [datasetClearPreview, setDatasetClearPreview] = useState<NoteScopeClearPreview | null>(null);
+  const [deleteDatasetAiArtifacts, setDeleteDatasetAiArtifacts] = useState(false);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [notePage, setNotePage] = useState(1);
   const [notePageSize] = useState(20);
@@ -582,10 +586,22 @@ export function App() {
     });
   }
 
+  async function openDatasetManager() {
+    if (!activeJobId) return;
+    await run("clear-preview", async () => {
+      setDatasetClearPreview(await api.getNoteScopeClearPreview(activeJobId));
+      setDeleteDatasetAiArtifacts(false);
+      setDatasetManagerOpen(true);
+    });
+  }
+
   async function clearCurrentNotes() {
     if (!activeJobId) return;
     await run("clear-notes", async () => {
-      await api.clearNotes(activeJobId);
+      await api.clearNotes(activeJobId, deleteDatasetAiArtifacts);
+      setDatasetManagerOpen(false);
+      setDatasetClearPreview(null);
+      setDeleteDatasetAiArtifacts(false);
       setSelectedId("");
       await refreshCore();
       await loadNotes();
@@ -993,7 +1009,7 @@ export function App() {
             setShowHistoryData={setShowHistoryData}
             noteScopePanelOpen={noteScopePanelOpen}
             setNoteScopePanelOpen={setNoteScopePanelOpen}
-            clearCurrentNotes={clearCurrentNotes}
+            openDatasetManager={openDatasetManager}
             deleteSelectedNote={deleteSelectedNote}
             openOriginalUrl={openOriginalUrl}
             runWorkflow={runWorkflow}
@@ -1086,6 +1102,20 @@ export function App() {
           modelMessages={modelMessages}
           busy={busy}
           onClose={() => setModelSettingsOpen(false)}
+        />
+      )}
+      {datasetManagerOpen && datasetClearPreview && (
+        <DatasetManagerDialog
+          preview={datasetClearPreview}
+          deleteAiArtifacts={deleteDatasetAiArtifacts}
+          setDeleteAiArtifacts={setDeleteDatasetAiArtifacts}
+          busy={busy}
+          onConfirm={clearCurrentNotes}
+          onClose={() => {
+            setDatasetManagerOpen(false);
+            setDatasetClearPreview(null);
+            setDeleteDatasetAiArtifacts(false);
+          }}
         />
       )}
       {!assistantOpen && (
@@ -1595,7 +1625,7 @@ function NotesPage(props: {
   setShowHistoryData: (value: boolean) => void;
   noteScopePanelOpen: boolean;
   setNoteScopePanelOpen: (value: boolean) => void;
-  clearCurrentNotes: () => Promise<void>;
+  openDatasetManager: () => Promise<void>;
   deleteSelectedNote: () => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   runWorkflow: RunWorkflow;
@@ -1613,12 +1643,12 @@ function NotesPage(props: {
           action={
             <button
               className="ghost-button compact danger"
-              onClick={() => void props.clearCurrentNotes()}
+              onClick={() => void props.openDatasetManager()}
               title={props.activeJobId ? "只清空当前选中任务关联的笔记" : "全部历史视图不能直接清空，请先选择单个任务"}
               disabled={clearDisabled}
             >
               {props.busy === "clear-notes" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-              {clearLabel}
+              {props.activeJobId ? "管理当前数据集" : clearLabel}
             </button>
           }
         />
@@ -3130,6 +3160,72 @@ function AiAssistantEntry({ onOpen, context }: { onOpen: () => void; context: st
       <span>AI 助手</span>
       <small>{context}</small>
     </button>
+  );
+}
+
+function DatasetManagerDialog(props: {
+  preview: NoteScopeClearPreview;
+  deleteAiArtifacts: boolean;
+  setDeleteAiArtifacts: (value: boolean) => void;
+  busy: string;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const deleting = props.busy === "clear-notes";
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="管理当前数据集">
+      <section className="dataset-dialog">
+        <SectionTitle
+          icon={<Trash2 size={18} />}
+          title="管理当前数据集"
+          action={
+            <button className="ghost-button compact" onClick={props.onClose} disabled={deleting}>
+              <X size={14} />
+              关闭
+            </button>
+          }
+        />
+        <div className="dataset-dialog-summary">
+          <span>当前任务</span>
+          <strong>{props.preview.label}</strong>
+          <small>该操作会移除当前任务与笔记的关联；只有不再属于任何任务的笔记才会被真正删除。</small>
+        </div>
+        <div className="dataset-impact-grid">
+          <Metric label="影响笔记" value={formatNumber(props.preview.affectedNotes)} />
+          <Metric label="仅解除关联" value={formatNumber(props.preview.detachedNotes)} />
+          <Metric label="真正删除笔记" value={formatNumber(props.preview.orphanNotes)} />
+          <Metric label="删除评论" value={formatNumber(props.preview.commentsToDelete)} />
+        </div>
+        <div className="dataset-impact-list">
+          <span>将清理队列：{formatNumber(props.preview.queueItemsToDelete)} 条</span>
+          <span>将删除本地分析报告：{formatNumber(props.preview.analysisReportsToDelete)} 个</span>
+          <span>关联 AI 产物：{formatNumber(props.preview.aiArtifactsLinked)} 个</span>
+          <span>关联 AI 报告：{formatNumber(props.preview.aiReportsLinked)} 个</span>
+        </div>
+        <label className="dataset-checkbox">
+          <input
+            type="checkbox"
+            checked={props.deleteAiArtifacts}
+            onChange={(event) => props.setDeleteAiArtifacts(event.target.checked)}
+            disabled={deleting || (!props.preview.aiArtifactsLinked && !props.preview.aiReportsLinked)}
+          />
+          <span>同时删除该任务关联的 AI 产物和 AI 报告</span>
+        </label>
+        <div className="dataset-warning">
+          <AlertTriangle size={16} />
+          <span>这是数据清理操作，不只是隐藏列表。确认前请检查上方影响范围。</span>
+        </div>
+        <div className="dialog-actions">
+          <button className="ghost-button" onClick={props.onClose} disabled={deleting}>
+            取消
+          </button>
+          <button className="primary-button danger" onClick={() => void props.onConfirm()} disabled={deleting}>
+            {deleting ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
+            确认清理当前数据集
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 

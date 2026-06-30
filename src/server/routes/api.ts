@@ -6,7 +6,16 @@ import { store } from "../storage/localStore.js";
 import { saveCookieString, getCookieString } from "../utils/env.js";
 import { jobs } from "../services/jobService.js";
 import { redbook } from "../services/redbookService.js";
-import { buildExport, clearNotes, deleteNote, getAnalytics, getNoteDetail, listNoteScopes, listNotesPage } from "../services/queryService.js";
+import {
+  buildExport,
+  clearNotes,
+  deleteNote,
+  getAnalytics,
+  getNoteDetail,
+  getNoteScopeClearPreview,
+  listNoteScopes,
+  listNotesPage
+} from "../services/queryService.js";
 import { redbookCapabilities } from "../services/capabilities.js";
 import { buildHealthCheck } from "../services/healthService.js";
 import { proxyMedia } from "../services/mediaService.js";
@@ -369,6 +378,15 @@ api.get("/note-scopes", async (_req, res) => {
   res.json(await listNoteScopes());
 });
 
+api.get("/note-scopes/:jobId/clear-preview", async (req, res) => {
+  const preview = await getNoteScopeClearPreview(req.params.jobId);
+  if (!preview) {
+    res.status(404).json({ error: "Note scope not found" });
+    return;
+  }
+  res.json(preview);
+});
+
 api.get("/notes/:id", async (req, res) => {
   const detail = await getNoteDetail(req.params.id);
   if (!detail) {
@@ -384,7 +402,7 @@ api.delete("/notes", async (req, res, next) => {
     if (jobId) {
       await jobs.stop(jobId);
     }
-    res.json(await clearNotes(jobId));
+    res.json(await clearNotes(jobId, { deleteAiArtifacts: booleanQuery(req.query.deleteAiArtifacts) }));
   } catch (error) {
     next(error);
   }
@@ -769,6 +787,10 @@ function stringQuery(value: unknown): string | undefined {
 function numberQuery(value: unknown): number | undefined {
   const parsed = typeof value === "string" ? Number(value) : undefined;
   return parsed && Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function booleanQuery(value: unknown): boolean {
+  return value === true || value === "true" || value === "1" || value === "yes";
 }
 
 function asNoteType(value: unknown): NotesQuery["type"] {

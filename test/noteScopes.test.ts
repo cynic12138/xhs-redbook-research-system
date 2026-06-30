@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AiArtifact, AiReport, NoteRecord, QueueItem, SearchJob } from "../src/shared/types.js";
 import { LocalStore } from "../src/server/storage/localStore.js";
-import { listNoteScopes } from "../src/server/services/queryService.js";
+import { clearNotes, getNoteScopeClearPreview, listNoteScopes } from "../src/server/services/queryService.js";
 
 describe("note scope summaries", () => {
   it("summarizes all notes, duplicate keyword jobs, empty jobs, and AI artifact counts", async () => {
@@ -36,6 +36,47 @@ describe("note scope summaries", () => {
     expect(newerScope?.noteCount).toBe(0);
     expect(newerScope?.queueErrors).toBe(1);
     expect(newerScope?.emptyReason).toBeTruthy();
+  });
+
+  it("previews dataset cleanup impact and only deletes AI artifacts when requested", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    await store.write("searchJobs", [searchJob("job1", ["keyword"], "completed", "2026-06-20T10:00:00.000Z")]);
+    await store.write("notes", [note("orphan-note", ["job1"]), note("shared-note", ["job1", "job2"])]);
+    await store.write("comments", [
+      { id: "comment1", noteId: "orphan-note", content: "comment", likedCount: 1, createdAt: "2026-06-20T10:00:00.000Z" },
+      { id: "comment2", noteId: "shared-note", content: "comment", likedCount: 1, createdAt: "2026-06-20T10:00:00.000Z" }
+    ]);
+    await store.write("queueItems", [queueItem("queue1", "job1", "done")]);
+    await store.write("analysisReports", [
+      {
+        jobId: "job1",
+        generatedAt: "2026-06-20T10:00:00.000Z",
+        overview: { notes: 1, videos: 0, imageNotes: 1, avgLikes: 1, totalComments: 1, totalCollects: 1, totalShares: 0 },
+        keywords: [],
+        authors: [],
+        formBreakdown: [],
+        templates: []
+      }
+    ]);
+    await store.write("aiArtifacts", [artifact("artifact1", "job1")]);
+    await store.write("aiReports", [report("report1", "job1")]);
+
+    const preview = await getNoteScopeClearPreview("job1", store);
+    expect(preview?.affectedNotes).toBe(2);
+    expect(preview?.detachedNotes).toBe(1);
+    expect(preview?.orphanNotes).toBe(1);
+    expect(preview?.commentsToDelete).toBe(1);
+    expect(preview?.aiArtifactsLinked).toBe(1);
+    expect(preview?.aiReportsLinked).toBe(1);
+
+    await clearNotes("job1", {}, store);
+    expect(await store.read("aiArtifacts")).toHaveLength(1);
+    expect(await store.read("aiReports")).toHaveLength(1);
+
+    await store.write("notes", [note("orphan-note", ["job1"])]);
+    await clearNotes("job1", { deleteAiArtifacts: true }, store);
+    expect(await store.read("aiArtifacts")).toHaveLength(0);
+    expect(await store.read("aiReports")).toHaveLength(0);
   });
 });
 
