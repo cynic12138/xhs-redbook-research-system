@@ -42,11 +42,7 @@ export type AiToolName =
   | "get_job_status"
   | "list_job_notes"
   | "run_ai_workflow"
-  | "create_summary_artifact"
-  | "list_content_playbooks"
-  | "scan_xhs_draft_rules"
-  | "generate_xhs_note_draft"
-  | "review_xhs_draft";
+  | "create_summary_artifact";
 
 export interface ParsedAiToolCall {
   id: string;
@@ -69,11 +65,7 @@ const allowedToolNames: AiToolName[] = [
   "get_job_status",
   "list_job_notes",
   "run_ai_workflow",
-  "create_summary_artifact",
-  "list_content_playbooks",
-  "scan_xhs_draft_rules",
-  "generate_xhs_note_draft",
-  "review_xhs_draft"
+  "create_summary_artifact"
 ];
 
 const workflowKeys: AiWorkflowKey[] = [
@@ -92,11 +84,7 @@ const toolArgumentKeys: Record<AiToolName, string[]> = {
   get_job_status: ["jobId"],
   list_job_notes: ["jobId", "limit", "sort"],
   run_ai_workflow: ["workflowKey", "jobId", "noteId", "focus"],
-  create_summary_artifact: ["jobId", "artifactIds", "title", "summaryMarkdown"],
-  list_content_playbooks: [],
-  scan_xhs_draft_rules: ["playbookId", "title", "body", "tags"],
-  generate_xhs_note_draft: ["playbookId", "jobId", "brief"],
-  review_xhs_draft: ["playbookId", "jobId", "title", "body", "tags"]
+  create_summary_artifact: ["jobId", "artifactIds", "title", "summaryMarkdown"]
 };
 
 const toolDefinitions = [
@@ -187,75 +175,6 @@ const toolDefinitions = [
       }
     }
   },
-  {
-    type: "function",
-    function: {
-      name: "list_content_playbooks",
-      description: "List local Xiaohongshu content playbooks without exposing secrets.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: {}
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "scan_xhs_draft_rules",
-      description: "Run local rule scanning for a Xiaohongshu draft.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        required: ["body"],
-        properties: {
-          playbookId: { type: "string" },
-          title: { type: "string", maxLength: 120 },
-          body: { type: "string", maxLength: 10000 },
-          tags: { type: "array", items: { type: "string" }, maxItems: 20 }
-        }
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "generate_xhs_note_draft",
-      description: "Generate a draft note from a structured brief and save it locally.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        required: ["brief"],
-        properties: {
-          playbookId: { type: "string" },
-          jobId: { type: "string" },
-          brief: {
-            type: "object",
-            additionalProperties: true
-          }
-        }
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "review_xhs_draft",
-      description: "Review a Xiaohongshu draft against a local playbook and save the report.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        required: ["body"],
-        properties: {
-          playbookId: { type: "string" },
-          jobId: { type: "string" },
-          title: { type: "string", maxLength: 120 },
-          body: { type: "string", maxLength: 10000 },
-          tags: { type: "array", items: { type: "string" }, maxItems: 20 }
-        }
-      }
-    }
-  }
 ] as const;
 
 export async function createAiOrchestrationWithToolsFallback(
@@ -376,7 +295,7 @@ async function requestToolMessage(
         {
           role: "system",
           content:
-            "You are a safe tool planner for a Xiaohongshu operations app. Use only the provided local tools. Never request deleting data, clearing data, sending comments, changing config, reading cookies, reading API keys, or accessing secrets. If the keyword is clear, call create_search_job first. For content creation or review requests, use the content playbook and draft/review tools."
+            "You are a safe search orchestration planner for a Xiaohongshu operations app. Use only the provided local tools. Never request deleting data, clearing data, sending comments, changing config, reading cookies, reading API keys, or accessing secrets. If the keyword is clear, call create_search_job first. For content creation or review requests, do not invent tools; those requests are handled by the content assistant workflow."
         },
         {
           role: "user",
