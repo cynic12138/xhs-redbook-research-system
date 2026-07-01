@@ -1070,17 +1070,51 @@ label {
 
 .note-row {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 120px 210px;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   min-height: 76px;
-  padding: 10px 12px;
+  padding: 0 12px;
   border: 1px solid #edf1f5;
   border-radius: 8px;
   background: #ffffff;
   color: #172033;
   text-align: left;
+}
+
+.note-select-check {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  min-width: 24px;
+  cursor: pointer;
+}
+
+.note-select-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.note-row-main {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 120px 210px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 76px;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-row-main:focus-visible {
+  outline: 2px solid #ff9aae;
+  outline-offset: 2px;
 }
 
 .note-thumb {
@@ -3089,7 +3123,7 @@ body {
   margin-top: 2px;
 }
 
-.note-row {
+.note-row-main {
   grid-template-columns: 72px minmax(0, 1fr) minmax(92px, 0.28fr) minmax(190px, 0.42fr);
 }
 
@@ -3977,7 +4011,7 @@ label {
     min-height: 280px;
   }
 
-  .note-row {
+  .note-row-main {
     grid-template-columns: 56px minmax(0, 1fr);
   }
 

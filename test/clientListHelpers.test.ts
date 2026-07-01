@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prependUniqueById, upsertById } from "../src/client/App.js";
+import { noteToBatchReviewItem, prependUniqueById, upsertById } from "../src/client/App.js";
 
 describe("client list merge helpers", () => {
   it("upserts one item to the front and removes its older copy", () => {
@@ -24,5 +24,20 @@ describe("client list merge helpers", () => {
     ]);
 
     expect(result).toEqual([{ id: "next", value: 2 }, { id: "existing", value: 1 }]);
+  });
+
+  it("maps a note into a selected batch review item", () => {
+    expect(noteToBatchReviewItem({
+      id: "note1",
+      title: "孕妈出门携带",
+      desc: "这是一篇需要审稿的小红书笔记正文。",
+      keywords: ["孕期好物", "日常分享"]
+    })).toEqual({
+      id: "note_note1",
+      title: "孕妈出门携带",
+      body: "这是一篇需要审稿的小红书笔记正文。",
+      tags: "孕期好物, 日常分享",
+      selected: true
+    });
   });
 });

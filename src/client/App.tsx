@@ -271,6 +271,7 @@ export function App() {
   const [resultType, setResultType] = useState<NoteTypeFilter>("all");
   const [resultSort, setResultSort] = useState<SortMode>("hot");
   const [selectedId, setSelectedId] = useState("");
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [replyStrategy, setReplyStrategy] = useState<ReplyStrategy>("questions");
   const [replyTemplate, setReplyTemplate] = useState("谢谢 {author} 的提问，我补充一下：");
   const [reportFocus, setReportFocus] = useState("话题机会、爆款结构、评论需求、可执行选题");
@@ -411,6 +412,11 @@ export function App() {
   useEffect(() => {
     setNotePage(1);
   }, [activeJobId, activeKeywordScopeId, authorQuery, minLikes, query, resultSort, resultType]);
+
+  useEffect(() => {
+    const visibleNoteIds = new Set(notes.map((note) => note.id));
+    setSelectedNoteIds((ids) => ids.filter((id) => visibleNoteIds.has(id)));
+  }, [notes]);
 
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
@@ -908,6 +914,19 @@ export function App() {
     });
   }
 
+  function sendSelectedNotesToBatchReview() {
+    const selectedNoteIdSet = new Set(selectedNoteIds);
+    const selectedNotes = notes.filter((note) => selectedNoteIdSet.has(note.id) && note.desc.trim());
+    if (!selectedNotes.length) {
+      setError("请先勾选已补正文的笔记，再进入批量审稿。");
+      return;
+    }
+    setContentBatchItems(selectedNotes.map(noteToBatchReviewItem));
+    setContentStudioTab("batch");
+    setActiveModule("content");
+    setError("");
+  }
+
   function openNewModel() {
     setEditingModelId("");
     setModelForm(emptyModelForm);
@@ -1295,6 +1314,9 @@ export function App() {
             resultSort={resultSort}
             setResultSort={setResultSort}
             setSelectedId={setSelectedId}
+            selectedNoteIds={selectedNoteIds}
+            setSelectedNoteIds={setSelectedNoteIds}
+            sendSelectedNotesToBatchReview={sendSelectedNotesToBatchReview}
             page={notePage}
             total={notesTotal}
             totalPages={notesTotalPages}
@@ -1958,6 +1980,9 @@ function NotesPage(props: {
   resultSort: SortMode;
   setResultSort: (value: SortMode) => void;
   setSelectedId: (value: string) => void;
+  selectedNoteIds: string[];
+  setSelectedNoteIds: (value: string[]) => void;
+  sendSelectedNotesToBatchReview: () => void;
   page: number;
   total: number;
   totalPages: number;
@@ -1979,6 +2004,20 @@ function NotesPage(props: {
 }) {
   const clearDisabled = !props.activeJobId || props.busy === "clear-notes" || props.total === 0;
   const clearLabel = props.activeJobId ? "清空当前任务" : props.showHistoryData || props.activeKeywordScopeId ? "先选择单个任务" : "请选择任务";
+  const visibleNoteIds = props.notes.map((note) => note.id);
+  const selectedNoteIdSet = new Set(props.selectedNoteIds);
+  const allVisibleSelected = visibleNoteIds.length > 0 && visibleNoteIds.every((id) => selectedNoteIdSet.has(id));
+  const selectedReviewableCount = props.notes.filter((note) => selectedNoteIdSet.has(note.id) && note.desc.trim()).length;
+  const toggleNoteSelection = (noteId: string, selected: boolean) => {
+    props.setSelectedNoteIds(selected ? Array.from(new Set([...props.selectedNoteIds, noteId])) : props.selectedNoteIds.filter((id) => id !== noteId));
+  };
+  const toggleVisibleSelection = () => {
+    if (allVisibleSelected) {
+      props.setSelectedNoteIds(props.selectedNoteIds.filter((id) => !visibleNoteIds.includes(id)));
+      return;
+    }
+    props.setSelectedNoteIds(Array.from(new Set([...props.selectedNoteIds, ...visibleNoteIds])));
+  };
 
   return (
     <div className="notes-layout">
@@ -1987,15 +2026,25 @@ function NotesPage(props: {
           icon={<Database size={18} />}
           title="笔记库"
           action={
-            <button
-              className="ghost-button compact danger"
-              onClick={() => void props.openDatasetManager()}
-              title={props.activeJobId ? "只清空当前选中任务关联的笔记" : "全部历史视图不能直接清空，请先选择单个任务"}
-              disabled={clearDisabled}
-            >
-              {props.busy === "clear-notes" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-              {props.activeJobId ? "管理当前数据集" : clearLabel}
-            </button>
+            <div className="button-row">
+              <button className="ghost-button compact" onClick={toggleVisibleSelection} disabled={!props.notes.length}>
+                <Square size={15} />
+                {allVisibleSelected ? "取消本页" : "全选本页"}
+              </button>
+              <button className="primary-button compact" onClick={props.sendSelectedNotesToBatchReview} disabled={!selectedReviewableCount}>
+                <ShieldCheck size={15} />
+                送审已选{selectedReviewableCount ? `（${selectedReviewableCount}）` : ""}
+              </button>
+              <button
+                className="ghost-button compact danger"
+                onClick={() => void props.openDatasetManager()}
+                title={props.activeJobId ? "只清空当前选中任务关联的笔记" : "全部历史视图不能直接清空，请先选择单个任务"}
+                disabled={clearDisabled}
+              >
+                {props.busy === "clear-notes" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
+                {props.activeJobId ? "管理当前数据集" : clearLabel}
+              </button>
+            </div>
           }
         />
         <div className="filter-row">
@@ -2045,21 +2094,29 @@ function NotesPage(props: {
         />
         <div className="note-list">
           {props.notes.map((note) => (
-            <button
+            <div
               key={note.id}
               className={`${props.selected?.id === note.id ? "note-row active" : "note-row"} ${note.desc ? "" : "pending-body"}`}
-              onClick={() => props.setSelectedId(note.id)}
             >
-              <NoteMediaThumb note={note} />
-              <span className="note-main">
-                <span className="note-type">{note.type === "video" ? "视频" : "图文"}</span>
-                <strong>{note.title}</strong>
-              </span>
-              <small>{note.authorName ?? "未知作者"}</small>
-              <span className="note-stats">
-                {note.desc ? "已正文" : "待正文"} · 赞 {formatNumber(note.likedCount)} · 藏 {formatNumber(note.collectedCount)} · 评 {formatNumber(note.commentCount)}
-              </span>
-            </button>
+              <label className="note-select-check" title={note.desc ? "加入批量审稿" : "正文未补全，送审时会跳过"}>
+                <input
+                  type="checkbox"
+                  checked={selectedNoteIdSet.has(note.id)}
+                  onChange={(event) => toggleNoteSelection(note.id, event.target.checked)}
+                />
+              </label>
+              <button className="note-row-main" onClick={() => props.setSelectedId(note.id)}>
+                <NoteMediaThumb note={note} />
+                <span className="note-main">
+                  <span className="note-type">{note.type === "video" ? "视频" : "图文"}</span>
+                  <strong>{note.title}</strong>
+                </span>
+                <small>{note.authorName ?? "未知作者"}</small>
+                <span className="note-stats">
+                  {note.desc ? "已正文" : "待正文"} · 赞 {formatNumber(note.likedCount)} · 藏 {formatNumber(note.collectedCount)} · 评 {formatNumber(note.commentCount)}
+                </span>
+              </button>
+            </div>
           ))}
           {!props.notes.length && (
             <EmptyState
@@ -4670,6 +4727,16 @@ function createBatchReviewItem(): BatchReviewItem {
     title: "",
     body: "",
     tags: "",
+    selected: true
+  };
+}
+
+export function noteToBatchReviewItem(note: Pick<NoteRecord, "id" | "title" | "desc" | "keywords">): BatchReviewItem {
+  return {
+    id: `note_${note.id}`,
+    title: note.title,
+    body: note.desc,
+    tags: note.keywords.join(", "),
     selected: true
   };
 }
