@@ -1,0 +1,317 @@
+import http from "node:http";
+import express, { type Express } from "express";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+describe("API route contracts", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  it("keeps the notes list query contract stable", async () => {
+    const listNotesPage = vi.fn(async () => ({
+      items: [],
+      total: 0,
+      page: 3,
+      pageSize: 25,
+      totalPages: 1
+    }));
+    mockRouteDependencies({ queryService: { listNotesPage } });
+    const app = await createApp();
+    const response = await requestJson(
+      app,
+      "/api/notes?jobId=job_1&jobIds=job_1,job_2&q=蜂蜜露&type=video&author=作者&minLikes=50&sort=latest&page=3&pageSize=25",
+      { method: "GET" }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      items: [],
+      total: 0,
+      page: 3,
+      pageSize: 25,
+      totalPages: 1
+    });
+    expect(listNotesPage).toHaveBeenCalledWith(
+      {
+        jobId: "job_1",
+        jobIds: ["job_1", "job_2"],
+        q: "蜂蜜露",
+        type: "video",
+        author: "作者",
+        minLikes: 50,
+        sort: "latest"
+      },
+      3,
+      25
+    );
+  });
+
+  it("keeps the missing note detail contract stable", async () => {
+    mockRouteDependencies({ queryService: { getNoteDetail: vi.fn(async () => undefined) } });
+    const app = await createApp();
+    const response = await requestJson(app, "/api/notes/missing_note", { method: "GET" });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "Note not found" });
+  });
+
+  it("keeps content playbook CRUD status codes and bodies stable", async () => {
+    const playbook = {
+      id: "playbook_contract",
+      name: "规则 A",
+      productName: "产品 A",
+      category: "小红书种草",
+      forbiddenTerms: [],
+      sensitiveClaims: [],
+      allowedSellingPoints: [],
+      requiredSections: [],
+      toneWords: [],
+      personas: [],
+      scenarios: [],
+      tags: [],
+      replacements: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const saveContentPlaybook = vi.fn(async (input, id?: string) => ({ ...playbook, ...input, id: id ?? playbook.id }));
+    const deleteContentPlaybook = vi.fn(async () => ({ deleted: 1 }));
+    mockRouteDependencies({
+      contentStudioService: {
+        listContentPlaybooks: vi.fn(async () => [playbook]),
+        saveContentPlaybook,
+        deleteContentPlaybook
+      }
+    });
+    const app = await createApp();
+
+    const listResponse = await requestJson(app, "/api/content/playbooks", { method: "GET" });
+    const createResponse = await requestJson(app, "/api/content/playbooks", {
+      method: "POST",
+      body: { name: "规则 B", productName: "产品 B" }
+    });
+    const updateResponse = await requestJson(app, "/api/content/playbooks/playbook_existing", {
+      method: "PUT",
+      body: { name: "规则 C", productName: "产品 C" }
+    });
+    const deleteResponse = await requestJson(app, "/api/content/playbooks/playbook_existing", { method: "DELETE" });
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body).toEqual([playbook]);
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body).toMatchObject({ id: "playbook_contract", name: "规则 B", productName: "产品 B" });
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body).toMatchObject({ id: "playbook_existing", name: "规则 C", productName: "产品 C" });
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteResponse.body).toEqual({ deleted: 1 });
+    expect(saveContentPlaybook).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: "规则 B", productName: "产品 B" }));
+    expect(saveContentPlaybook).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: "规则 C", productName: "产品 C" }), "playbook_existing");
+    expect(deleteContentPlaybook).toHaveBeenCalledWith("playbook_existing");
+  });
+
+  it("keeps content playbook validation errors on the shared 400 error contract", async () => {
+    const saveContentPlaybook = vi.fn();
+    mockRouteDependencies({ contentStudioService: { saveContentPlaybook } });
+    const app = await createApp();
+    const response = await requestJson(app, "/api/content/playbooks", {
+      method: "POST",
+      body: { name: "缺少产品" }
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toHaveProperty("error");
+    expect(saveContentPlaybook).not.toHaveBeenCalled();
+  });
+
+  it("keeps AI orchestration message-to-instruction routing stable", async () => {
+    const createAiOrchestrationWithToolsFallback = vi.fn(async (input) => ({
+      id: "orch_contract",
+      instruction: input.instruction,
+      keywords: input.keywords ?? [],
+      modelId: input.modelId,
+      steps: [],
+      status: "queued",
+      artifactIds: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    }));
+    mockRouteDependencies({ aiToolCallingService: { createAiOrchestrationWithToolsFallback } });
+    const app = await createApp();
+    const response = await requestJson(app, "/api/ai/orchestrations", {
+      method: "POST",
+      body: { message: "抓取关键词 蜂蜜露", keywords: ["蜂蜜露"], modelId: "model_contract" }
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      id: "orch_contract",
+      instruction: "抓取关键词 蜂蜜露",
+      keywords: ["蜂蜜露"],
+      modelId: "model_contract",
+      status: "queued"
+    });
+    expect(createAiOrchestrationWithToolsFallback).toHaveBeenCalledWith({
+      instruction: "抓取关键词 蜂蜜露",
+      keywords: ["蜂蜜露"],
+      modelId: "model_contract"
+    });
+  });
+});
+
+function mockRouteDependencies(overrides: {
+  queryService?: Record<string, unknown>;
+  contentStudioService?: Record<string, unknown>;
+  aiToolCallingService?: Record<string, unknown>;
+} = {}) {
+  vi.doMock("../src/server/services/commentOps.js", () => ({
+    approveReplyAction: vi.fn(),
+    createReplyPlan: vi.fn(),
+    listReplyActions: vi.fn(async () => []),
+    listReplyPlans: vi.fn(async () => []),
+    startReplyWorker: vi.fn()
+  }));
+  vi.doMock("../src/server/services/jobService.js", () => ({
+    jobs: {
+      createJob: vi.fn(),
+      getJob: vi.fn(),
+      listJobs: vi.fn(async () => []),
+      resume: vi.fn(),
+      stop: vi.fn()
+    }
+  }));
+  vi.doMock("../src/server/services/queryService.js", () => ({
+    buildExport: vi.fn(),
+    clearNotes: vi.fn(async () => ({ deleted: 0 })),
+    deleteNote: vi.fn(async () => ({ deleted: 0 })),
+    getAnalytics: vi.fn(),
+    getNoteDetail: vi.fn(),
+    getNoteScopeClearPreview: vi.fn(),
+    listNoteScopes: vi.fn(async () => []),
+    listNotes: vi.fn(async () => []),
+    listNotesPage: vi.fn(async () => ({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 })),
+    ...overrides.queryService
+  }));
+  vi.doMock("../src/server/services/contentStudioService.js", () => ({
+    deleteContentPlaybook: vi.fn(async () => ({ deleted: 0 })),
+    generateContentDraft: vi.fn(),
+    listContentDrafts: vi.fn(async () => []),
+    listContentPlaybooks: vi.fn(async () => []),
+    listContentReviews: vi.fn(async () => []),
+    reviewContentDraft: vi.fn(),
+    reviewContentDraftBatch: vi.fn(),
+    runContentAssistant: vi.fn(),
+    saveContentPlaybook: vi.fn(),
+    ...overrides.contentStudioService
+  }));
+  vi.doMock("../src/server/services/aiToolCallingService.js", () => ({
+    createAiOrchestrationWithToolsFallback: vi.fn(),
+    probeAiModelTools: vi.fn(),
+    ...overrides.aiToolCallingService
+  }));
+  vi.doMock("../src/server/services/aiOrchestratorService.js", () => ({
+    getAiOrchestration: vi.fn(),
+    listAiOrchestrations: vi.fn(async () => [])
+  }));
+  vi.doMock("../src/server/services/aiService.js", () => ({
+    activateAiPrompt: vi.fn(),
+    chatWithAssistant: vi.fn(),
+    createAiReport: vi.fn(),
+    deleteAiArtifact: vi.fn(),
+    deleteAiModel: vi.fn(),
+    deleteAiReport: vi.fn(),
+    getAiArtifact: vi.fn(),
+    getAiPromptDetail: vi.fn(),
+    getAiReport: vi.fn(),
+    listAiArtifacts: vi.fn(async () => []),
+    listAiModels: vi.fn(async () => []),
+    listAiPrompts: vi.fn(async () => []),
+    listAiReports: vi.fn(async () => []),
+    listAiWorkflows: vi.fn(() => []),
+    resetAiPromptConfig: vi.fn(),
+    runAiWorkflow: vi.fn(),
+    saveAiModel: vi.fn(),
+    saveAiPromptConfig: vi.fn(),
+    setDefaultAiModel: vi.fn(),
+    testAiModel: vi.fn(),
+    updateAiModel: vi.fn()
+  }));
+  vi.doMock("../src/server/services/redbookService.js", () => ({
+    redbook: {
+      extractChromeCookie: vi.fn(),
+      feed: vi.fn(),
+      verifyCookie: vi.fn()
+    }
+  }));
+  vi.doMock("../src/server/services/browserAuthService.js", () => ({
+    browserAuth: {
+      captureSession: vi.fn(),
+      closeSession: vi.fn(),
+      openUrl: vi.fn(),
+      startSession: vi.fn()
+    }
+  }));
+  vi.doMock("../src/server/services/authState.js", () => ({
+    isAuthRisk: vi.fn(() => false),
+    markAuthDisconnected: vi.fn()
+  }));
+  vi.doMock("../src/server/services/healthService.js", () => ({ buildHealthCheck: vi.fn() }));
+  vi.doMock("../src/server/services/mediaService.js", () => ({ proxyMedia: vi.fn(), refreshNoteMedia: vi.fn() }));
+  vi.doMock("../src/server/services/capabilities.js", () => ({ redbookCapabilities: [] }));
+  vi.doMock("../src/server/utils/env.js", () => ({
+    getCookieString: vi.fn(async () => undefined),
+    saveCookieString: vi.fn()
+  }));
+  vi.doMock("../src/server/storage/localStore.js", () => ({
+    store: {
+      read: vi.fn(async (name: string) => {
+        if (name === "authStatus") return { connected: false, configured: false };
+        if (name === "browserBridgeStatus") return { connected: false, browser: "unknown", permissionStatus: "unknown" };
+        return [];
+      }),
+      update: vi.fn(async (_name: string, updater: (value: unknown[]) => unknown[]) => updater([])),
+      write: vi.fn()
+    }
+  }));
+}
+
+async function createApp(): Promise<Express> {
+  const { api } = await import("../src/server/routes/api.js");
+  const app = express();
+  app.use(express.json());
+  app.use("/api", api);
+  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  });
+  return app;
+}
+
+async function requestJson(
+  app: Express,
+  path: string,
+  options: { method: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown }
+): Promise<{ status: number; body: unknown }> {
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Test server did not expose a port.");
+  }
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+      method: options.method,
+      headers: options.body ? { "Content-Type": "application/json" } : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    return {
+      status: response.status,
+      body: await response.json()
+    };
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+}
