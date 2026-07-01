@@ -53,6 +53,38 @@ describe("content studio service", () => {
     expect(await listContentPlaybooks(store)).toEqual([]);
   });
 
+  it("preserves intentionally cleared playbook lists", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const playbook = await saveContentPlaybook({
+      name: "可清空规则",
+      productName: "产品",
+      forbiddenTerms: ["封神"],
+      sensitiveClaims: ["治疗"],
+      allowedSellingPoints: ["真实体验"],
+      personas: ["孕妈"],
+      scenarios: ["日常分享"],
+      tags: ["好物"]
+    }, undefined, store);
+
+    const updated = await saveContentPlaybook({
+      name: "可清空规则",
+      productName: "产品",
+      forbiddenTerms: [],
+      sensitiveClaims: [],
+      allowedSellingPoints: [],
+      personas: [],
+      scenarios: [],
+      tags: []
+    }, playbook.id, store);
+
+    expect(updated.forbiddenTerms).toEqual([]);
+    expect(updated.sensitiveClaims).toEqual([]);
+    expect(updated.allowedSellingPoints).toEqual([]);
+    expect(updated.personas).toEqual([]);
+    expect(updated.scenarios).toEqual([]);
+    expect(updated.tags).toEqual([]);
+  });
+
   it("creates a review artifact without an AI model", async () => {
     const store = new LocalStore(await createTempDataDir());
 

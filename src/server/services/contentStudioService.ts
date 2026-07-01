@@ -786,12 +786,12 @@ function countOccurrences(text: string, keyword: string): number {
 }
 
 function normalizeList(values: string[] | undefined, fallback: string[]): string[] {
-  const source = values?.length ? values : fallback;
+  const source = values === undefined ? fallback : values;
   return unique(source.map((item) => item.trim()).filter(Boolean));
 }
 
 function normalizeReplacements(values: ContentReplacementRule[] | undefined, fallback: ContentReplacementRule[]): ContentReplacementRule[] {
-  const source = values?.length ? values : fallback;
+  const source = values === undefined ? fallback : values;
   return source
     .map((item) => ({
       from: item.from.trim(),
