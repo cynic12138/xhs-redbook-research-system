@@ -495,7 +495,7 @@ export function App() {
         if (latestArtifactId) {
           const artifact = await api.getAiArtifact(latestArtifactId).catch(() => undefined);
           if (alive && artifact) {
-            setAiArtifacts((items) => [artifact, ...items.filter((item) => item.id !== artifact.id)]);
+            setAiArtifacts((items) => upsertById(items, artifact));
           }
         }
       }
@@ -844,9 +844,9 @@ export function App() {
           jobId: contextJobId || undefined
         }
       });
-      setContentDrafts((drafts) => [result.draft, ...drafts.filter((draft) => draft.id !== result.draft.id)]);
-      setContentReviews((reviews) => [result.review, ...reviews.filter((review) => review.id !== result.review.id)]);
-      setAiArtifacts((artifacts) => [result.reviewArtifact, result.artifact, ...artifacts.filter((artifact) => artifact.id !== result.artifact.id && artifact.id !== result.reviewArtifact.id)]);
+      setContentDrafts((drafts) => upsertById(drafts, result.draft));
+      setContentReviews((reviews) => upsertById(reviews, result.review));
+      setAiArtifacts((artifacts) => prependUniqueById(artifacts, [result.reviewArtifact, result.artifact]));
       setSelectedArtifactId(result.reviewArtifact.id);
       setSelectedReportId("");
       setContentStudioTab("results");
@@ -869,8 +869,8 @@ export function App() {
         tags: splitTextList(contentReviewForm.tags),
         mode: "minimal"
       });
-      setContentReviews((reviews) => [result.review, ...reviews.filter((review) => review.id !== result.review.id)]);
-      setAiArtifacts((artifacts) => [result.artifact, ...artifacts.filter((artifact) => artifact.id !== result.artifact.id)]);
+      setContentReviews((reviews) => upsertById(reviews, result.review));
+      setAiArtifacts((artifacts) => upsertById(artifacts, result.artifact));
       setSelectedArtifactId(result.artifact.id);
       setSelectedReportId("");
       setContentStudioTab("results");
@@ -897,8 +897,8 @@ export function App() {
           tags: splitTextList(item.tags)
         }))
       });
-      setContentReviews((reviews) => [...result.reviews, ...reviews.filter((review) => !result.reviews.some((item) => item.id === review.id))]);
-      setAiArtifacts((artifacts) => [...result.artifacts, ...artifacts.filter((artifact) => !result.artifacts.some((item) => item.id === artifact.id))]);
+      setContentReviews((reviews) => prependUniqueById(reviews, result.reviews));
+      setAiArtifacts((artifacts) => prependUniqueById(artifacts, result.artifacts));
       if (result.artifacts[0]) {
         setSelectedArtifactId(result.artifacts[0].id);
         setSelectedReportId("");
@@ -1024,7 +1024,7 @@ export function App() {
         modelId: selectedModel?.id,
         focus
       });
-      setAiArtifacts((items) => [artifact, ...items.filter((item) => item.id !== artifact.id)]);
+      setAiArtifacts((items) => upsertById(items, artifact));
       setSelectedWorkflow(workflowKey);
       setSelectedArtifactId(artifact.id);
       setSelectedReportId("");
@@ -1086,7 +1086,7 @@ export function App() {
         }
         setAssistantMessages((messages) => [...messages, response.message]);
         if (response.artifact) {
-          setAiArtifacts((items) => [response.artifact as AiArtifact, ...items.filter((item) => item.id !== response.artifact?.id)]);
+          setAiArtifacts((items) => upsertById(items, response.artifact as AiArtifact));
           setSelectedArtifactId(response.artifact.id);
           setSelectedReportId("");
         }
@@ -1129,7 +1129,7 @@ export function App() {
       }
       setAssistantMessages((messages) => [...messages, response.message]);
       if (response.artifact) {
-        setAiArtifacts((items) => [response.artifact as AiArtifact, ...items.filter((item) => item.id !== response.artifact?.id)]);
+        setAiArtifacts((items) => upsertById(items, response.artifact as AiArtifact));
         setSelectedArtifactId(response.artifact.id);
         setSelectedReportId("");
       }
@@ -4715,8 +4715,20 @@ function callBrowserBridge<T = unknown>(action: string, payload?: unknown, timeo
   });
 }
 
-function upsertById<T extends { id: string }>(items: T[], next: T): T[] {
-  return [next, ...items.filter((item) => item.id !== next.id)];
+export function upsertById<T extends { id: string }>(items: T[], next: T): T[] {
+  return prependUniqueById(items, [next]);
+}
+
+export function prependUniqueById<T extends { id: string }>(items: T[], nextItems: T[]): T[] {
+  const nextIds = new Set<string>();
+  const uniqueNext = nextItems.filter((item) => {
+    if (nextIds.has(item.id)) {
+      return false;
+    }
+    nextIds.add(item.id);
+    return true;
+  });
+  return [...uniqueNext, ...items.filter((item) => !nextIds.has(item.id))];
 }
 
 function readStoredPosition(key: string, fallback: { x: number; y: number }): { x: number; y: number } {
