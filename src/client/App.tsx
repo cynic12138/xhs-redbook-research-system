@@ -34,7 +34,7 @@ import {
   Video,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type {
   AiArtifact,
   AiAssistantMessage,
@@ -249,6 +249,8 @@ export function App() {
   const [contentStudioTab, setContentStudioTab] = useState<ContentStudioTab>("review");
   const [contentPlaybookForm, setContentPlaybookForm] = useState<ContentPlaybookForm>(defaultPlaybookForm);
   const [contentPlaybookDirty, setContentPlaybookDirty] = useState(false);
+  const selectedContentPlaybookIdRef = useRef("");
+  const contentPlaybookDirtyRef = useRef(false);
   const [aiOrchestrations, setAiOrchestrations] = useState<AiOrchestration[]>([]);
   const [activeOrchestrationId, setActiveOrchestrationId] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -277,6 +279,14 @@ export function App() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [assistantError, setAssistantError] = useState("");
+  const setSelectedContentPlaybook = useCallback((value: string) => {
+    selectedContentPlaybookIdRef.current = value;
+    setSelectedContentPlaybookId(value);
+  }, []);
+  const setContentPlaybookDirtyState = useCallback((value: boolean) => {
+    contentPlaybookDirtyRef.current = value;
+    setContentPlaybookDirty(value);
+  }, []);
 
   const activeJob = jobs.find((job) => job.id === activeJobId);
   const contextJob = isContextJob(activeJob) ? activeJob : undefined;
@@ -311,21 +321,22 @@ export function App() {
     setContentPlaybooks(playbooks);
     setContentDrafts(drafts);
     setContentReviews(reviews);
-    const nextPlaybook = selectedContentPlaybookId ? playbooks.find((playbook) => playbook.id === selectedContentPlaybookId) : playbooks[0];
-    if (!contentPlaybookDirty && nextPlaybook) {
-      if (selectedContentPlaybookId !== nextPlaybook.id) setSelectedContentPlaybookId(nextPlaybook.id);
-      setContentPlaybookForm(playbookToForm(nextPlaybook));
+    const refreshState = resolvePlaybookRefreshState(playbooks, selectedContentPlaybookIdRef.current, contentPlaybookDirtyRef.current);
+    if (refreshState.applyForm && refreshState.playbook) {
+      const playbook = refreshState.playbook;
+      if (selectedContentPlaybookIdRef.current !== refreshState.selectedId) setSelectedContentPlaybook(refreshState.selectedId);
+      setContentPlaybookForm(playbookToForm(playbook));
       setContentBriefForm((form) => ({
         ...form,
-        productName: form.productName === defaultContentBriefForm.productName ? nextPlaybook.productName : form.productName
+        productName: form.productName === defaultContentBriefForm.productName ? playbook.productName : form.productName
       }));
-    } else if (!contentPlaybookDirty && !nextPlaybook) {
-      setSelectedContentPlaybookId("");
+    } else if (refreshState.applyForm && !refreshState.playbook) {
+      setSelectedContentPlaybook("");
       setContentPlaybookForm(defaultPlaybookForm);
     }
     setBrowserBridge({ ...bridgeStatus, connected: false });
     setError(clearRecoveredBackendError);
-  }, [contentPlaybookDirty, selectedContentPlaybookId]);
+  }, [setSelectedContentPlaybook]);
 
   const loadNotes = useCallback(async () => {
     if (!activeJobId && !activeKeywordScopeId && !showHistoryData) {
@@ -777,15 +788,15 @@ export function App() {
   async function refreshContentPlaybooksAfterChange(nextSelectedId?: string) {
     const playbooks = await api.listContentPlaybooks();
     setContentPlaybooks(playbooks);
-    const nextPlaybook = (nextSelectedId ? playbooks.find((playbook) => playbook.id === nextSelectedId) : undefined) ?? playbooks[0];
-    if (nextPlaybook) {
-      setSelectedContentPlaybookId(nextPlaybook.id);
-      setContentPlaybookForm(playbookToForm(nextPlaybook));
+    const refreshState = resolvePlaybookRefreshState(playbooks, nextSelectedId ?? "", false);
+    if (refreshState.playbook) {
+      setSelectedContentPlaybook(refreshState.selectedId);
+      setContentPlaybookForm(playbookToForm(refreshState.playbook));
     } else {
-      setSelectedContentPlaybookId("");
+      setSelectedContentPlaybook("");
       setContentPlaybookForm(defaultPlaybookForm);
     }
-    setContentPlaybookDirty(false);
+    setContentPlaybookDirtyState(false);
   }
 
   async function saveContentPlaybookForm() {
@@ -803,13 +814,13 @@ export function App() {
   }
 
   function createContentPlaybookForm() {
-    setSelectedContentPlaybookId("");
+    setSelectedContentPlaybook("");
     setContentPlaybookForm({
       ...defaultPlaybookForm,
       name: "新规则库",
       productName: contentBriefForm.productName || "产品"
     });
-    setContentPlaybookDirty(true);
+    setContentPlaybookDirtyState(true);
     setContentStudioTab("rules");
   }
 
@@ -1333,19 +1344,20 @@ export function App() {
             setActiveTab={setContentStudioTab}
             activeJob={contextJob}
             playbooks={contentPlaybooks}
-            selectedPlaybookId={selectedContentPlaybook?.id ?? ""}
+            selectedPlaybookId={selectedContentPlaybookId}
             setSelectedPlaybookId={(id) => {
-              setSelectedContentPlaybookId(id);
+              setSelectedContentPlaybook(id);
               const playbook = contentPlaybooks.find((item) => item.id === id);
               if (playbook) {
                 setContentPlaybookForm(playbookToForm(playbook));
                 setContentBriefForm((form) => ({ ...form, productName: playbook.productName }));
+                setContentPlaybookDirtyState(false);
               }
             }}
             playbookForm={contentPlaybookForm}
             setPlaybookForm={setContentPlaybookForm}
             playbookDirty={contentPlaybookDirty}
-            setPlaybookDirty={setContentPlaybookDirty}
+            setPlaybookDirty={setContentPlaybookDirtyState}
             briefForm={contentBriefForm}
             setBriefForm={setContentBriefForm}
             reviewForm={contentReviewForm}
@@ -4601,6 +4613,22 @@ function playbookToForm(playbook: ContentPlaybook): ContentPlaybookForm {
     personas: playbook.personas.join(", "),
     scenarios: playbook.scenarios.join(", "),
     tags: playbook.tags.join(", ")
+  };
+}
+
+export function resolvePlaybookRefreshState(playbooks: ContentPlaybook[], selectedId: string, dirty: boolean): {
+  selectedId: string;
+  playbook?: ContentPlaybook;
+  applyForm: boolean;
+} {
+  if (dirty) {
+    return { selectedId, applyForm: false };
+  }
+  const playbook = (selectedId ? playbooks.find((item) => item.id === selectedId) : undefined) ?? playbooks[0];
+  return {
+    selectedId: playbook?.id ?? "",
+    playbook,
+    applyForm: true
   };
 }
 
