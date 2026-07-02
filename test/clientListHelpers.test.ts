@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { compactContentText, noteToBatchReviewItem, prependUniqueById, severityLabel, upsertById } from "../src/client/App.js";
+import {
+  applyContentPlaybookTemplate,
+  compactContentText,
+  noteToBatchReviewItem,
+  prependUniqueById,
+  severityLabel,
+  upsertById
+} from "../src/client/App.js";
 
 describe("client list merge helpers", () => {
   it("upserts one item to the front and removes its older copy", () => {
@@ -51,5 +58,25 @@ describe("client list merge helpers", () => {
     expect(severityLabel("blocker")).toBe("必须修改");
     expect(severityLabel("warning")).toBe("建议修改");
     expect(severityLabel("info")).toBe("提示");
+  });
+
+  it("applies a content playbook template while preserving the product name", () => {
+    const result = applyContentPlaybookTemplate({
+      name: "旧规则",
+      productName: "蜂蜜露",
+      category: "旧行业",
+      forbiddenTerms: "",
+      sensitiveClaims: "",
+      allowedSellingPoints: "",
+      personas: "",
+      scenarios: "",
+      tags: ""
+    }, "maternal");
+
+    expect(result.productName).toBe("蜂蜜露");
+    expect(result.name).toBe("母婴孕妈审稿规则");
+    expect(result.category).toBe("母婴小红书种草");
+    expect(result.sensitiveClaims).toContain("宫缩风险");
+    expect(result.personas).toContain("孕妈");
   });
 });

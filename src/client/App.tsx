@@ -98,6 +98,7 @@ type ContentPlaybookForm = {
   scenarios: string;
   tags: string;
 };
+type ContentPlaybookTemplateKey = "general" | "maternal" | "food" | "education";
 type ContentStudioProps = {
   activeTab: ContentStudioTab;
   setActiveTab: (value: ContentStudioTab) => void;
@@ -178,6 +179,68 @@ const defaultPlaybookForm: ContentPlaybookForm = {
   scenarios: "日常分享, 出门携带, 朋友推荐",
   tags: "日常分享, 好物分享, 真实体验"
 };
+
+const contentPlaybookTemplates: Array<{
+  key: ContentPlaybookTemplateKey;
+  label: string;
+  description: string;
+  form: ContentPlaybookForm;
+}> = [
+  {
+    key: "general",
+    label: "通用种草",
+    description: "适合大多数生活好物、日常分享和素人种草。",
+    form: defaultPlaybookForm
+  },
+  {
+    key: "maternal",
+    label: "母婴孕妈",
+    description: "弱化医疗功效，强调真实体验、生活场景和温和表达。",
+    form: {
+      name: "母婴孕妈审稿规则",
+      productName: "产品",
+      category: "母婴小红书种草",
+      forbiddenTerms: "yyds, 封神, 救命神器, 效果拉满, 闭眼冲, 必囤, 无限回购, 性价比天花板, 宝妈必备, 孕妇必备",
+      sensitiveClaims: "治疗, 治愈, 药效, 特效, 根治, 通便特效, 杜绝依赖, 宫缩风险, 早产风险, 无副作用, 百分百有效",
+      allowedSellingPoints: "真实使用感, 生活场景, 携带方便, 温和表达, 个人体验, 使用前后主观感受",
+      personas: "孕妈, 宝妈, 备孕人群, 新手妈妈",
+      scenarios: "孕期日常, 出门携带, 家中备用, 朋友推荐, 产检路上",
+      tags: "孕期好物, 母婴好物, 日常分享, 真实体验, 孕妈日常"
+    }
+  },
+  {
+    key: "food",
+    label: "食品饮品",
+    description: "适合食品、饮品、营养补充类内容，避免功效化和绝对健康承诺。",
+    form: {
+      name: "食品饮品审稿规则",
+      productName: "产品",
+      category: "食品饮品种草",
+      forbiddenTerms: "绝绝子, 封神, 闭眼冲, 必囤, 全网最低, 无限回购, 第一口惊艳, 减脂神器",
+      sensitiveClaims: "治疗, 调理体质, 降糖, 降脂, 减肥, 排毒, 增强免疫, 零添加, 最健康, 无负担",
+      allowedSellingPoints: "口感描述, 食用场景, 配料感受, 便携性, 饱腹感, 个人喜好",
+      personas: "上班族, 学生党, 宝妈, 健身人群",
+      scenarios: "早餐搭配, 办公室加餐, 宿舍备用, 运动后, 出差携带",
+      tags: "食品分享, 饮品分享, 办公室好物, 日常分享, 真实体验"
+    }
+  },
+  {
+    key: "education",
+    label: "教育课程",
+    description: "适合课程、训练营、学习工具，避免保过、速成和焦虑营销。",
+    form: {
+      name: "教育课程审稿规则",
+      productName: "产品",
+      category: "教育课程种草",
+      forbiddenTerms: "逆袭神器, 保姆式, 闭眼冲, 必买, 不学后悔, 全网最强, 名师天花板",
+      sensitiveClaims: "保过, 包过, 保证提分, 7天逆袭, 零基础速成, 必上岸, 稳赚, 百分百有效",
+      allowedSellingPoints: "学习路径, 练习反馈, 陪伴感, 适合人群, 时间安排, 个人学习体验",
+      personas: "学生党, 考证人群, 职场新人, 转行人群",
+      scenarios: "备考复习, 通勤学习, 晚间自习, 周末提升, 碎片时间",
+      tags: "学习分享, 备考经验, 课程体验, 自我提升, 真实体验"
+    }
+  }
+];
 
 const modules: Array<{ key: ModuleKey; label: string; icon: ReactNode }> = [
   { key: "overview", label: "总览", icon: <Activity size={18} /> },
@@ -3036,6 +3099,10 @@ function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selecte
     props.setPlaybookForm({ ...props.playbookForm, [key]: value });
     props.setPlaybookDirty(true);
   };
+  const applyTemplate = (templateKey: ContentPlaybookTemplateKey) => {
+    props.setPlaybookForm(applyContentPlaybookTemplate(props.playbookForm, templateKey));
+    props.setPlaybookDirty(true);
+  };
   return (
     <div className="content-studio-grid rules-grid">
       <section className="surface content-side-panel">
@@ -3076,6 +3143,20 @@ function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selecte
             </div>
           }
         />
+        <div className="playbook-template-panel">
+          <div className="section-mini-head">
+            <strong>规则模板</strong>
+            <span>套用后可继续微调，再保存为规则库</span>
+          </div>
+          <div className="playbook-template-grid">
+            {contentPlaybookTemplates.map((template) => (
+              <button key={template.key} type="button" className="playbook-template-card" onClick={() => applyTemplate(template.key)}>
+                <strong>{template.label}</strong>
+                <small>{template.description}</small>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="content-field-stack rules-editor-grid">
           <label><span>名称</span><input value={props.playbookForm.name} onChange={(event) => updatePlaybook("name", event.target.value)} /></label>
           <label><span>产品</span><input value={props.playbookForm.productName} onChange={(event) => updatePlaybook("productName", event.target.value)} /></label>
@@ -4693,6 +4774,15 @@ function playbookToForm(playbook: ContentPlaybook): ContentPlaybookForm {
     personas: playbook.personas.join(", "),
     scenarios: playbook.scenarios.join(", "),
     tags: playbook.tags.join(", ")
+  };
+}
+
+export function applyContentPlaybookTemplate(form: ContentPlaybookForm, templateKey: ContentPlaybookTemplateKey): ContentPlaybookForm {
+  const template = contentPlaybookTemplates.find((item) => item.key === templateKey) ?? contentPlaybookTemplates[0];
+  const productName = form.productName.trim() || template.form.productName;
+  return {
+    ...template.form,
+    productName
   };
 }
 
