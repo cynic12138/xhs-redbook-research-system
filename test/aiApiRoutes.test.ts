@@ -369,14 +369,17 @@ describe("content studio API routes", () => {
 
   it("creates a content review through the API route", async () => {
     vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      deleteContentProject: vi.fn(),
       listContentPlaybooks: vi.fn(),
       listContentPlaybookRevisions: vi.fn(),
+      listContentProjects: vi.fn(),
       saveContentPlaybook: vi.fn(),
       deleteContentPlaybook: vi.fn(),
       listContentDrafts: vi.fn(),
       generateContentDraft: vi.fn(),
       listContentReviews: vi.fn(),
       runContentAssistant: vi.fn(),
+      saveContentProject: vi.fn(),
       restoreContentPlaybookRevision: vi.fn(),
       reviewContentDraftBatch: vi.fn(async (input) => ({
         reviews: input.items.map((item: { id?: string; title?: string; body: string; tags?: string[] }, index: number) => ({
@@ -450,14 +453,17 @@ describe("content studio API routes", () => {
 
   it("creates batch content reviews through the API route", async () => {
     vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      deleteContentProject: vi.fn(),
       listContentPlaybooks: vi.fn(),
       listContentPlaybookRevisions: vi.fn(),
+      listContentProjects: vi.fn(),
       saveContentPlaybook: vi.fn(),
       deleteContentPlaybook: vi.fn(),
       listContentDrafts: vi.fn(),
       generateContentDraft: vi.fn(),
       listContentReviews: vi.fn(),
       runContentAssistant: vi.fn(),
+      saveContentProject: vi.fn(),
       reviewContentDraft: vi.fn(),
       restoreContentPlaybookRevision: vi.fn(),
       reviewContentDraftBatch: vi.fn(async (input) => ({

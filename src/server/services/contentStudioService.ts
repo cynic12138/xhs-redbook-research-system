@@ -13,6 +13,9 @@ import type {
   ContentPlaybook,
   ContentPlaybookInput,
   ContentPlaybookRevision,
+  ContentProject,
+  ContentProjectInput,
+  ContentProjectStatus,
   ContentReviewBatchInput,
   ContentReviewBatchResult,
   ContentReplacementRule,
@@ -157,6 +160,44 @@ export async function restoreContentPlaybookRevision(playbookId: string, revisio
   return restored;
 }
 
+export async function listContentProjects(localStore: StoreLike = store): Promise<ContentProject[]> {
+  const projects = await localStore.read("contentProjects");
+  return projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function saveContentProject(input: ContentProjectInput, id?: string, localStore: StoreLike = store): Promise<ContentProject> {
+  const now = nowIso();
+  const current = id ? (await localStore.read("contentProjects")).find((item) => item.id === id) : undefined;
+  const project: ContentProject = {
+    id: current?.id ?? createId("content_project"),
+    name: input.name.trim() || current?.name || "新内容项目",
+    productName: input.productName.trim() || current?.productName || "产品",
+    targetAudience: normalizeList(input.targetAudience, current?.targetAudience ?? []),
+    scenarios: normalizeList(input.scenarios, current?.scenarios ?? []),
+    goals: normalizeList(input.goals, current?.goals ?? []),
+    playbookId: input.playbookId?.trim() || current?.playbookId,
+    jobId: input.jobId?.trim() || current?.jobId,
+    status: normalizeProjectStatus(input.status, current?.status ?? "planning"),
+    createdAt: current?.createdAt ?? now,
+    updatedAt: now
+  };
+  await localStore.update("contentProjects", (items) => {
+    const exists = items.some((item) => item.id === project.id);
+    return exists ? items.map((item) => (item.id === project.id ? project : item)) : [project, ...items];
+  });
+  return project;
+}
+
+export async function deleteContentProject(id: string, localStore: StoreLike = store): Promise<{ deleted: number }> {
+  let deleted = 0;
+  await localStore.update("contentProjects", (items) => {
+    const next = items.filter((item) => item.id !== id);
+    deleted = items.length - next.length;
+    return next;
+  });
+  return { deleted };
+}
+
 export async function listContentDrafts(localStore: StoreLike = store): Promise<ContentDraft[]> {
   return localStore.read("contentDrafts");
 }
@@ -166,12 +207,21 @@ export async function listContentReviews(localStore: StoreLike = store): Promise
 }
 
 export async function generateContentDraft(input: ContentDraftInput, localStore: StoreLike = store): Promise<ContentDraftResult> {
-  const playbook = await resolvePlaybook(input.playbookId, localStore);
-  const context = await buildContentContext(input.jobId, localStore);
-  const localDraft = buildLocalDraft(input.brief, playbook, context);
+  const project = await resolveProject(input.projectId, localStore);
+  const playbook = await resolvePlaybook(input.playbookId ?? project?.playbookId, localStore);
+  const jobId = input.jobId ?? project?.jobId;
+  const context = await buildContentContext(jobId, localStore);
+  const brief: ContentBrief = {
+    ...input.brief,
+    projectId: project?.id ?? input.brief.projectId,
+    playbookId: playbook.id,
+    jobId,
+    productName: input.brief.productName || project?.productName || playbook.productName
+  };
+  const localDraft = buildLocalDraft(brief, playbook, context);
   const modelResult = await callJsonModel<DraftText>({
     modelId: input.modelId,
-    prompt: buildDraftGenerationPrompt(input.brief, playbook, context),
+    prompt: buildDraftGenerationPrompt(brief, playbook, context),
     fallback: localDraft,
     validate: isDraftText
   }, localStore);
@@ -179,12 +229,13 @@ export async function generateContentDraft(input: ContentDraftInput, localStore:
   const now = nowIso();
   const draft: ContentDraft = {
     id: createId("draft"),
+    projectId: project?.id,
     playbookId: playbook.id,
-    jobId: input.jobId,
+    jobId,
     title: draftText.title,
     body: draftText.body,
     tags: unique(draftText.tags.map(cleanTag).filter(Boolean)).slice(0, 12),
-    brief: { ...input.brief, playbookId: playbook.id, jobId: input.jobId },
+    brief,
     source: modelResult.source,
     status: "draft",
     createdAt: now,
@@ -194,7 +245,7 @@ export async function generateContentDraft(input: ContentDraftInput, localStore:
 
   const artifact = await createContentArtifact({
     workflowKey: "note-writing",
-    jobId: input.jobId,
+    jobId,
     title: `小红书笔记草稿 - ${draft.title}`,
     markdown: buildDraftArtifactMarkdown(draft, playbook, context, modelResult.error),
     source: modelResult.source,
@@ -206,8 +257,9 @@ export async function generateContentDraft(input: ContentDraftInput, localStore:
   await localStore.update("contentDrafts", (drafts) => drafts.map((item) => (item.id === draft.id ? { ...item, artifactId: artifact.id } : item)));
 
   const reviewResult = await reviewContentDraft({
+    projectId: project?.id,
     playbookId: playbook.id,
-    jobId: input.jobId,
+    jobId,
     draftId: draft.id,
     modelId: input.modelId,
     title: draft.title,
@@ -227,8 +279,10 @@ export async function generateContentDraft(input: ContentDraftInput, localStore:
 }
 
 export async function reviewContentDraft(input: ContentReviewInput, localStore: StoreLike = store): Promise<ContentReviewResult> {
-  const playbook = await resolvePlaybook(input.playbookId, localStore);
-  const context = await buildContentContext(input.jobId, localStore);
+  const project = await resolveProject(input.projectId, localStore);
+  const playbook = await resolvePlaybook(input.playbookId ?? project?.playbookId, localStore);
+  const jobId = input.jobId ?? project?.jobId;
+  const context = await buildContentContext(jobId, localStore);
   const localReview = scanContentDraft(input, playbook);
   const modelResult = await callJsonModel<DraftText>({
     modelId: input.modelId,
@@ -254,8 +308,9 @@ export async function reviewContentDraft(input: ContentReviewInput, localStore: 
   const now = nowIso();
   const review: ContentReviewRun = {
     id: createId("review"),
+    projectId: project?.id,
     playbookId: playbook.id,
-    jobId: input.jobId,
+    jobId,
     noteId: input.noteId,
     draftId: input.draftId,
     originalTitle: input.title,
@@ -275,7 +330,7 @@ export async function reviewContentDraft(input: ContentReviewInput, localStore: 
   };
   const artifact = await createContentArtifact({
     workflowKey: "draft-review",
-    jobId: input.jobId,
+    jobId,
     noteId: input.noteId,
     title: `AI 审稿报告 - ${input.title || revised.title || playbook.productName}`,
     markdown: buildReviewArtifactMarkdown(review, playbook, secondScan, modelResult.error),
@@ -308,6 +363,7 @@ export async function reviewContentDraftBatch(input: ContentReviewBatchInput, lo
   const results: ContentReviewResult[] = [];
   for (const item of selectedItems) {
     results.push(await reviewContentDraft({
+      projectId: input.projectId,
       playbookId: input.playbookId,
       jobId: input.jobId,
       modelId: input.modelId,
@@ -387,6 +443,7 @@ export function scanContentDraft(input: Pick<ContentReviewInput, "title" | "body
 
 export async function runContentAssistant(input: {
   message: string;
+  projectId?: string;
   jobId?: string;
   modelId?: string;
   playbookId?: string;
@@ -402,6 +459,7 @@ export async function runContentAssistant(input: {
   let artifact: AiArtifact;
   if (isReviewRequest(input.message)) {
     const result = await reviewContentDraft({
+        projectId: input.projectId,
         playbookId: playbook.id,
         jobId: input.jobId,
         modelId: input.modelId,
@@ -413,6 +471,7 @@ export async function runContentAssistant(input: {
     artifact = result.artifact;
   } else {
     const result = await generateContentDraft({
+      projectId: input.projectId,
       playbookId: playbook.id,
       jobId: input.jobId,
       modelId: input.modelId,
@@ -473,6 +532,13 @@ function defaultReplacements(): ContentReplacementRule[] {
 async function resolvePlaybook(id: string | undefined, localStore: StoreLike): Promise<ContentPlaybook> {
   const playbooks = await listContentPlaybooks(localStore);
   return (id ? playbooks.find((item) => item.id === id) : undefined) ?? playbooks[0] ?? createDefaultPlaybook();
+}
+
+async function resolveProject(id: string | undefined, localStore: StoreLike): Promise<ContentProject | undefined> {
+  if (!id) {
+    return undefined;
+  }
+  return (await localStore.read("contentProjects")).find((item) => item.id === id);
 }
 
 async function appendContentPlaybookRevision(playbook: ContentPlaybook, localStore: StoreLike): Promise<void> {
@@ -844,6 +910,10 @@ function normalizeReplacements(values: ContentReplacementRule[] | undefined, fal
       reason: item.reason?.trim()
     }))
     .filter((item) => item.from && item.to);
+}
+
+function normalizeProjectStatus(value: ContentProjectStatus | undefined, fallback: ContentProjectStatus): ContentProjectStatus {
+  return value && ["planning", "writing", "reviewing", "finalized"].includes(value) ? value : fallback;
 }
 
 function splitList(value: string | undefined): string[] {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ContentProject } from "../src/shared/types.js";
 import {
   applyContentPlaybookTemplate,
   compactContentText,
@@ -6,6 +7,7 @@ import {
   getContentArtifacts,
   noteToBatchReviewItem,
   prependUniqueById,
+  resolveProjectRefreshState,
   severityLabel,
   upsertById
 } from "../src/client/App.js";
@@ -102,5 +104,22 @@ describe("client list merge helpers", () => {
     expect(result.category).toBe("母婴小红书种草");
     expect(result.sensitiveClaims).toContain("宫缩风险");
     expect(result.personas).toContain("孕妈");
+  });
+
+  it("keeps dirty content project edits during refresh", () => {
+    const projects: ContentProject[] = [{
+      id: "content_project_1",
+      name: "蜂蜜露项目",
+      productName: "蜂蜜露",
+      targetAudience: ["孕妈"],
+      scenarios: ["出门携带"],
+      goals: ["批量生产"],
+      status: "planning",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    }];
+
+    expect(resolveProjectRefreshState([...projects], "", false)).toMatchObject({ selectedId: "content_project_1", applyForm: true });
+    expect(resolveProjectRefreshState([...projects], "draft_local", true)).toEqual({ selectedId: "draft_local", applyForm: false });
   });
 });

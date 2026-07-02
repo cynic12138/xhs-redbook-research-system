@@ -154,6 +154,55 @@ describe("API route contracts", () => {
     expect(restoreContentPlaybookRevision).toHaveBeenCalledWith("playbook_contract", "playbook_rev_contract");
   });
 
+  it("keeps content project CRUD status codes and bodies stable", async () => {
+    const project = {
+      id: "content_project_contract",
+      name: "蜂蜜露种草项目",
+      productName: "蜂蜜露",
+      targetAudience: ["孕妈"],
+      scenarios: ["出门携带"],
+      goals: ["生成多篇笔记"],
+      playbookId: "playbook_contract",
+      jobId: "job_contract",
+      status: "writing",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const saveContentProject = vi.fn(async (input, id?: string) => ({ ...project, ...input, id: id ?? project.id }));
+    const deleteContentProject = vi.fn(async () => ({ deleted: 1 }));
+    mockRouteDependencies({
+      contentStudioService: {
+        listContentProjects: vi.fn(async () => [project]),
+        saveContentProject,
+        deleteContentProject
+      }
+    });
+    const app = await createApp();
+
+    const listResponse = await requestJson(app, "/api/content/projects", { method: "GET" });
+    const createResponse = await requestJson(app, "/api/content/projects", {
+      method: "POST",
+      body: { name: "项目 B", productName: "产品 B", status: "planning" }
+    });
+    const updateResponse = await requestJson(app, "/api/content/projects/content_project_existing", {
+      method: "PUT",
+      body: { name: "项目 C", productName: "产品 C", status: "reviewing" }
+    });
+    const deleteResponse = await requestJson(app, "/api/content/projects/content_project_existing", { method: "DELETE" });
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body).toEqual([project]);
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body).toMatchObject({ id: "content_project_contract", name: "项目 B", productName: "产品 B" });
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body).toMatchObject({ id: "content_project_existing", name: "项目 C", status: "reviewing" });
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteResponse.body).toEqual({ deleted: 1 });
+    expect(saveContentProject).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: "项目 B", productName: "产品 B" }));
+    expect(saveContentProject).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: "项目 C", productName: "产品 C" }), "content_project_existing");
+    expect(deleteContentProject).toHaveBeenCalledWith("content_project_existing");
+  });
+
   it("keeps content playbook validation errors on the shared 400 error contract", async () => {
     const saveContentPlaybook = vi.fn();
     mockRouteDependencies({ contentStudioService: { saveContentPlaybook } });
@@ -237,16 +286,19 @@ function mockRouteDependencies(overrides: {
     ...overrides.queryService
   }));
   vi.doMock("../src/server/services/contentStudioService.js", () => ({
+    deleteContentProject: vi.fn(async () => ({ deleted: 0 })),
     deleteContentPlaybook: vi.fn(async () => ({ deleted: 0 })),
     generateContentDraft: vi.fn(),
     listContentDrafts: vi.fn(async () => []),
     listContentPlaybooks: vi.fn(async () => []),
     listContentPlaybookRevisions: vi.fn(async () => []),
+    listContentProjects: vi.fn(async () => []),
     listContentReviews: vi.fn(async () => []),
     reviewContentDraft: vi.fn(),
     reviewContentDraftBatch: vi.fn(),
     restoreContentPlaybookRevision: vi.fn(),
     runContentAssistant: vi.fn(),
+    saveContentProject: vi.fn(),
     saveContentPlaybook: vi.fn(),
     ...overrides.contentStudioService
   }));

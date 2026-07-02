@@ -26,6 +26,8 @@ import type {
   ContentPlaybook,
   ContentPlaybookInput,
   ContentPlaybookRevision,
+  ContentProject,
+  ContentProjectInput,
   ContentReviewBatchInput,
   ContentReviewBatchResult,
   ContentReviewInput,
@@ -120,12 +122,16 @@ export const api = {
     apiGet<ContentPlaybookRevision[]>(`/api/content/playbooks/${encodeURIComponent(id)}/revisions`),
   restoreContentPlaybookRevision: (id: string, revisionId: string) =>
     apiPost<ContentPlaybook>(`/api/content/playbooks/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revisionId)}/restore`),
+  listContentProjects: () => apiGet<ContentProject[]>("/api/content/projects"),
+  saveContentProject: (input: ContentProjectInput, id?: string) =>
+    id ? apiPut<ContentProject>(`/api/content/projects/${encodeURIComponent(id)}`, input) : apiPost<ContentProject>("/api/content/projects", input),
+  deleteContentProject: (id: string) => apiDelete<{ deleted: number }>(`/api/content/projects/${encodeURIComponent(id)}`),
   listContentDrafts: () => apiGet<ContentDraft[]>("/api/content/drafts"),
   generateContentDraft: (input: ContentDraftInput) => apiPost<ContentDraftResult>("/api/content/drafts", input),
   listContentReviews: () => apiGet<ContentReviewRun[]>("/api/content/reviews"),
   reviewContentDraft: (input: ContentReviewInput) => apiPost<ContentReviewResult>("/api/content/reviews", input),
   reviewContentDraftBatch: (input: ContentReviewBatchInput) => apiPost<ContentReviewBatchResult>("/api/content/reviews/batch", input),
-  runContentAssistant: (input: { message: string; jobId?: string; modelId?: string; playbookId?: string }) =>
+  runContentAssistant: (input: { message: string; projectId?: string; jobId?: string; modelId?: string; playbookId?: string }) =>
     apiPost<AiAssistantChatResponse>("/api/content/assistant/run", input),
   listAiModels: () => apiGet<AiModelConfig[]>("/api/ai/models"),
   saveAiModel: (input: AiModelInput) => apiPost<AiModelConfig>("/api/ai/models", input),

@@ -53,6 +53,9 @@ import type {
   ContentDraftLength,
   ContentPlaybook,
   ContentPlaybookRevision,
+  ContentProject,
+  ContentProjectInput,
+  ContentProjectStatus,
   ContentReviewRun,
   HealthReportRecord,
   NoteScopeClearPreview,
@@ -86,8 +89,18 @@ type ContentBriefForm = {
   keywords: string;
 };
 type ContentReviewForm = { title: string; body: string; tags: string };
-type ContentStudioTab = "review" | "batch" | "write" | "rules" | "results";
+type ContentStudioTab = "projects" | "review" | "batch" | "write" | "rules" | "results";
 type BatchReviewItem = { id: string; title: string; body: string; tags: string; selected: boolean };
+type ContentProjectForm = {
+  name: string;
+  productName: string;
+  targetAudience: string;
+  scenarios: string;
+  goals: string;
+  playbookId: string;
+  jobId: string;
+  status: ContentProjectStatus;
+};
 type ContentPlaybookForm = {
   name: string;
   productName: string;
@@ -104,6 +117,13 @@ type ContentStudioProps = {
   activeTab: ContentStudioTab;
   setActiveTab: (value: ContentStudioTab) => void;
   activeJob?: SearchJob;
+  projects: ContentProject[];
+  selectedProjectId: string;
+  setSelectedProjectId: (value: string) => void;
+  projectForm: ContentProjectForm;
+  setProjectForm: (value: ContentProjectForm) => void;
+  projectDirty: boolean;
+  setProjectDirty: (value: boolean) => void;
   playbooks: ContentPlaybook[];
   selectedPlaybookId: string;
   setSelectedPlaybookId: (value: string) => void;
@@ -122,6 +142,10 @@ type ContentStudioProps = {
   drafts: ContentDraft[];
   reviews: ContentReviewRun[];
   artifacts: AiArtifact[];
+  jobs: SearchJob[];
+  createProject: () => void;
+  deleteProject: () => Promise<void>;
+  saveProject: () => Promise<void>;
   createPlaybook: () => void;
   deletePlaybook: () => Promise<void>;
   savePlaybookAsNew: () => Promise<void>;
@@ -170,6 +194,17 @@ const defaultContentReviewForm: ContentReviewForm = {
 };
 
 const defaultBatchReviewItems: BatchReviewItem[] = [createBatchReviewItem()];
+
+const defaultContentProjectForm: ContentProjectForm = {
+  name: "蜂蜜露种草项目",
+  productName: "蜂蜜露",
+  targetAudience: "孕妈, 大学生, 上班族",
+  scenarios: "出门携带, 日常分享, 朋友推荐",
+  goals: "生成多篇种草笔记, 批量审稿, 归档可复盘",
+  playbookId: "",
+  jobId: "",
+  status: "planning"
+};
 
 const defaultPlaybookForm: ContentPlaybookForm = {
   name: "通用种草审稿规则",
@@ -305,6 +340,10 @@ export function App() {
   const [selectedPrompt, setSelectedPrompt] = useState<AiPromptDetail | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
   const [aiArtifacts, setAiArtifacts] = useState<AiArtifact[]>([]);
+  const [contentProjects, setContentProjects] = useState<ContentProject[]>([]);
+  const [selectedContentProjectId, setSelectedContentProjectId] = useState("");
+  const [contentProjectForm, setContentProjectForm] = useState<ContentProjectForm>(defaultContentProjectForm);
+  const [contentProjectDirty, setContentProjectDirty] = useState(false);
   const [contentPlaybooks, setContentPlaybooks] = useState<ContentPlaybook[]>([]);
   const [selectedContentPlaybookId, setSelectedContentPlaybookId] = useState("");
   const [contentPlaybookRevisions, setContentPlaybookRevisions] = useState<ContentPlaybookRevision[]>([]);
@@ -318,6 +357,8 @@ export function App() {
   const [contentPlaybookDirty, setContentPlaybookDirty] = useState(false);
   const selectedContentPlaybookIdRef = useRef("");
   const contentPlaybookDirtyRef = useRef(false);
+  const selectedContentProjectIdRef = useRef("");
+  const contentProjectDirtyRef = useRef(false);
   const [aiOrchestrations, setAiOrchestrations] = useState<AiOrchestration[]>([]);
   const [activeOrchestrationId, setActiveOrchestrationId] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -355,17 +396,29 @@ export function App() {
     contentPlaybookDirtyRef.current = value;
     setContentPlaybookDirty(value);
   }, []);
+  const setSelectedContentProject = useCallback((value: string) => {
+    selectedContentProjectIdRef.current = value;
+    setSelectedContentProjectId(value);
+  }, []);
+  const setContentProjectDirtyState = useCallback((value: boolean) => {
+    contentProjectDirtyRef.current = value;
+    setContentProjectDirty(value);
+  }, []);
 
   const activeJob = jobs.find((job) => job.id === activeJobId);
   const contextJob = isContextJob(activeJob) ? activeJob : undefined;
+  const selectedContentProject = contentProjects.find((project) => project.id === selectedContentProjectId);
+  const contentProjectJob = selectedContentProject?.jobId ? jobs.find((job) => job.id === selectedContentProject.jobId) : undefined;
+  const effectiveContentJob = contentProjectJob ?? contextJob;
   const contextJobId = contextJob?.id ?? "";
+  const effectiveContentJobId = effectiveContentJob?.id ?? "";
   const selected = notes.find((note) => note.id === selectedId) ?? notes[0] ?? null;
   const defaultModel = aiModels.find((model) => model.isDefault) ?? aiModels[0];
   const selectedModel = aiModels.find((model) => model.id === selectedModelId) ?? defaultModel;
   const selectedContentPlaybook = selectedContentPlaybookId ? contentPlaybooks.find((playbook) => playbook.id === selectedContentPlaybookId) : undefined;
 
   const refreshCore = useCallback(async () => {
-    const [authStatus, allJobs, caps, models, workflows, prompts, scopes, bridgeStatus, playbooks, drafts, reviews] = await Promise.all([
+    const [authStatus, allJobs, caps, models, workflows, prompts, scopes, bridgeStatus, projects, playbooks, drafts, reviews] = await Promise.all([
       api.authStatus(),
       api.listJobs(),
       api.capabilities(),
@@ -374,6 +427,7 @@ export function App() {
       api.listAiPrompts(),
       api.listNoteScopes(),
       api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus),
+      api.listContentProjects(),
       api.listContentPlaybooks(),
       api.listContentDrafts(),
       api.listContentReviews()
@@ -386,9 +440,27 @@ export function App() {
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
     setNoteScopes(scopes);
+    setContentProjects(projects);
     setContentPlaybooks(playbooks);
     setContentDrafts(drafts);
     setContentReviews(reviews);
+    const projectRefreshState = resolveProjectRefreshState(projects, selectedContentProjectIdRef.current, contentProjectDirtyRef.current);
+    if (projectRefreshState.applyForm && projectRefreshState.project) {
+      const project = projectRefreshState.project;
+      if (selectedContentProjectIdRef.current !== projectRefreshState.selectedId) setSelectedContentProject(projectRefreshState.selectedId);
+      setContentProjectForm(projectToForm(project));
+      setContentBriefForm((form) => ({
+        ...form,
+        productName: project.productName || form.productName,
+        persona: form.persona === defaultContentBriefForm.persona ? project.targetAudience[0] ?? form.persona : form.persona,
+        scenario: form.scenario === defaultContentBriefForm.scenario ? project.scenarios[0] ?? form.scenario : form.scenario,
+        keywords: form.keywords === defaultContentBriefForm.keywords ? project.goals.join(", ") || form.keywords : form.keywords
+      }));
+      if (project.playbookId) setSelectedContentPlaybook(project.playbookId);
+    } else if (projectRefreshState.applyForm && !projectRefreshState.project) {
+      setSelectedContentProject("");
+      setContentProjectForm(defaultContentProjectForm);
+    }
     const refreshState = resolvePlaybookRefreshState(playbooks, selectedContentPlaybookIdRef.current, contentPlaybookDirtyRef.current);
     if (refreshState.applyForm && refreshState.playbook) {
       const playbook = refreshState.playbook;
@@ -404,7 +476,7 @@ export function App() {
     }
     setBrowserBridge({ ...bridgeStatus, connected: false });
     setError(clearRecoveredBackendError);
-  }, [setSelectedContentPlaybook]);
+  }, [setSelectedContentPlaybook, setSelectedContentProject]);
 
   const loadNotes = useCallback(async () => {
     if (!activeJobId && !activeKeywordScopeId && !showHistoryData) {
@@ -450,11 +522,12 @@ export function App() {
   }, [activeJobId]);
 
   const loadOperations = useCallback(async () => {
-    const [plans, actions, reports, artifacts, drafts, reviews] = await Promise.all([
+    const [plans, actions, reports, artifacts, projects, drafts, reviews] = await Promise.all([
       api.listReplyPlans(),
       api.listReplyActions(),
       api.listAiReports(activeJobId || undefined),
       api.listAiArtifacts(activeJobId || undefined),
+      api.listContentProjects(),
       api.listContentDrafts(),
       api.listContentReviews()
     ]);
@@ -462,6 +535,7 @@ export function App() {
     setReplyActions(actions);
     setAiReports(reports);
     setAiArtifacts(artifacts);
+    setContentProjects(projects);
     setContentDrafts(drafts);
     setContentReviews(reviews);
   }, [activeJobId]);
@@ -866,6 +940,82 @@ export function App() {
     });
   }
 
+  function applyContentProject(project: ContentProject) {
+    setSelectedContentProject(project.id);
+    setContentProjectForm(projectToForm(project));
+    setContentProjectDirtyState(false);
+    setContentBriefForm((form) => ({
+      ...form,
+      productName: project.productName || form.productName,
+      persona: project.targetAudience[0] ?? form.persona,
+      scenario: project.scenarios[0] ?? form.scenario,
+      keywords: project.goals.join(", ") || form.keywords
+    }));
+    if (project.playbookId) {
+      setSelectedContentPlaybook(project.playbookId);
+      const playbook = contentPlaybooks.find((item) => item.id === project.playbookId);
+      if (playbook) {
+        setContentPlaybookForm(playbookToForm(playbook));
+        setContentPlaybookDirtyState(false);
+      }
+    }
+    if (project.jobId) {
+      setActiveJobId(project.jobId);
+      setShowHistoryData(false);
+    }
+  }
+
+  async function refreshContentProjectsAfterChange(nextSelectedId?: string) {
+    const projects = await api.listContentProjects();
+    setContentProjects(projects);
+    const refreshState = resolveProjectRefreshState(projects, nextSelectedId ?? "", false);
+    if (refreshState.project) {
+      applyContentProject(refreshState.project);
+    } else {
+      setSelectedContentProject("");
+      setContentProjectForm(defaultContentProjectForm);
+      setContentProjectDirtyState(false);
+    }
+  }
+
+  function selectContentProjectById(id: string) {
+    const project = contentProjects.find((item) => item.id === id);
+    if (project) {
+      applyContentProject(project);
+    } else {
+      setSelectedContentProject("");
+      setContentProjectForm(defaultContentProjectForm);
+      setContentProjectDirtyState(false);
+    }
+  }
+
+  function createContentProjectForm() {
+    setSelectedContentProject("");
+    setContentProjectForm({
+      ...defaultContentProjectForm,
+      productName: contentBriefForm.productName || defaultContentProjectForm.productName,
+      playbookId: selectedContentPlaybookId,
+      jobId: contextJobId
+    });
+    setContentProjectDirtyState(true);
+    setContentStudioTab("projects");
+  }
+
+  async function saveContentProjectForm() {
+    await run("content-project", async () => {
+      const saved = await api.saveContentProject(contentProjectInputFromForm(contentProjectForm), selectedContentProjectId || undefined);
+      await refreshContentProjectsAfterChange(saved.id);
+    });
+  }
+
+  async function deleteContentProjectForm() {
+    if (!selectedContentProjectId) return;
+    await run("content-project-delete", async () => {
+      await api.deleteContentProject(selectedContentProjectId);
+      await refreshContentProjectsAfterChange();
+    });
+  }
+
   async function refreshContentPlaybooksAfterChange(nextSelectedId?: string) {
     const playbooks = await api.listContentPlaybooks();
     setContentPlaybooks(playbooks);
@@ -926,13 +1076,15 @@ export function App() {
   async function generateContentDraftFromForm() {
     await run("content-draft", async () => {
       const result = await api.generateContentDraft({
+        projectId: selectedContentProjectId || undefined,
         playbookId: selectedContentPlaybookId || undefined,
-        jobId: contextJobId || undefined,
+        jobId: effectiveContentJobId || undefined,
         modelId: selectedModel?.id,
         brief: {
           ...briefFromForm(contentBriefForm),
+          projectId: selectedContentProjectId || undefined,
           playbookId: selectedContentPlaybookId || undefined,
-          jobId: contextJobId || undefined
+          jobId: effectiveContentJobId || undefined
         }
       });
       setContentDrafts((drafts) => upsertById(drafts, result.draft));
@@ -952,8 +1104,9 @@ export function App() {
     }
     await run("content-review", async () => {
       const result = await api.reviewContentDraft({
+        projectId: selectedContentProjectId || undefined,
         playbookId: selectedContentPlaybookId || undefined,
-        jobId: contextJobId || undefined,
+        jobId: effectiveContentJobId || undefined,
         modelId: selectedModel?.id,
         title: contentReviewForm.title,
         body: contentReviewForm.body,
@@ -977,8 +1130,9 @@ export function App() {
     }
     await run("content-batch-review", async () => {
       const result = await api.reviewContentDraftBatch({
+        projectId: selectedContentProjectId || undefined,
         playbookId: selectedContentPlaybookId || undefined,
-        jobId: contextJobId || undefined,
+        jobId: effectiveContentJobId || undefined,
         modelId: selectedModel?.id,
         mode: "minimal",
         items: selectedItems.map((item) => ({
@@ -1181,7 +1335,8 @@ export function App() {
       await run("assistant-chat", async () => {
         const response = await api.runContentAssistant({
           message: content,
-          jobId: contextJobId || undefined,
+          projectId: selectedContentProjectId || undefined,
+          jobId: effectiveContentJobId || undefined,
           modelId: selectedModel?.id,
           playbookId: selectedContentPlaybook?.id
         });
@@ -1449,7 +1604,14 @@ export function App() {
           <ContentStudioPage
             activeTab={contentStudioTab}
             setActiveTab={setContentStudioTab}
-            activeJob={contextJob}
+            activeJob={effectiveContentJob}
+            projects={contentProjects}
+            selectedProjectId={selectedContentProjectId}
+            setSelectedProjectId={selectContentProjectById}
+            projectForm={contentProjectForm}
+            setProjectForm={setContentProjectForm}
+            projectDirty={contentProjectDirty}
+            setProjectDirty={setContentProjectDirtyState}
             playbooks={contentPlaybooks}
             selectedPlaybookId={selectedContentPlaybookId}
             setSelectedPlaybookId={(id) => {
@@ -1476,6 +1638,10 @@ export function App() {
             drafts={contentDrafts}
             reviews={contentReviews}
             artifacts={aiArtifacts}
+            jobs={jobs}
+            createProject={createContentProjectForm}
+            deleteProject={deleteContentProjectForm}
+            saveProject={saveContentProjectForm}
             createPlaybook={createContentPlaybookForm}
             deletePlaybook={deleteContentPlaybookForm}
             savePlaybookAsNew={saveContentPlaybookAsNewForm}
@@ -2923,10 +3089,13 @@ function parseTableCells(line: string): string[] {
 }
 
 function ContentStudioPage(props: ContentStudioProps) {
+  const selectedProject = props.projects.find((item) => item.id === props.selectedProjectId);
   const selectedPlaybook = props.playbooks.find((item) => item.id === props.selectedPlaybookId);
   const ruleLabel = selectedPlaybook?.name ?? (props.selectedPlaybookId ? "规则已不存在" : props.playbookDirty ? `${props.playbookForm.name || "新规则库"}（未保存）` : "默认兜底规则");
+  const projectLabel = selectedProject?.name ?? (props.selectedProjectId ? "项目已不存在" : props.projectDirty ? `${props.projectForm.name || "新内容项目"}（未保存）` : "未选择内容项目");
   const selectedCount = props.batchItems.filter((item) => item.selected && item.body.trim()).length;
   const tabs: Array<{ key: ContentStudioTab; label: string; icon: ReactNode }> = [
+    { key: "projects", label: "内容项目", icon: <Gauge size={16} /> },
     { key: "review", label: "AI 审稿员", icon: <ShieldCheck size={16} /> },
     { key: "batch", label: `批量审稿${selectedCount ? ` ${selectedCount}` : ""}`, icon: <Layers size={16} /> },
     { key: "write", label: "自动撰写", icon: <Sparkles size={16} /> },
@@ -2939,12 +3108,18 @@ function ContentStudioPage(props: ContentStudioProps) {
         <div className="content-studio-head">
           <div>
             <strong>内容创作台</strong>
-            <span>{ruleLabel} · {props.activeJob ? jobKeywordLabel(props.activeJob) : "无任务上下文"}</span>
+            <span>{projectLabel} · {ruleLabel} · {props.activeJob ? jobKeywordLabel(props.activeJob) : "无任务上下文"}</span>
           </div>
-          <button className="ghost-button compact" onClick={() => props.setActiveTab("rules")}>
-            <Library size={14} />
-            管理规则
-          </button>
+          <div className="button-row">
+            <button className="ghost-button compact" onClick={() => props.setActiveTab("projects")}>
+              <Gauge size={14} />
+              管理项目
+            </button>
+            <button className="ghost-button compact" onClick={() => props.setActiveTab("rules")}>
+              <Library size={14} />
+              管理规则
+            </button>
+          </div>
         </div>
         <div className="content-tab-row" role="tablist" aria-label="内容创作台子页面">
           {tabs.map((tab) => (
@@ -2956,11 +3131,84 @@ function ContentStudioPage(props: ContentStudioProps) {
         </div>
       </section>
 
+      {props.activeTab === "projects" && <ContentProjectsPane {...props} />}
       {props.activeTab === "review" && <ContentReviewPane {...props} />}
       {props.activeTab === "batch" && <ContentBatchReviewPane {...props} />}
       {props.activeTab === "write" && <ContentWritingPane {...props} />}
       {props.activeTab === "rules" && <ContentRulesPane {...props} />}
       {props.activeTab === "results" && <ContentResultsPane {...props} />}
+    </div>
+  );
+}
+
+function ContentProjectsPane(props: Pick<ContentStudioProps, "projects" | "selectedProjectId" | "setSelectedProjectId" | "projectForm" | "setProjectForm" | "projectDirty" | "setProjectDirty" | "playbooks" | "jobs" | "createProject" | "deleteProject" | "saveProject" | "busy">) {
+  const updateProject = (key: keyof ContentProjectForm, value: string) => {
+    props.setProjectForm({ ...props.projectForm, [key]: value } as ContentProjectForm);
+    props.setProjectDirty(true);
+  };
+  return (
+    <div className="content-studio-grid projects-grid">
+      <section className="surface content-side-panel">
+        <SectionTitle icon={<Gauge size={18} />} title="项目列表" action={<button className="ghost-button compact" onClick={props.createProject}><FileText size={14} />新建</button>} />
+        <div className="rule-card-list">
+          {props.projects.map((project) => (
+            <button key={project.id} className={props.selectedProjectId === project.id ? "rule-card active" : "rule-card"} onClick={() => props.setSelectedProjectId(project.id)}>
+              <strong>{project.name}</strong>
+              <small>{project.productName} · {contentProjectStatusLabel(project.status)}</small>
+              <small>{project.targetAudience.slice(0, 3).join(" / ") || "未设置人群"}</small>
+            </button>
+          ))}
+          {!props.projects.length && <EmptyState text="暂无内容项目，新建后可绑定产品、规则库和任务上下文。" />}
+        </div>
+      </section>
+      <section className="surface content-primary-panel">
+        <SectionTitle
+          icon={<Gauge size={18} />}
+          title={props.selectedProjectId ? `编辑项目${props.projectDirty ? "（未保存）" : ""}` : "新建项目（未保存）"}
+          action={
+            <div className="button-row">
+              <button className="ghost-button compact danger" onClick={() => void props.deleteProject()} disabled={!props.selectedProjectId || props.busy === "content-project-delete"}>
+                {props.busy === "content-project-delete" ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                删除
+              </button>
+              <button className="primary-button compact" onClick={() => void props.saveProject()} disabled={props.busy === "content-project"}>
+                {props.busy === "content-project" ? <Loader2 className="spin" size={14} /> : <ShieldCheck size={14} />}
+                保存项目
+              </button>
+            </div>
+          }
+        />
+        <div className="content-field-stack project-editor-grid">
+          <label><span>项目名称</span><input value={props.projectForm.name} onChange={(event) => updateProject("name", event.target.value)} /></label>
+          <label><span>产品</span><input value={props.projectForm.productName} onChange={(event) => updateProject("productName", event.target.value)} /></label>
+          <label>
+            <span>状态</span>
+            <select value={props.projectForm.status} onChange={(event) => updateProject("status", event.target.value)}>
+              <option value="planning">选题中</option>
+              <option value="writing">撰写中</option>
+              <option value="reviewing">审稿中</option>
+              <option value="finalized">已定稿</option>
+            </select>
+          </label>
+          <label>
+            <span>规则库</span>
+            <select value={props.projectForm.playbookId} onChange={(event) => updateProject("playbookId", event.target.value)}>
+              <option value="">默认兜底规则</option>
+              {props.playbooks.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>关联任务</span>
+            <select value={props.projectForm.jobId} onChange={(event) => updateProject("jobId", event.target.value)}>
+              <option value="">不绑定抓取任务</option>
+              {props.jobs.map((job) => <option key={job.id} value={job.id}>{jobKeywordLabel(job)}</option>)}
+            </select>
+          </label>
+          <label><span>目标人群</span><textarea value={props.projectForm.targetAudience} onChange={(event) => updateProject("targetAudience", event.target.value)} /></label>
+          <label><span>内容场景</span><textarea value={props.projectForm.scenarios} onChange={(event) => updateProject("scenarios", event.target.value)} /></label>
+          <label><span>项目目标</span><textarea value={props.projectForm.goals} onChange={(event) => updateProject("goals", event.target.value)} /></label>
+        </div>
+      </section>
     </div>
   );
 }
@@ -4873,12 +5121,41 @@ function playbookToForm(playbook: ContentPlaybook): ContentPlaybookForm {
   };
 }
 
+function projectToForm(project: ContentProject): ContentProjectForm {
+  return {
+    name: project.name,
+    productName: project.productName,
+    targetAudience: project.targetAudience.join(", "),
+    scenarios: project.scenarios.join(", "),
+    goals: project.goals.join(", "),
+    playbookId: project.playbookId ?? "",
+    jobId: project.jobId ?? "",
+    status: project.status
+  };
+}
+
 export function applyContentPlaybookTemplate(form: ContentPlaybookForm, templateKey: ContentPlaybookTemplateKey): ContentPlaybookForm {
   const template = contentPlaybookTemplates.find((item) => item.key === templateKey) ?? contentPlaybookTemplates[0];
   const productName = form.productName.trim() || template.form.productName;
   return {
     ...template.form,
     productName
+  };
+}
+
+export function resolveProjectRefreshState(projects: ContentProject[], selectedId: string, dirty: boolean): {
+  selectedId: string;
+  project?: ContentProject;
+  applyForm: boolean;
+} {
+  if (dirty) {
+    return { selectedId, applyForm: false };
+  }
+  const project = (selectedId ? projects.find((item) => item.id === selectedId) : undefined) ?? projects[0];
+  return {
+    selectedId: project?.id ?? "",
+    project,
+    applyForm: true
   };
 }
 
@@ -4895,6 +5172,19 @@ export function resolvePlaybookRefreshState(playbooks: ContentPlaybook[], select
     selectedId: playbook?.id ?? "",
     playbook,
     applyForm: true
+  };
+}
+
+function contentProjectInputFromForm(form: ContentProjectForm): ContentProjectInput {
+  return {
+    name: form.name,
+    productName: form.productName,
+    targetAudience: splitTextList(form.targetAudience),
+    scenarios: splitTextList(form.scenarios),
+    goals: splitTextList(form.goals),
+    playbookId: form.playbookId || undefined,
+    jobId: form.jobId || undefined,
+    status: form.status
   };
 }
 
@@ -4955,6 +5245,13 @@ function contentRiskLabel(risk: ContentReviewRun["risk"]): string {
   if (risk === "low") return "低风险";
   if (risk === "medium") return "中风险";
   return "高风险";
+}
+
+function contentProjectStatusLabel(status: ContentProjectStatus): string {
+  if (status === "planning") return "选题中";
+  if (status === "writing") return "撰写中";
+  if (status === "reviewing") return "审稿中";
+  return "已定稿";
 }
 
 export function severityLabel(severity: ContentReviewRun["issues"][number]["severity"]): string {

@@ -34,6 +34,7 @@ export type ContentIssueSeverity = "info" | "warning" | "blocker";
 export type ContentReviewRisk = "pass" | "low" | "medium" | "high";
 export type ContentDraftLength = "short" | "medium" | "long";
 export type ContentDraftStatus = "draft" | "reviewed";
+export type ContentProjectStatus = "planning" | "writing" | "reviewing" | "finalized";
 
 export interface AuthStatus {
   connected: boolean;
@@ -570,7 +571,33 @@ export interface ContentPlaybookInput {
   replacements?: ContentReplacementRule[];
 }
 
+export interface ContentProject {
+  id: string;
+  name: string;
+  productName: string;
+  targetAudience: string[];
+  scenarios: string[];
+  goals: string[];
+  playbookId?: string;
+  jobId?: string;
+  status: ContentProjectStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentProjectInput {
+  name: string;
+  productName: string;
+  targetAudience?: string[];
+  scenarios?: string[];
+  goals?: string[];
+  playbookId?: string;
+  jobId?: string;
+  status?: ContentProjectStatus;
+}
+
 export interface ContentBrief {
+  projectId?: string;
   playbookId?: string;
   productName: string;
   persona: string;
@@ -585,6 +612,7 @@ export interface ContentBrief {
 }
 
 export interface ContentDraftInput {
+  projectId?: string;
   playbookId?: string;
   jobId?: string;
   modelId?: string;
@@ -592,6 +620,7 @@ export interface ContentDraftInput {
 }
 
 export interface ContentReviewInput {
+  projectId?: string;
   playbookId?: string;
   jobId?: string;
   noteId?: string;
@@ -611,6 +640,7 @@ export interface ContentReviewBatchItem {
 }
 
 export interface ContentReviewBatchInput {
+  projectId?: string;
   playbookId?: string;
   jobId?: string;
   modelId?: string;
@@ -629,6 +659,7 @@ export interface ContentReviewIssue {
 
 export interface ContentReviewRun {
   id: string;
+  projectId?: string;
   playbookId?: string;
   jobId?: string;
   noteId?: string;
@@ -652,6 +683,7 @@ export interface ContentReviewRun {
 
 export interface ContentDraft {
   id: string;
+  projectId?: string;
   playbookId?: string;
   jobId?: string;
   title: string;

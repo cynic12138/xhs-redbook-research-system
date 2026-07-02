@@ -5,12 +5,15 @@ import { describe, expect, it } from "vitest";
 import { LocalStore } from "../src/server/storage/localStore.js";
 import {
   generateContentDraft,
+  deleteContentProject,
   deleteContentPlaybook,
   listContentPlaybookRevisions,
   listContentPlaybooks,
+  listContentProjects,
   reviewContentDraft,
   reviewContentDraftBatch,
   restoreContentPlaybookRevision,
+  saveContentProject,
   saveContentPlaybook,
   scanContentDraft
 } from "../src/server/services/contentStudioService.js";
@@ -114,6 +117,49 @@ describe("content studio service", () => {
 
     await deleteContentPlaybook(created.id, store);
     expect(await listContentPlaybookRevisions(created.id, store)).toEqual([]);
+  });
+
+  it("stores content projects and links drafts and reviews to the selected project", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const playbook = await saveContentPlaybook({ name: "项目规则", productName: "蜂蜜露", forbiddenTerms: ["封神"], sensitiveClaims: ["治疗"] }, undefined, store);
+    const project = await saveContentProject({
+      name: "蜂蜜露种草项目",
+      productName: "蜂蜜露",
+      targetAudience: ["孕妈"],
+      scenarios: ["出门携带"],
+      goals: ["生成多篇种草笔记"],
+      playbookId: playbook.id,
+      status: "writing"
+    }, undefined, store);
+
+    expect((await listContentProjects(store)).map((item) => item.id)).toEqual([project.id]);
+
+    const draftResult = await generateContentDraft({
+      projectId: project.id,
+      brief: {
+        productName: "蜂蜜露",
+        persona: "孕妈",
+        painPoint: "出门不方便",
+        scenario: "出门携带",
+        channel: "朋友推荐",
+        sellingPoints: ["掌心大小"],
+        tone: "真实分享",
+        length: "short",
+        keywords: ["日常分享"]
+      }
+    }, store);
+
+    expect(draftResult.draft.projectId).toBe(project.id);
+    expect(draftResult.review.projectId).toBe(project.id);
+
+    const reviewResult = await reviewContentDraft({
+      projectId: project.id,
+      body: "这个产品封神了，但我想改得自然一点。"
+    }, store);
+
+    expect(reviewResult.review.projectId).toBe(project.id);
+    await deleteContentProject(project.id, store);
+    expect(await listContentProjects(store)).toEqual([]);
   });
 
   it("creates a review artifact without an AI model", async () => {

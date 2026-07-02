@@ -54,16 +54,19 @@ import {
 import { createAiOrchestrationWithToolsFallback, probeAiModelTools } from "../services/aiToolCallingService.js";
 import { getAiOrchestration, listAiOrchestrations } from "../services/aiOrchestratorService.js";
 import {
+  deleteContentProject,
   deleteContentPlaybook,
   generateContentDraft,
   listContentDrafts,
   listContentPlaybooks,
   listContentPlaybookRevisions,
+  listContentProjects,
   listContentReviews,
   reviewContentDraftBatch,
   reviewContentDraft,
   restoreContentPlaybookRevision,
   runContentAssistant,
+  saveContentProject,
   saveContentPlaybook
 } from "../services/contentStudioService.js";
 
@@ -151,7 +154,21 @@ const contentPlaybookInput = z.object({
   replacements: z.array(contentReplacementInput).optional()
 });
 
+const contentProjectStatus = z.enum(["planning", "writing", "reviewing", "finalized"]);
+
+const contentProjectInput = z.object({
+  name: z.string().min(1),
+  productName: z.string().min(1),
+  targetAudience: z.array(z.string()).optional(),
+  scenarios: z.array(z.string()).optional(),
+  goals: z.array(z.string()).optional(),
+  playbookId: z.string().optional(),
+  jobId: z.string().optional(),
+  status: contentProjectStatus.optional()
+});
+
 const contentBriefInput = z.object({
+  projectId: z.string().optional(),
   playbookId: z.string().optional(),
   productName: z.string().min(1),
   persona: z.string().min(1),
@@ -166,6 +183,7 @@ const contentBriefInput = z.object({
 });
 
 const contentDraftInput = z.object({
+  projectId: z.string().optional(),
   playbookId: z.string().optional(),
   jobId: z.string().optional(),
   modelId: z.string().optional(),
@@ -173,6 +191,7 @@ const contentDraftInput = z.object({
 });
 
 const contentReviewInput = z.object({
+  projectId: z.string().optional(),
   playbookId: z.string().optional(),
   jobId: z.string().optional(),
   noteId: z.string().optional(),
@@ -185,6 +204,7 @@ const contentReviewInput = z.object({
 });
 
 const contentReviewBatchInput = z.object({
+  projectId: z.string().optional(),
   playbookId: z.string().optional(),
   jobId: z.string().optional(),
   modelId: z.string().optional(),
@@ -199,6 +219,7 @@ const contentReviewBatchInput = z.object({
 
 const contentAssistantInput = z.object({
   message: z.string().min(1),
+  projectId: z.string().optional(),
   jobId: z.string().optional(),
   modelId: z.string().optional(),
   playbookId: z.string().optional()
@@ -588,6 +609,34 @@ api.get("/content/playbooks/:id/revisions", async (req, res, next) => {
 api.post("/content/playbooks/:id/revisions/:revisionId/restore", async (req, res, next) => {
   try {
     res.json(await restoreContentPlaybookRevision(req.params.id, req.params.revisionId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/content/projects", async (_req, res) => {
+  res.json(await listContentProjects());
+});
+
+api.post("/content/projects", async (req, res, next) => {
+  try {
+    res.status(201).json(await saveContentProject(contentProjectInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.put("/content/projects/:id", async (req, res, next) => {
+  try {
+    res.json(await saveContentProject(contentProjectInput.parse(req.body), req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.delete("/content/projects/:id", async (req, res, next) => {
+  try {
+    res.json(await deleteContentProject(req.params.id));
   } catch (error) {
     next(error);
   }

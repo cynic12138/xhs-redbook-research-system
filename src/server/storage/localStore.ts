@@ -18,6 +18,7 @@ import type {
   ContentDraft,
   ContentPlaybook,
   ContentPlaybookRevision,
+  ContentProject,
   ContentReviewRun,
   FavoriteNoteRecord,
   HealthReportRecord,
@@ -51,6 +52,7 @@ type CollectionName =
   | "favoriteNotes"
   | "contentPlaybooks"
   | "contentPlaybookRevisions"
+  | "contentProjects"
   | "contentDrafts"
   | "contentReviews"
   | "rateLimit";
@@ -78,6 +80,7 @@ interface DataShape {
   favoriteNotes: FavoriteNoteRecord[];
   contentPlaybooks: ContentPlaybook[];
   contentPlaybookRevisions: ContentPlaybookRevision[];
+  contentProjects: ContentProject[];
   contentDrafts: ContentDraft[];
   contentReviews: ContentReviewRun[];
   rateLimit: {
@@ -109,6 +112,7 @@ const defaults: DataShape = {
   favoriteNotes: [],
   contentPlaybooks: [],
   contentPlaybookRevisions: [],
+  contentProjects: [],
   contentDrafts: [],
   contentReviews: [],
   rateLimit: {
