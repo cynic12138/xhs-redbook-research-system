@@ -28,6 +28,7 @@ import type {
   ContentPlaybook,
   ContentPlaybookInput,
   ContentPlaybookRevision,
+  ContentPlaybookStats,
   ContentProject,
   ContentProjectInput,
   ContentProjectMaterial,
@@ -125,6 +126,8 @@ export const api = {
   deleteContentPlaybook: (id: string) => apiDelete<{ deleted: number }>(`/api/content/playbooks/${encodeURIComponent(id)}`),
   listContentPlaybookRevisions: (id: string) =>
     apiGet<ContentPlaybookRevision[]>(`/api/content/playbooks/${encodeURIComponent(id)}/revisions`),
+  getContentPlaybookStats: (id: string) =>
+    apiGet<ContentPlaybookStats>(`/api/content/playbooks/${encodeURIComponent(id)}/stats`),
   restoreContentPlaybookRevision: (id: string, revisionId: string) =>
     apiPost<ContentPlaybook>(`/api/content/playbooks/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revisionId)}/restore`),
   listContentProjects: () => apiGet<ContentProject[]>("/api/content/projects"),

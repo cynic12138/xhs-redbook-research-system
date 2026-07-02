@@ -5222,6 +5222,40 @@ label {
   line-height: 1.45;
 }
 
+.playbook-stats-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.playbook-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.playbook-stats-grid > div {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.playbook-stats-grid strong {
+  font-size: 13px;
+}
+
+.playbook-stats-grid span {
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .rule-card {
   display: grid;
   gap: 5px;
@@ -5359,6 +5393,10 @@ label {
   }
 
   .playbook-version-row {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-stats-grid {
     grid-template-columns: 1fr;
   }
 

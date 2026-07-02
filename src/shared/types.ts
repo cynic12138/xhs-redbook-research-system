@@ -558,6 +558,26 @@ export interface ContentPlaybookRevision {
   createdAt: string;
 }
 
+export interface ContentPlaybookStats {
+  playbookId: string;
+  reviewCount: number;
+  issueCount: number;
+  highRiskCount: number;
+  passCount: number;
+  topCategories: Array<{
+    category: string;
+    count: number;
+  }>;
+  recentIssues: Array<{
+    reviewId: string;
+    title: string;
+    severity: ContentIssueSeverity;
+    category: string;
+    evidence?: string;
+    createdAt: string;
+  }>;
+}
+
 export interface ContentPlaybookInput {
   name: string;
   productName: string;

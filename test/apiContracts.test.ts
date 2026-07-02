@@ -154,6 +154,27 @@ describe("API route contracts", () => {
     expect(restoreContentPlaybookRevision).toHaveBeenCalledWith("playbook_contract", "playbook_rev_contract");
   });
 
+  it("keeps content playbook stats route stable", async () => {
+    const stats = {
+      playbookId: "playbook_contract",
+      reviewCount: 1,
+      issueCount: 2,
+      highRiskCount: 1,
+      passCount: 0,
+      topCategories: [{ category: "敏感功效", count: 1 }],
+      recentIssues: []
+    };
+    const getContentPlaybookStats = vi.fn(async () => stats);
+    mockRouteDependencies({ contentStudioService: { getContentPlaybookStats } });
+    const app = await createApp();
+
+    const response = await requestJson(app, "/api/content/playbooks/playbook_contract/stats", { method: "GET" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(stats);
+    expect(getContentPlaybookStats).toHaveBeenCalledWith("playbook_contract");
+  });
+
   it("keeps content project CRUD status codes and bodies stable", async () => {
     const project = {
       id: "content_project_contract",
@@ -408,6 +429,15 @@ function mockRouteDependencies(overrides: {
     deleteContentPlaybook: vi.fn(async () => ({ deleted: 0 })),
     generateContentDraft: vi.fn(),
     generateContentDraftBatch: vi.fn(),
+    getContentPlaybookStats: vi.fn(async () => ({
+      playbookId: "",
+      reviewCount: 0,
+      issueCount: 0,
+      highRiskCount: 0,
+      passCount: 0,
+      topCategories: [],
+      recentIssues: []
+    })),
     listContentDrafts: vi.fn(async () => []),
     listContentPlaybooks: vi.fn(async () => []),
     listContentPlaybookRevisions: vi.fn(async () => []),

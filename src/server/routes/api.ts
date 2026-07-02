@@ -62,6 +62,7 @@ import {
   generateContentDraftBatch,
   generateContentDraft,
   listContentDrafts,
+  getContentPlaybookStats,
   listContentPlaybooks,
   listContentPlaybookRevisions,
   listContentProjectMaterials,
@@ -636,6 +637,14 @@ api.delete("/content/playbooks/:id", async (req, res, next) => {
 api.get("/content/playbooks/:id/revisions", async (req, res, next) => {
   try {
     res.json(await listContentPlaybookRevisions(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/content/playbooks/:id/stats", async (req, res, next) => {
+  try {
+    res.json(await getContentPlaybookStats(req.params.id));
   } catch (error) {
     next(error);
   }

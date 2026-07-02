@@ -53,6 +53,7 @@ import type {
   ContentDraftLength,
   ContentPlaybook,
   ContentPlaybookRevision,
+  ContentPlaybookStats,
   ContentProject,
   ContentProjectInput,
   ContentProjectMaterial,
@@ -136,6 +137,7 @@ type ContentStudioProps = {
   playbookDirty: boolean;
   setPlaybookDirty: (value: boolean) => void;
   playbookRevisions: ContentPlaybookRevision[];
+  playbookStats: ContentPlaybookStats | null;
   restorePlaybookRevision: (revisionId: string) => Promise<void>;
   briefForm: ContentBriefForm;
   setBriefForm: (value: ContentBriefForm) => void;
@@ -356,6 +358,7 @@ export function App() {
   const [contentPlaybooks, setContentPlaybooks] = useState<ContentPlaybook[]>([]);
   const [selectedContentPlaybookId, setSelectedContentPlaybookId] = useState("");
   const [contentPlaybookRevisions, setContentPlaybookRevisions] = useState<ContentPlaybookRevision[]>([]);
+  const [contentPlaybookStats, setContentPlaybookStats] = useState<ContentPlaybookStats | null>(null);
   const [contentDrafts, setContentDrafts] = useState<ContentDraft[]>([]);
   const [contentReviews, setContentReviews] = useState<ContentReviewRun[]>([]);
   const [contentBriefForm, setContentBriefForm] = useState<ContentBriefForm>(defaultContentBriefForm);
@@ -564,6 +567,10 @@ export function App() {
     setContentPlaybookRevisions(playbookId ? await api.listContentPlaybookRevisions(playbookId) : []);
   }, []);
 
+  const loadContentPlaybookStats = useCallback(async (playbookId: string) => {
+    setContentPlaybookStats(playbookId ? await api.getContentPlaybookStats(playbookId) : null);
+  }, []);
+
   const loadContentProjectMaterials = useCallback(async (projectId: string) => {
     setContentProjectMaterials(projectId ? await api.listContentProjectMaterials(projectId) : []);
   }, []);
@@ -584,6 +591,10 @@ export function App() {
   useEffect(() => {
     void loadContentPlaybookRevisions(selectedContentPlaybookId).catch(() => setContentPlaybookRevisions([]));
   }, [loadContentPlaybookRevisions, selectedContentPlaybookId]);
+
+  useEffect(() => {
+    void loadContentPlaybookStats(selectedContentPlaybookId).catch(() => setContentPlaybookStats(null));
+  }, [loadContentPlaybookStats, selectedContentPlaybookId]);
 
   useEffect(() => {
     void loadContentProjectMaterials(selectedContentProjectId).catch(() => setContentProjectMaterials([]));
@@ -1072,10 +1083,12 @@ export function App() {
       setSelectedContentPlaybook(refreshState.selectedId);
       setContentPlaybookForm(playbookToForm(refreshState.playbook));
       setContentPlaybookRevisions(await api.listContentPlaybookRevisions(refreshState.selectedId));
+      setContentPlaybookStats(await api.getContentPlaybookStats(refreshState.selectedId));
     } else {
       setSelectedContentPlaybook("");
       setContentPlaybookForm(defaultPlaybookForm);
       setContentPlaybookRevisions([]);
+      setContentPlaybookStats(null);
     }
     setContentPlaybookDirtyState(false);
   }
@@ -1719,6 +1732,7 @@ export function App() {
             playbookDirty={contentPlaybookDirty}
             setPlaybookDirty={setContentPlaybookDirtyState}
             playbookRevisions={contentPlaybookRevisions}
+            playbookStats={contentPlaybookStats}
             restorePlaybookRevision={restoreContentPlaybookRevisionForm}
             briefForm={contentBriefForm}
             setBriefForm={setContentBriefForm}
@@ -3500,7 +3514,7 @@ function ContentWritingPane(props: Pick<ContentStudioProps, "activeJob" | "brief
   );
 }
 
-function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "playbookForm" | "setPlaybookForm" | "playbookDirty" | "setPlaybookDirty" | "playbookRevisions" | "restorePlaybookRevision" | "createPlaybook" | "deletePlaybook" | "savePlaybook" | "savePlaybookAsNew" | "busy">) {
+function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "playbookForm" | "setPlaybookForm" | "playbookDirty" | "setPlaybookDirty" | "playbookRevisions" | "playbookStats" | "restorePlaybookRevision" | "createPlaybook" | "deletePlaybook" | "savePlaybook" | "savePlaybookAsNew" | "busy">) {
   const updatePlaybook = (key: keyof ContentPlaybookForm, value: string) => {
     props.setPlaybookForm({ ...props.playbookForm, [key]: value });
     props.setPlaybookDirty(true);
@@ -3583,6 +3597,34 @@ function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selecte
                 </div>
               ))}
               {!props.playbookRevisions.length && <EmptyState text="当前规则还没有版本记录，保存后会自动生成。" />}
+            </div>
+          </div>
+        )}
+        {props.selectedPlaybookId && props.playbookStats && (
+          <div className="playbook-stats-panel">
+            <div className="section-mini-head">
+              <strong>命中统计</strong>
+              <span>来自历史审稿结果</span>
+            </div>
+            <div className="artifact-context">
+              <StatusRow label="审稿" value={`${props.playbookStats.reviewCount}`} ok={props.playbookStats.reviewCount > 0} />
+              <StatusRow label="问题" value={`${props.playbookStats.issueCount}`} ok={props.playbookStats.issueCount === 0} />
+              <StatusRow label="高风险" value={`${props.playbookStats.highRiskCount}`} ok={props.playbookStats.highRiskCount === 0} />
+              <StatusRow label="通过" value={`${props.playbookStats.passCount}`} ok={props.playbookStats.passCount > 0} />
+            </div>
+            <div className="playbook-stats-grid">
+              <div>
+                <strong>常见问题</strong>
+                {props.playbookStats.topCategories.map((item) => <span key={item.category}>{item.category} · {item.count}</span>)}
+                {!props.playbookStats.topCategories.length && <span>暂无命中分类</span>}
+              </div>
+              <div>
+                <strong>最近命中</strong>
+                {props.playbookStats.recentIssues.slice(0, 4).map((issue) => (
+                  <span key={`${issue.reviewId}-${issue.category}-${issue.evidence ?? ""}`}>{severityLabel(issue.severity)} · {issue.category}{issue.evidence ? `：${issue.evidence}` : ""}</span>
+                ))}
+                {!props.playbookStats.recentIssues.length && <span>暂无命中记录</span>}
+              </div>
             </div>
           </div>
         )}

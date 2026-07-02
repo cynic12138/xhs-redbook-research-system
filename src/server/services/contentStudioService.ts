@@ -15,6 +15,7 @@ import type {
   ContentPlaybook,
   ContentPlaybookInput,
   ContentPlaybookRevision,
+  ContentPlaybookStats,
   ContentProject,
   ContentProjectInput,
   ContentProjectMaterial,
@@ -142,6 +143,37 @@ export async function deleteContentPlaybook(id: string, localStore: StoreLike = 
 export async function listContentPlaybookRevisions(playbookId: string, localStore: StoreLike = store): Promise<ContentPlaybookRevision[]> {
   const revisions = await localStore.read("contentPlaybookRevisions");
   return revisions.filter((item) => item.playbookId === playbookId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getContentPlaybookStats(playbookId: string, localStore: StoreLike = store): Promise<ContentPlaybookStats> {
+  const reviews = (await localStore.read("contentReviews")).filter((review) => review.playbookId === playbookId);
+  const categoryCounts = new Map<string, number>();
+  const recentIssues: ContentPlaybookStats["recentIssues"] = [];
+  for (const review of reviews) {
+    for (const issue of review.issues) {
+      categoryCounts.set(issue.category, (categoryCounts.get(issue.category) ?? 0) + 1);
+      recentIssues.push({
+        reviewId: review.id,
+        title: review.revisedTitle || review.originalTitle || "未命名审稿",
+        severity: issue.severity,
+        category: issue.category,
+        evidence: issue.evidence,
+        createdAt: review.createdAt
+      });
+    }
+  }
+  return {
+    playbookId,
+    reviewCount: reviews.length,
+    issueCount: reviews.reduce((sum, review) => sum + review.issues.length, 0),
+    highRiskCount: reviews.filter((review) => review.risk === "high").length,
+    passCount: reviews.filter((review) => review.risk === "pass").length,
+    topCategories: [...categoryCounts.entries()]
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8),
+    recentIssues: recentIssues.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8)
+  };
 }
 
 export async function restoreContentPlaybookRevision(playbookId: string, revisionId: string, localStore: StoreLike = store): Promise<ContentPlaybook> {

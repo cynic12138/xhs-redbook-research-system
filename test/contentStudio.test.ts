@@ -8,6 +8,7 @@ import {
   addContentProjectMaterialsFromNotes,
   generateContentDraft,
   generateContentDraftBatch,
+  getContentPlaybookStats,
   deleteContentProject,
   deleteContentProjectMaterial,
   deleteContentPlaybook,
@@ -50,6 +51,28 @@ describe("content studio service", () => {
     expect(scan.risk).toBe("high");
     expect(scan.issues.some((issue) => issue.category === "敏感功效")).toBe(true);
     expect(scan.revisedBody).not.toContain("通便特效");
+  });
+
+  it("summarizes playbook rule hit statistics from reviews", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const playbook = await saveContentPlaybook({
+      name: "统计规则",
+      productName: "蜂蜜露",
+      forbiddenTerms: ["封神"],
+      sensitiveClaims: ["治疗"]
+    }, undefined, store);
+    await reviewContentDraft({
+      playbookId: playbook.id,
+      title: "蜂蜜露封神",
+      body: "这个产品可以治疗问题。"
+    }, store);
+
+    const stats = await getContentPlaybookStats(playbook.id, store);
+    expect(stats.reviewCount).toBe(1);
+    expect(stats.issueCount).toBeGreaterThan(0);
+    expect(stats.highRiskCount).toBe(1);
+    expect(stats.topCategories.some((item) => item.category === "敏感功效")).toBe(true);
+    expect(stats.recentIssues[0]?.reviewId).toBeTruthy();
   });
 
   it("can save multiple playbooks and delete the last one without recreating a default card", async () => {
