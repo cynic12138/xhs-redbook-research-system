@@ -28,6 +28,9 @@ import type {
   ContentPlaybookRevision,
   ContentProject,
   ContentProjectInput,
+  ContentProjectMaterial,
+  ContentProjectMaterialCategory,
+  ContentProjectMaterialInput,
   ContentReviewBatchInput,
   ContentReviewBatchResult,
   ContentReviewInput,
@@ -126,6 +129,14 @@ export const api = {
   saveContentProject: (input: ContentProjectInput, id?: string) =>
     id ? apiPut<ContentProject>(`/api/content/projects/${encodeURIComponent(id)}`, input) : apiPost<ContentProject>("/api/content/projects", input),
   deleteContentProject: (id: string) => apiDelete<{ deleted: number }>(`/api/content/projects/${encodeURIComponent(id)}`),
+  listContentProjectMaterials: (projectId: string) =>
+    apiGet<ContentProjectMaterial[]>(`/api/content/projects/${encodeURIComponent(projectId)}/materials`),
+  saveContentProjectMaterial: (projectId: string, input: Omit<ContentProjectMaterialInput, "projectId">) =>
+    apiPost<ContentProjectMaterial>(`/api/content/projects/${encodeURIComponent(projectId)}/materials`, input),
+  addContentProjectMaterialsFromNotes: (projectId: string, noteIds: string[], category?: ContentProjectMaterialCategory) =>
+    apiPost<ContentProjectMaterial[]>(`/api/content/projects/${encodeURIComponent(projectId)}/materials/from-notes`, { noteIds, category }),
+  deleteContentProjectMaterial: (projectId: string, materialId: string) =>
+    apiDelete<{ deleted: number }>(`/api/content/projects/${encodeURIComponent(projectId)}/materials/${encodeURIComponent(materialId)}`),
   listContentDrafts: () => apiGet<ContentDraft[]>("/api/content/drafts"),
   generateContentDraft: (input: ContentDraftInput) => apiPost<ContentDraftResult>("/api/content/drafts", input),
   listContentReviews: () => apiGet<ContentReviewRun[]>("/api/content/reviews"),

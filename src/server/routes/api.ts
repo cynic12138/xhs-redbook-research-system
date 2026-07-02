@@ -54,18 +54,22 @@ import {
 import { createAiOrchestrationWithToolsFallback, probeAiModelTools } from "../services/aiToolCallingService.js";
 import { getAiOrchestration, listAiOrchestrations } from "../services/aiOrchestratorService.js";
 import {
+  addContentProjectMaterialsFromNotes,
   deleteContentProject,
+  deleteContentProjectMaterial,
   deleteContentPlaybook,
   generateContentDraft,
   listContentDrafts,
   listContentPlaybooks,
   listContentPlaybookRevisions,
+  listContentProjectMaterials,
   listContentProjects,
   listContentReviews,
   reviewContentDraftBatch,
   reviewContentDraft,
   restoreContentPlaybookRevision,
   runContentAssistant,
+  saveContentProjectMaterial,
   saveContentProject,
   saveContentPlaybook
 } from "../services/contentStudioService.js";
@@ -155,6 +159,7 @@ const contentPlaybookInput = z.object({
 });
 
 const contentProjectStatus = z.enum(["planning", "writing", "reviewing", "finalized"]);
+const contentMaterialCategory = z.enum(["pain", "scenario", "expression", "competitor", "general"]);
 
 const contentProjectInput = z.object({
   name: z.string().min(1),
@@ -165,6 +170,26 @@ const contentProjectInput = z.object({
   playbookId: z.string().optional(),
   jobId: z.string().optional(),
   status: contentProjectStatus.optional()
+});
+
+const contentProjectMaterialInput = z.object({
+  source: z.enum(["note", "manual"]).optional(),
+  sourceId: z.string().optional(),
+  category: contentMaterialCategory.optional(),
+  title: z.string().min(1),
+  content: z.string().min(1),
+  tags: z.array(z.string()).optional(),
+  authorName: z.string().optional(),
+  stats: z.object({
+    liked: z.number(),
+    collected: z.number(),
+    comments: z.number()
+  }).optional()
+});
+
+const contentProjectMaterialsFromNotesInput = z.object({
+  noteIds: z.array(z.string()).min(1),
+  category: contentMaterialCategory.optional()
 });
 
 const contentBriefInput = z.object({
@@ -637,6 +662,42 @@ api.put("/content/projects/:id", async (req, res, next) => {
 api.delete("/content/projects/:id", async (req, res, next) => {
   try {
     res.json(await deleteContentProject(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/content/projects/:id/materials", async (req, res, next) => {
+  try {
+    res.json(await listContentProjectMaterials(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/content/projects/:id/materials", async (req, res, next) => {
+  try {
+    res.status(201).json(await saveContentProjectMaterial({
+      ...contentProjectMaterialInput.parse(req.body),
+      projectId: req.params.id
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/content/projects/:id/materials/from-notes", async (req, res, next) => {
+  try {
+    const input = contentProjectMaterialsFromNotesInput.parse(req.body);
+    res.status(201).json(await addContentProjectMaterialsFromNotes(req.params.id, input.noteIds, input.category));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.delete("/content/projects/:id/materials/:materialId", async (req, res, next) => {
+  try {
+    res.json(await deleteContentProjectMaterial(req.params.id, req.params.materialId));
   } catch (error) {
     next(error);
   }

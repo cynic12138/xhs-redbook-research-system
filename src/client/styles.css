@@ -5259,6 +5259,50 @@ label {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.project-material-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.project-material-list {
+  display: grid;
+  gap: 10px;
+}
+
+.project-material-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.project-material-card > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.project-material-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-material-card p,
+.project-material-card small {
+  margin: 0;
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .rules-editor-grid label:nth-last-child(-n + 3),
 .rules-editor-grid label:has(textarea),
 .project-editor-grid label:has(textarea) {
@@ -5341,6 +5385,10 @@ label {
   }
 
   .content-archive-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-material-card {
     grid-template-columns: 1fr;
   }
 

@@ -35,6 +35,8 @@ export type ContentReviewRisk = "pass" | "low" | "medium" | "high";
 export type ContentDraftLength = "short" | "medium" | "long";
 export type ContentDraftStatus = "draft" | "reviewed";
 export type ContentProjectStatus = "planning" | "writing" | "reviewing" | "finalized";
+export type ContentProjectMaterialCategory = "pain" | "scenario" | "expression" | "competitor" | "general";
+export type ContentProjectMaterialSource = "note" | "manual";
 
 export interface AuthStatus {
   connected: boolean;
@@ -594,6 +596,41 @@ export interface ContentProjectInput {
   playbookId?: string;
   jobId?: string;
   status?: ContentProjectStatus;
+}
+
+export interface ContentProjectMaterial {
+  id: string;
+  projectId: string;
+  source: ContentProjectMaterialSource;
+  sourceId?: string;
+  category: ContentProjectMaterialCategory;
+  title: string;
+  content: string;
+  tags: string[];
+  authorName?: string;
+  stats?: {
+    liked: number;
+    collected: number;
+    comments: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentProjectMaterialInput {
+  projectId: string;
+  source?: ContentProjectMaterialSource;
+  sourceId?: string;
+  category?: ContentProjectMaterialCategory;
+  title: string;
+  content: string;
+  tags?: string[];
+  authorName?: string;
+  stats?: {
+    liked: number;
+    collected: number;
+    comments: number;
+  };
 }
 
 export interface ContentBrief {

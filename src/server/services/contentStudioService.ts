@@ -15,6 +15,9 @@ import type {
   ContentPlaybookRevision,
   ContentProject,
   ContentProjectInput,
+  ContentProjectMaterial,
+  ContentProjectMaterialCategory,
+  ContentProjectMaterialInput,
   ContentProjectStatus,
   ContentReviewBatchInput,
   ContentReviewBatchResult,
@@ -192,6 +195,73 @@ export async function deleteContentProject(id: string, localStore: StoreLike = s
   let deleted = 0;
   await localStore.update("contentProjects", (items) => {
     const next = items.filter((item) => item.id !== id);
+    deleted = items.length - next.length;
+    return next;
+  });
+  return { deleted };
+}
+
+export async function listContentProjectMaterials(projectId: string, localStore: StoreLike = store): Promise<ContentProjectMaterial[]> {
+  const materials = await localStore.read("contentProjectMaterials");
+  return materials.filter((item) => item.projectId === projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function saveContentProjectMaterial(input: ContentProjectMaterialInput, localStore: StoreLike = store): Promise<ContentProjectMaterial> {
+  const now = nowIso();
+  const material: ContentProjectMaterial = {
+    id: createId("content_material"),
+    projectId: input.projectId,
+    source: input.source ?? "manual",
+    sourceId: input.sourceId,
+    category: normalizeMaterialCategory(input.category),
+    title: input.title.trim() || "未命名素材",
+    content: input.content.trim(),
+    tags: normalizeList(input.tags, []),
+    authorName: input.authorName?.trim(),
+    stats: input.stats,
+    createdAt: now,
+    updatedAt: now
+  };
+  if (!material.content) {
+    throw new Error("素材内容不能为空。");
+  }
+  await localStore.update("contentProjectMaterials", (items) => [material, ...items.filter((item) => !(item.projectId === material.projectId && item.source === material.source && item.sourceId && item.sourceId === material.sourceId))]);
+  return material;
+}
+
+export async function addContentProjectMaterialsFromNotes(
+  projectId: string,
+  noteIds: string[],
+  category: ContentProjectMaterialCategory = "general",
+  localStore: StoreLike = store
+): Promise<ContentProjectMaterial[]> {
+  const selectedIds = new Set(noteIds.filter(Boolean));
+  const notes = (await localStore.read("notes")).filter((note) => selectedIds.has(note.id) && note.desc.trim());
+  const saved: ContentProjectMaterial[] = [];
+  for (const note of notes) {
+    saved.push(await saveContentProjectMaterial({
+      projectId,
+      source: "note",
+      sourceId: note.id,
+      category,
+      title: note.title,
+      content: note.desc,
+      tags: note.keywords,
+      authorName: note.authorName,
+      stats: {
+        liked: note.likedCount,
+        collected: note.collectedCount,
+        comments: note.commentCount
+      }
+    }, localStore));
+  }
+  return saved;
+}
+
+export async function deleteContentProjectMaterial(projectId: string, materialId: string, localStore: StoreLike = store): Promise<{ deleted: number }> {
+  let deleted = 0;
+  await localStore.update("contentProjectMaterials", (items) => {
+    const next = items.filter((item) => !(item.projectId === projectId && item.id === materialId));
     deleted = items.length - next.length;
     return next;
   });
@@ -914,6 +984,10 @@ function normalizeReplacements(values: ContentReplacementRule[] | undefined, fal
 
 function normalizeProjectStatus(value: ContentProjectStatus | undefined, fallback: ContentProjectStatus): ContentProjectStatus {
   return value && ["planning", "writing", "reviewing", "finalized"].includes(value) ? value : fallback;
+}
+
+function normalizeMaterialCategory(value: ContentProjectMaterialCategory | undefined): ContentProjectMaterialCategory {
+  return value && ["pain", "scenario", "expression", "competitor", "general"].includes(value) ? value : "general";
 }
 
 function splitList(value: string | undefined): string[] {

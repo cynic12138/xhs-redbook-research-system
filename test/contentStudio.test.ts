@@ -4,9 +4,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalStore } from "../src/server/storage/localStore.js";
 import {
+  addContentProjectMaterialsFromNotes,
   generateContentDraft,
   deleteContentProject,
+  deleteContentProjectMaterial,
   deleteContentPlaybook,
+  listContentProjectMaterials,
   listContentPlaybookRevisions,
   listContentPlaybooks,
   listContentProjects,
@@ -160,6 +163,47 @@ describe("content studio service", () => {
     expect(reviewResult.review.projectId).toBe(project.id);
     await deleteContentProject(project.id, store);
     expect(await listContentProjects(store)).toEqual([]);
+  });
+
+  it("adds selected notes to a project material pool", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const project = await saveContentProject({ name: "素材项目", productName: "蜂蜜露" }, undefined, store);
+    await store.write("notes", [{
+      id: "note_material_1",
+      jobIds: ["job_1"],
+      keywords: ["孕期好物"],
+      title: "孕妈出门携带",
+      desc: "出门带着比较方便，放包里不占地方。",
+      type: "normal",
+      webUrl: "https://example.com/note",
+      noteUrl: "https://example.com/note",
+      authorName: "运营样本",
+      likedCount: 120,
+      collectedCount: 30,
+      commentCount: 12,
+      shareCount: 3,
+      hotScore: 200,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    }]);
+
+    const materials = await addContentProjectMaterialsFromNotes(project.id, ["note_material_1"], "scenario", store);
+    expect(materials).toHaveLength(1);
+    expect(materials[0]).toMatchObject({
+      projectId: project.id,
+      source: "note",
+      sourceId: "note_material_1",
+      category: "scenario",
+      title: "孕妈出门携带"
+    });
+    expect((await listContentProjectMaterials(project.id, store))).toHaveLength(1);
+
+    await addContentProjectMaterialsFromNotes(project.id, ["note_material_1"], "scenario", store);
+    const latestMaterials = await listContentProjectMaterials(project.id, store);
+    expect(latestMaterials).toHaveLength(1);
+
+    await deleteContentProjectMaterial(project.id, latestMaterials[0]!.id, store);
+    expect(await listContentProjectMaterials(project.id, store)).toEqual([]);
   });
 
   it("creates a review artifact without an AI model", async () => {

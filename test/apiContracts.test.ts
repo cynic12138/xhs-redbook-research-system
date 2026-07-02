@@ -203,6 +203,56 @@ describe("API route contracts", () => {
     expect(deleteContentProject).toHaveBeenCalledWith("content_project_existing");
   });
 
+  it("keeps content project material route contracts stable", async () => {
+    const material = {
+      id: "content_material_contract",
+      projectId: "content_project_contract",
+      source: "note",
+      sourceId: "note_contract",
+      category: "general",
+      title: "素材标题",
+      content: "素材正文",
+      tags: ["好物"],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const listContentProjectMaterials = vi.fn(async () => [material]);
+    const saveContentProjectMaterial = vi.fn(async (input) => ({ ...material, ...input, id: material.id }));
+    const addContentProjectMaterialsFromNotes = vi.fn(async () => [material]);
+    const deleteContentProjectMaterial = vi.fn(async () => ({ deleted: 1 }));
+    mockRouteDependencies({
+      contentStudioService: {
+        listContentProjectMaterials,
+        saveContentProjectMaterial,
+        addContentProjectMaterialsFromNotes,
+        deleteContentProjectMaterial
+      }
+    });
+    const app = await createApp();
+
+    const listResponse = await requestJson(app, "/api/content/projects/content_project_contract/materials", { method: "GET" });
+    const createResponse = await requestJson(app, "/api/content/projects/content_project_contract/materials", {
+      method: "POST",
+      body: { title: "手动素材", content: "手动正文", category: "pain" }
+    });
+    const fromNotesResponse = await requestJson(app, "/api/content/projects/content_project_contract/materials/from-notes", {
+      method: "POST",
+      body: { noteIds: ["note_contract"], category: "scenario" }
+    });
+    const deleteResponse = await requestJson(app, "/api/content/projects/content_project_contract/materials/content_material_contract", { method: "DELETE" });
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body).toEqual([material]);
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body).toMatchObject({ projectId: "content_project_contract", title: "手动素材", category: "pain" });
+    expect(fromNotesResponse.status).toBe(201);
+    expect(fromNotesResponse.body).toEqual([material]);
+    expect(deleteResponse.body).toEqual({ deleted: 1 });
+    expect(listContentProjectMaterials).toHaveBeenCalledWith("content_project_contract");
+    expect(addContentProjectMaterialsFromNotes).toHaveBeenCalledWith("content_project_contract", ["note_contract"], "scenario");
+    expect(deleteContentProjectMaterial).toHaveBeenCalledWith("content_project_contract", "content_material_contract");
+  });
+
   it("keeps content playbook validation errors on the shared 400 error contract", async () => {
     const saveContentPlaybook = vi.fn();
     mockRouteDependencies({ contentStudioService: { saveContentPlaybook } });
@@ -286,18 +336,22 @@ function mockRouteDependencies(overrides: {
     ...overrides.queryService
   }));
   vi.doMock("../src/server/services/contentStudioService.js", () => ({
+    addContentProjectMaterialsFromNotes: vi.fn(async () => []),
     deleteContentProject: vi.fn(async () => ({ deleted: 0 })),
+    deleteContentProjectMaterial: vi.fn(async () => ({ deleted: 0 })),
     deleteContentPlaybook: vi.fn(async () => ({ deleted: 0 })),
     generateContentDraft: vi.fn(),
     listContentDrafts: vi.fn(async () => []),
     listContentPlaybooks: vi.fn(async () => []),
     listContentPlaybookRevisions: vi.fn(async () => []),
+    listContentProjectMaterials: vi.fn(async () => []),
     listContentProjects: vi.fn(async () => []),
     listContentReviews: vi.fn(async () => []),
     reviewContentDraft: vi.fn(),
     reviewContentDraftBatch: vi.fn(),
     restoreContentPlaybookRevision: vi.fn(),
     runContentAssistant: vi.fn(),
+    saveContentProjectMaterial: vi.fn(),
     saveContentProject: vi.fn(),
     saveContentPlaybook: vi.fn(),
     ...overrides.contentStudioService

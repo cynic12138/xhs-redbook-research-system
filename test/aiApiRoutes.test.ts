@@ -369,9 +369,12 @@ describe("content studio API routes", () => {
 
   it("creates a content review through the API route", async () => {
     vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      addContentProjectMaterialsFromNotes: vi.fn(),
       deleteContentProject: vi.fn(),
+      deleteContentProjectMaterial: vi.fn(),
       listContentPlaybooks: vi.fn(),
       listContentPlaybookRevisions: vi.fn(),
+      listContentProjectMaterials: vi.fn(),
       listContentProjects: vi.fn(),
       saveContentPlaybook: vi.fn(),
       deleteContentPlaybook: vi.fn(),
@@ -379,6 +382,7 @@ describe("content studio API routes", () => {
       generateContentDraft: vi.fn(),
       listContentReviews: vi.fn(),
       runContentAssistant: vi.fn(),
+      saveContentProjectMaterial: vi.fn(),
       saveContentProject: vi.fn(),
       restoreContentPlaybookRevision: vi.fn(),
       reviewContentDraftBatch: vi.fn(async (input) => ({
@@ -453,9 +457,12 @@ describe("content studio API routes", () => {
 
   it("creates batch content reviews through the API route", async () => {
     vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      addContentProjectMaterialsFromNotes: vi.fn(),
       deleteContentProject: vi.fn(),
+      deleteContentProjectMaterial: vi.fn(),
       listContentPlaybooks: vi.fn(),
       listContentPlaybookRevisions: vi.fn(),
+      listContentProjectMaterials: vi.fn(),
       listContentProjects: vi.fn(),
       saveContentPlaybook: vi.fn(),
       deleteContentPlaybook: vi.fn(),
@@ -463,6 +470,7 @@ describe("content studio API routes", () => {
       generateContentDraft: vi.fn(),
       listContentReviews: vi.fn(),
       runContentAssistant: vi.fn(),
+      saveContentProjectMaterial: vi.fn(),
       saveContentProject: vi.fn(),
       reviewContentDraft: vi.fn(),
       restoreContentPlaybookRevision: vi.fn(),

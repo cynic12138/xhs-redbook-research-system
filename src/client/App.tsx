@@ -55,6 +55,8 @@ import type {
   ContentPlaybookRevision,
   ContentProject,
   ContentProjectInput,
+  ContentProjectMaterial,
+  ContentProjectMaterialCategory,
   ContentProjectStatus,
   ContentReviewRun,
   HealthReportRecord,
@@ -124,6 +126,8 @@ type ContentStudioProps = {
   setProjectForm: (value: ContentProjectForm) => void;
   projectDirty: boolean;
   setProjectDirty: (value: boolean) => void;
+  projectMaterials: ContentProjectMaterial[];
+  deleteProjectMaterial: (materialId: string) => Promise<void>;
   playbooks: ContentPlaybook[];
   selectedPlaybookId: string;
   setSelectedPlaybookId: (value: string) => void;
@@ -344,6 +348,7 @@ export function App() {
   const [selectedContentProjectId, setSelectedContentProjectId] = useState("");
   const [contentProjectForm, setContentProjectForm] = useState<ContentProjectForm>(defaultContentProjectForm);
   const [contentProjectDirty, setContentProjectDirty] = useState(false);
+  const [contentProjectMaterials, setContentProjectMaterials] = useState<ContentProjectMaterial[]>([]);
   const [contentPlaybooks, setContentPlaybooks] = useState<ContentPlaybook[]>([]);
   const [selectedContentPlaybookId, setSelectedContentPlaybookId] = useState("");
   const [contentPlaybookRevisions, setContentPlaybookRevisions] = useState<ContentPlaybookRevision[]>([]);
@@ -554,6 +559,10 @@ export function App() {
     setContentPlaybookRevisions(playbookId ? await api.listContentPlaybookRevisions(playbookId) : []);
   }, []);
 
+  const loadContentProjectMaterials = useCallback(async (projectId: string) => {
+    setContentProjectMaterials(projectId ? await api.listContentProjectMaterials(projectId) : []);
+  }, []);
+
   useEffect(() => {
     setNotePage(1);
   }, [activeJobId, activeKeywordScopeId, authorQuery, minLikes, query, resultSort, resultType]);
@@ -570,6 +579,10 @@ export function App() {
   useEffect(() => {
     void loadContentPlaybookRevisions(selectedContentPlaybookId).catch(() => setContentPlaybookRevisions([]));
   }, [loadContentPlaybookRevisions, selectedContentPlaybookId]);
+
+  useEffect(() => {
+    void loadContentProjectMaterials(selectedContentProjectId).catch(() => setContentProjectMaterials([]));
+  }, [loadContentProjectMaterials, selectedContentProjectId]);
 
   useEffect(() => {
     if (!auth.needsVerification || authVerifyAttempted) {
@@ -974,6 +987,7 @@ export function App() {
     } else {
       setSelectedContentProject("");
       setContentProjectForm(defaultContentProjectForm);
+      setContentProjectMaterials([]);
       setContentProjectDirtyState(false);
     }
   }
@@ -985,6 +999,7 @@ export function App() {
     } else {
       setSelectedContentProject("");
       setContentProjectForm(defaultContentProjectForm);
+      setContentProjectMaterials([]);
       setContentProjectDirtyState(false);
     }
   }
@@ -1013,6 +1028,34 @@ export function App() {
     await run("content-project-delete", async () => {
       await api.deleteContentProject(selectedContentProjectId);
       await refreshContentProjectsAfterChange();
+    });
+  }
+
+  async function addSelectedNotesToProjectMaterials() {
+    if (!selectedContentProjectId) {
+      setError("请先在内容创作台选择或保存一个内容项目。");
+      return;
+    }
+    const selectedNoteIdSet = new Set(selectedNoteIds);
+    const selectedNotes = notes.filter((note) => selectedNoteIdSet.has(note.id) && note.desc.trim());
+    if (!selectedNotes.length) {
+      setError("请先勾选已补正文的笔记，再加入项目素材池。");
+      return;
+    }
+    await run("content-materials-from-notes", async () => {
+      const materials = await api.addContentProjectMaterialsFromNotes(selectedContentProjectId, selectedNotes.map((note) => note.id), "general");
+      setContentProjectMaterials((items) => prependUniqueById(items, materials));
+      setContentStudioTab("projects");
+      setActiveModule("content");
+      setError("");
+    });
+  }
+
+  async function deleteContentProjectMaterialForm(materialId: string) {
+    if (!selectedContentProjectId) return;
+    await run(`content-material-delete-${materialId}`, async () => {
+      await api.deleteContentProjectMaterial(selectedContentProjectId, materialId);
+      setContentProjectMaterials(await api.listContentProjectMaterials(selectedContentProjectId));
     });
   }
 
@@ -1557,6 +1600,8 @@ export function App() {
             selectedNoteIds={selectedNoteIds}
             setSelectedNoteIds={setSelectedNoteIds}
             sendSelectedNotesToBatchReview={sendSelectedNotesToBatchReview}
+            selectedContentProject={selectedContentProject}
+            addSelectedNotesToProjectMaterials={addSelectedNotesToProjectMaterials}
             page={notePage}
             total={notesTotal}
             totalPages={notesTotalPages}
@@ -1612,6 +1657,8 @@ export function App() {
             setProjectForm={setContentProjectForm}
             projectDirty={contentProjectDirty}
             setProjectDirty={setContentProjectDirtyState}
+            projectMaterials={contentProjectMaterials}
+            deleteProjectMaterial={deleteContentProjectMaterialForm}
             playbooks={contentPlaybooks}
             selectedPlaybookId={selectedContentPlaybookId}
             setSelectedPlaybookId={(id) => {
@@ -2236,6 +2283,8 @@ function NotesPage(props: {
   selectedNoteIds: string[];
   setSelectedNoteIds: (value: string[]) => void;
   sendSelectedNotesToBatchReview: () => void;
+  selectedContentProject?: ContentProject;
+  addSelectedNotesToProjectMaterials: () => Promise<void>;
   page: number;
   total: number;
   totalPages: number;
@@ -2287,6 +2336,10 @@ function NotesPage(props: {
               <button className="primary-button compact" onClick={props.sendSelectedNotesToBatchReview} disabled={!selectedReviewableCount}>
                 <ShieldCheck size={15} />
                 送审已选{selectedReviewableCount ? `（${selectedReviewableCount}）` : ""}
+              </button>
+              <button className="ghost-button compact" onClick={() => void props.addSelectedNotesToProjectMaterials()} disabled={!selectedReviewableCount || !props.selectedContentProject}>
+                <Library size={15} />
+                加入项目素材{props.selectedContentProject ? `：${props.selectedContentProject.name}` : ""}
               </button>
               <button
                 className="ghost-button compact danger"
@@ -3141,7 +3194,7 @@ function ContentStudioPage(props: ContentStudioProps) {
   );
 }
 
-function ContentProjectsPane(props: Pick<ContentStudioProps, "projects" | "selectedProjectId" | "setSelectedProjectId" | "projectForm" | "setProjectForm" | "projectDirty" | "setProjectDirty" | "playbooks" | "jobs" | "createProject" | "deleteProject" | "saveProject" | "busy">) {
+function ContentProjectsPane(props: Pick<ContentStudioProps, "projects" | "selectedProjectId" | "setSelectedProjectId" | "projectForm" | "setProjectForm" | "projectDirty" | "setProjectDirty" | "projectMaterials" | "deleteProjectMaterial" | "playbooks" | "jobs" | "createProject" | "deleteProject" | "saveProject" | "busy">) {
   const updateProject = (key: keyof ContentProjectForm, value: string) => {
     props.setProjectForm({ ...props.projectForm, [key]: value } as ContentProjectForm);
     props.setProjectDirty(true);
@@ -3207,6 +3260,29 @@ function ContentProjectsPane(props: Pick<ContentStudioProps, "projects" | "selec
           <label><span>目标人群</span><textarea value={props.projectForm.targetAudience} onChange={(event) => updateProject("targetAudience", event.target.value)} /></label>
           <label><span>内容场景</span><textarea value={props.projectForm.scenarios} onChange={(event) => updateProject("scenarios", event.target.value)} /></label>
           <label><span>项目目标</span><textarea value={props.projectForm.goals} onChange={(event) => updateProject("goals", event.target.value)} /></label>
+        </div>
+        <div className="project-material-panel">
+          <div className="section-mini-head">
+            <strong>项目素材池</strong>
+            <span>{props.projectMaterials.length ? `${props.projectMaterials.length} 条素材` : "从笔记库勾选笔记加入素材池"}</span>
+          </div>
+          <div className="project-material-list">
+            {props.projectMaterials.map((material) => (
+              <div key={material.id} className="project-material-card">
+                <div>
+                  <strong>{material.title}</strong>
+                  <small>{contentMaterialCategoryLabel(material.category)} · {material.source === "note" ? "笔记库" : "手动"}{material.authorName ? ` · ${material.authorName}` : ""}</small>
+                  <p>{compactContentText(material.content, 140)}</p>
+                  {material.stats && <small>赞 {formatNumber(material.stats.liked)} · 藏 {formatNumber(material.stats.collected)} · 评 {formatNumber(material.stats.comments)}</small>}
+                </div>
+                <button className="ghost-button compact danger" onClick={() => void props.deleteProjectMaterial(material.id)} disabled={props.busy === `content-material-delete-${material.id}`}>
+                  {props.busy === `content-material-delete-${material.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                  删除
+                </button>
+              </div>
+            ))}
+            {!props.projectMaterials.length && <EmptyState text="暂无项目素材。先去笔记库勾选已抓取正文的笔记，再点击加入项目素材。" />}
+          </div>
         </div>
       </section>
     </div>
@@ -5252,6 +5328,14 @@ function contentProjectStatusLabel(status: ContentProjectStatus): string {
   if (status === "writing") return "撰写中";
   if (status === "reviewing") return "审稿中";
   return "已定稿";
+}
+
+function contentMaterialCategoryLabel(category: ContentProjectMaterialCategory): string {
+  if (category === "pain") return "痛点";
+  if (category === "scenario") return "场景";
+  if (category === "expression") return "表达";
+  if (category === "competitor") return "竞品";
+  return "通用";
 }
 
 export function severityLabel(severity: ContentReviewRun["issues"][number]["severity"]): string {
