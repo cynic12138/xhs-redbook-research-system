@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AiWorkflowKey, AnalyticsReport, CommentRecord, NoteRecord, SearchJob } from "../src/shared/types.js";
-import { buildAiWorkflowPrompt, buildCustomWorkflowPrompt, getDefaultPromptTemplate, listAiPromptInfos } from "../src/server/services/aiPrompts.js";
+import {
+  buildAiWorkflowPrompt,
+  buildCustomWorkflowPrompt,
+  buildDefaultGuidedConfig,
+  buildGuidedWorkflowPrompt,
+  getDefaultPromptTemplate,
+  listAiPromptInfos,
+  validatePromptTemplate
+} from "../src/server/services/aiPrompts.js";
 
 const job: SearchJob = {
   id: "job1",
@@ -116,5 +124,28 @@ describe("AI prompt library", () => {
     expect(result.prompt).toContain("武汉相亲避坑清单");
     expect(result.prompt).toContain("只看标题");
     expect(getDefaultPromptTemplate("note-analysis")).toContain("{selectedNote}");
+  });
+
+  it("builds guided prompts from editable business configuration", () => {
+    const config = {
+      ...buildDefaultGuidedConfig("content-planning"),
+      role: "小红书选题顾问",
+      objective: "输出一份适合运营直接执行的选题计划。",
+      outputSections: ["机会判断", "标题方向"]
+    };
+    const result = buildGuidedWorkflowPrompt("content-planning", config, context, "优先看高收藏");
+
+    expect(result.promptSource).toBe("guided");
+    expect(result.prompt).toContain("小红书选题顾问");
+    expect(result.prompt).toContain("机会判断");
+    expect(result.prompt).toContain("武汉相亲");
+    expect(result.prompt).toContain("优先看高收藏");
+  });
+
+  it("validates advanced prompt variables before activation", () => {
+    const messages = validatePromptTemplate("content-planning", "任务：{job}\n热门：{topNote}\n要求：{focus}");
+
+    expect(messages.some((message) => message.level === "error" && message.variable === "topNote")).toBe(true);
+    expect(messages.some((message) => message.suggestion === "topNotes")).toBe(true);
   });
 });

@@ -11,7 +11,9 @@ export type ReplyActionStatus = "draft" | "queued" | "sending" | "sent" | "faile
 export type AiReportStatus = "completed" | "failed";
 export type AiArtifactStatus = "completed" | "failed";
 export type AiArtifactSource = "ai" | "local";
-export type AiPromptSource = "default" | "custom";
+export type AiPromptSource = "default" | "custom" | "guided" | "advanced";
+export type AiPromptMode = "builtin" | "guided" | "advanced";
+export type AiPromptValidationLevel = "error" | "warning";
 export type AiOrchestrationStatus = "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled";
 export type AiOrchestrationStepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
 export type AiOrchestrationStepKey =
@@ -415,27 +417,51 @@ export interface AiPromptInfo {
   inputRequirements: string[];
   outputSections: string[];
   promptSource?: AiPromptSource;
+  activeMode?: AiPromptMode;
   isCustomized?: boolean;
   artifactCount?: number;
   lastUsedAt?: string;
   updatedAt?: string;
 }
 
+export interface AiPromptVariableInfo {
+  key: string;
+  label: string;
+  description: string;
+  tier?: "required" | "recommended" | "optional";
+}
+
+export interface AiPromptGuidedConfig {
+  role: string;
+  objective: string;
+  focusRules: string[];
+  forbiddenRules: string[];
+  outputSections: string[];
+  enabledVariables: string[];
+}
+
+export interface AiPromptValidationMessage {
+  level: AiPromptValidationLevel;
+  message: string;
+  variable?: string;
+  suggestion?: string;
+}
+
+export interface AiPromptAdvancedConfig {
+  template: string;
+  validation: AiPromptValidationMessage[];
+}
+
 export interface AiPromptDetail extends AiPromptInfo {
   defaultTemplate: string;
   customTemplate?: string;
   activeTemplate: string;
-  variables: Array<{
-    key: string;
-    label: string;
-    description: string;
-  }>;
+  activeMode: AiPromptMode;
+  guidedConfig: AiPromptGuidedConfig;
+  advancedConfig: AiPromptAdvancedConfig;
+  variables: AiPromptVariableInfo[];
   overview: {
-    automaticInputs: Array<{
-      key: string;
-      label: string;
-      description: string;
-    }>;
+    automaticInputs: AiPromptVariableInfo[];
     totalAutomaticInputs: number;
     deliverables: string[];
     totalDeliverables: number;
@@ -450,10 +476,22 @@ export interface AiPromptDetail extends AiPromptInfo {
 
 export interface AiPromptConfig {
   key: AiWorkflowKey;
+  activeMode?: AiPromptMode;
+  guidedConfig?: AiPromptGuidedConfig;
+  advancedConfig?: {
+    template: string;
+  };
   customTemplate?: string;
-  activeSource: AiPromptSource;
+  activeSource?: "default" | "custom";
   updatedAt: string;
   lastUsedAt?: string;
+}
+
+export interface AiPromptPreview {
+  mode: AiPromptMode;
+  prompt: string;
+  contextSummary: string;
+  validation: AiPromptValidationMessage[];
 }
 
 export interface AiWorkflowRunInput {

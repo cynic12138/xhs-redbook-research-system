@@ -32,6 +32,7 @@ import {
   chatWithAssistant,
   createAiReport,
   activateAiPrompt,
+  activateAiPromptMode,
   deleteAiArtifact,
   deleteAiModel,
   deleteAiReport,
@@ -44,9 +45,12 @@ import {
   listAiReports,
   listAiWorkflows,
   runAiWorkflow,
+  previewAiPrompt,
   resetAiPromptConfig,
   saveAiModel,
+  saveAiPromptAdvancedConfig,
   saveAiPromptConfig,
+  saveAiPromptGuidedConfig,
   setDefaultAiModel,
   testAiModel,
   updateAiModel
@@ -139,6 +143,15 @@ const aiOrchestrationInput = z
   }));
 
 const aiPromptKey = z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis", "draft-review", "note-writing"]);
+const aiPromptMode = z.enum(["builtin", "guided", "advanced"]);
+const aiPromptGuidedConfigInput = z.object({
+  role: z.string().min(1),
+  objective: z.string().min(1),
+  focusRules: z.array(z.string()).default([]),
+  forbiddenRules: z.array(z.string()).default([]),
+  outputSections: z.array(z.string()).default([]),
+  enabledVariables: z.array(z.string()).default([])
+});
 
 const contentReplacementInput = z.object({
   from: z.string().min(1),
@@ -852,6 +865,24 @@ api.get("/ai/prompts/:key", async (req, res, next) => {
   }
 });
 
+api.put("/ai/prompts/:key/guided", async (req, res, next) => {
+  try {
+    const body = z.object({ config: aiPromptGuidedConfigInput, activate: z.boolean().optional() }).parse(req.body);
+    res.json(await saveAiPromptGuidedConfig(aiPromptKey.parse(req.params.key), body.config, body.activate));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.put("/ai/prompts/:key/advanced", async (req, res, next) => {
+  try {
+    const body = z.object({ template: z.string().min(1), activate: z.boolean().optional() }).parse(req.body);
+    res.json(await saveAiPromptAdvancedConfig(aiPromptKey.parse(req.params.key), body.template, body.activate));
+  } catch (error) {
+    next(error);
+  }
+});
+
 api.put("/ai/prompts/:key", async (req, res, next) => {
   try {
     const body = z.object({ customTemplate: z.string().min(1) }).parse(req.body);
@@ -871,8 +902,28 @@ api.post("/ai/prompts/:key/reset", async (req, res, next) => {
 
 api.post("/ai/prompts/:key/activate", async (req, res, next) => {
   try {
-    const body = z.object({ source: z.enum(["default", "custom"]).default("default") }).parse(req.body ?? {});
-    res.json(await activateAiPrompt(aiPromptKey.parse(req.params.key), body.source));
+    const body = z.object({
+      mode: aiPromptMode.optional(),
+      source: z.enum(["default", "custom", "guided", "advanced"]).optional()
+    }).parse(req.body ?? {});
+    const key = aiPromptKey.parse(req.params.key);
+    res.json(body.mode ? await activateAiPromptMode(key, body.mode) : await activateAiPrompt(key, body.source ?? "default"));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/prompts/:key/preview", async (req, res, next) => {
+  try {
+    const body = z.object({
+      mode: aiPromptMode.optional(),
+      guidedConfig: aiPromptGuidedConfigInput.optional(),
+      advancedTemplate: z.string().optional(),
+      jobId: z.string().optional(),
+      noteId: z.string().optional(),
+      focus: z.string().optional()
+    }).parse(req.body ?? {});
+    res.json(await previewAiPrompt(aiPromptKey.parse(req.params.key), body));
   } catch (error) {
     next(error);
   }

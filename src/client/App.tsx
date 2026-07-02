@@ -41,8 +41,12 @@ import type {
   AiModelConfig,
   AiOrchestration,
   AiPromptDetail,
+  AiPromptGuidedConfig,
   AiPromptInfo,
-  AiPromptSource,
+  AiPromptMode,
+  AiPromptPreview,
+  AiPromptValidationMessage,
+  AiPromptVariableInfo,
   AiReport,
   AiWorkflowDefinition,
   AiWorkflowKey,
@@ -93,6 +97,7 @@ type ContentBriefForm = {
 };
 type ContentReviewForm = { title: string; body: string; tags: string };
 type ContentStudioTab = "projects" | "review" | "batch" | "write" | "rules" | "results";
+type PromptEditorTab = "guided" | "advanced" | "preview";
 type BatchReviewItem = { id: string; title: string; body: string; tags: string; selected: boolean };
 type ContentProjectForm = {
   name: string;
@@ -348,7 +353,10 @@ export function App() {
   const [aiPrompts, setAiPrompts] = useState<AiPromptInfo[]>([]);
   const [selectedPromptKey, setSelectedPromptKey] = useState<AiWorkflowKey>("content-planning");
   const [selectedPrompt, setSelectedPrompt] = useState<AiPromptDetail | null>(null);
-  const [promptDraft, setPromptDraft] = useState("");
+  const [promptTab, setPromptTab] = useState<PromptEditorTab>("guided");
+  const [guidedPromptDraft, setGuidedPromptDraft] = useState<AiPromptGuidedConfig | null>(null);
+  const [advancedPromptDraft, setAdvancedPromptDraft] = useState("");
+  const [promptPreview, setPromptPreview] = useState<AiPromptPreview | null>(null);
   const [aiArtifacts, setAiArtifacts] = useState<AiArtifact[]>([]);
   const [contentProjects, setContentProjects] = useState<ContentProject[]>([]);
   const [selectedContentProjectId, setSelectedContentProjectId] = useState("");
@@ -560,7 +568,9 @@ export function App() {
   const loadPromptDetail = useCallback(async (key: AiWorkflowKey) => {
     const detail = await api.getAiPrompt(key);
     setSelectedPrompt(detail);
-    setPromptDraft(detail.customTemplate || detail.defaultTemplate);
+    setGuidedPromptDraft(detail.guidedConfig);
+    setAdvancedPromptDraft(detail.advancedConfig.template || detail.defaultTemplate);
+    setPromptPreview(null);
   }, []);
 
   const loadContentPlaybookRevisions = useCallback(async (playbookId: string) => {
@@ -620,6 +630,12 @@ export function App() {
   useEffect(() => {
     void loadPromptDetail(selectedPromptKey).catch((err) => setError(err.message));
   }, [loadPromptDetail, selectedPromptKey]);
+
+  const promptDirty = useMemo(() => {
+    if (!selectedPrompt || !guidedPromptDraft) return false;
+    const savedAdvanced = selectedPrompt.advancedConfig.template || selectedPrompt.defaultTemplate;
+    return JSON.stringify(guidedPromptDraft) !== JSON.stringify(selectedPrompt.guidedConfig) || advancedPromptDraft !== savedAdvanced;
+  }, [advancedPromptDraft, guidedPromptDraft, selectedPrompt]);
 
   useEffect(() => {
     const navigate = (event: Event) => {
@@ -1507,33 +1523,74 @@ export function App() {
   }
 
   function openPromptCenter(key: AiWorkflowKey) {
-    setSelectedPromptKey(key);
+    selectPromptKey(key);
     setActiveModule("prompts");
   }
 
-  async function savePrompt() {
-    await run(`prompt-save-${selectedPromptKey}`, async () => {
-      const detail = await api.saveAiPrompt(selectedPromptKey, promptDraft);
-      setSelectedPrompt(detail);
-      setPromptDraft(detail.customTemplate || detail.defaultTemplate);
+  function confirmDiscardPromptChanges(): boolean {
+    return !promptDirty || window.confirm("当前提示词修改尚未保存，确定放弃这些修改吗？");
+  }
+
+  function selectPromptKey(key: AiWorkflowKey) {
+    if (key === selectedPromptKey) return;
+    if (!confirmDiscardPromptChanges()) return;
+    setSelectedPromptKey(key);
+    setPromptPreview(null);
+  }
+
+  function selectPromptTab(tab: PromptEditorTab) {
+    if (tab === promptTab) return;
+    setPromptTab(tab);
+  }
+
+  function applyPromptDetail(detail: AiPromptDetail) {
+    setSelectedPrompt(detail);
+    setGuidedPromptDraft(detail.guidedConfig);
+    setAdvancedPromptDraft(detail.advancedConfig.template || detail.defaultTemplate);
+    setPromptPreview(null);
+  }
+
+  async function saveGuidedPrompt(activate = false) {
+    if (!guidedPromptDraft) return;
+    await run(`prompt-guided-save-${selectedPromptKey}-${activate ? "activate" : "draft"}`, async () => {
+      const detail = await api.saveAiPromptGuided(selectedPromptKey, guidedPromptDraft, activate);
+      applyPromptDetail(detail);
       setAiPrompts(await api.listAiPrompts());
+    });
+  }
+
+  async function saveAdvancedPrompt(activate = false) {
+    await run(`prompt-advanced-save-${selectedPromptKey}-${activate ? "activate" : "draft"}`, async () => {
+      const detail = await api.saveAiPromptAdvanced(selectedPromptKey, advancedPromptDraft, activate);
+      applyPromptDetail(detail);
+      setAiPrompts(await api.listAiPrompts());
+    });
+  }
+
+  async function activatePromptMode(mode: AiPromptMode) {
+    await run(`prompt-activate-${selectedPromptKey}-${mode}`, async () => {
+      const detail = await api.activateAiPromptMode(selectedPromptKey, mode);
+      applyPromptDetail(detail);
+      setAiPrompts(await api.listAiPrompts());
+    });
+  }
+
+  async function loadPromptPreview(mode: AiPromptMode) {
+    await run(`prompt-preview-${selectedPromptKey}-${mode}`, async () => {
+      const preview = await api.previewAiPrompt(selectedPromptKey, {
+        mode,
+        guidedConfig: guidedPromptDraft ?? undefined,
+        advancedTemplate: advancedPromptDraft,
+        jobId: activeJobId || undefined
+      });
+      setPromptPreview(preview);
     });
   }
 
   async function resetPrompt() {
     await run(`prompt-reset-${selectedPromptKey}`, async () => {
       const detail = await api.resetAiPrompt(selectedPromptKey);
-      setSelectedPrompt(detail);
-      setPromptDraft(detail.defaultTemplate);
-      setAiPrompts(await api.listAiPrompts());
-    });
-  }
-
-  async function activatePrompt(source: AiPromptSource) {
-    await run(`prompt-activate-${selectedPromptKey}-${source}`, async () => {
-      const detail = await api.activateAiPrompt(selectedPromptKey, source);
-      setSelectedPrompt(detail);
-      setPromptDraft(detail.customTemplate || detail.defaultTemplate);
+      applyPromptDetail(detail);
       setAiPrompts(await api.listAiPrompts());
     });
   }
@@ -1771,14 +1828,21 @@ export function App() {
             prompts={aiPrompts}
             selectedKey={selectedPromptKey}
             selectedPrompt={selectedPrompt}
-            promptDraft={promptDraft}
-            setPromptDraft={setPromptDraft}
-            setSelectedKey={setSelectedPromptKey}
+            promptTab={promptTab}
+            setPromptTab={selectPromptTab}
+            guidedDraft={guidedPromptDraft}
+            setGuidedDraft={setGuidedPromptDraft}
+            advancedDraft={advancedPromptDraft}
+            setAdvancedDraft={setAdvancedPromptDraft}
+            promptPreview={promptPreview}
+            promptDirty={promptDirty}
+            setSelectedKey={selectPromptKey}
             artifacts={aiArtifacts}
             busy={busy}
-            savePrompt={savePrompt}
+            saveGuidedPrompt={saveGuidedPrompt}
+            saveAdvancedPrompt={saveAdvancedPrompt}
             resetPrompt={resetPrompt}
-            activatePrompt={activatePrompt}
+            loadPromptPreview={loadPromptPreview}
             openArtifact={(artifactId) => {
               setSelectedArtifactId(artifactId);
               setSelectedReportId("");
@@ -3779,30 +3843,70 @@ function PromptCenterPage({
   prompts,
   selectedKey,
   selectedPrompt,
-  promptDraft,
-  setPromptDraft,
+  promptTab,
+  setPromptTab,
+  guidedDraft,
+  setGuidedDraft,
+  advancedDraft,
+  setAdvancedDraft,
+  promptPreview,
+  promptDirty,
   setSelectedKey,
   artifacts,
   busy,
-  savePrompt,
+  saveGuidedPrompt,
+  saveAdvancedPrompt,
   resetPrompt,
-  activatePrompt,
+  loadPromptPreview,
   openArtifact
 }: {
   prompts: AiPromptInfo[];
   selectedKey: AiWorkflowKey;
   selectedPrompt: AiPromptDetail | null;
-  promptDraft: string;
-  setPromptDraft: (value: string) => void;
+  promptTab: PromptEditorTab;
+  setPromptTab: (value: PromptEditorTab) => void;
+  guidedDraft: AiPromptGuidedConfig | null;
+  setGuidedDraft: (value: AiPromptGuidedConfig) => void;
+  advancedDraft: string;
+  setAdvancedDraft: (value: string) => void;
+  promptPreview: AiPromptPreview | null;
+  promptDirty: boolean;
   setSelectedKey: (value: AiWorkflowKey) => void;
   artifacts: AiArtifact[];
   busy: string;
-  savePrompt: () => Promise<void>;
+  saveGuidedPrompt: (activate?: boolean) => Promise<void>;
+  saveAdvancedPrompt: (activate?: boolean) => Promise<void>;
   resetPrompt: () => Promise<void>;
-  activatePrompt: (source: AiPromptSource) => Promise<void>;
+  loadPromptPreview: (mode: AiPromptMode) => Promise<void>;
   openArtifact: (artifactId: string) => void;
 }) {
   const relatedArtifacts = artifacts.filter((artifact) => artifact.promptKey === selectedKey);
+  const activeMode = selectedPrompt?.activeMode ?? "builtin";
+  const previewMode: AiPromptMode = promptTab === "guided" || promptTab === "advanced" ? promptTab : activeMode;
+  const advancedValidation = selectedPrompt ? validatePromptDraft(selectedPrompt, advancedDraft) : [];
+  const advancedHasErrors = advancedValidation.some((item) => item.level === "error");
+  const saveBusy = busy.includes(`prompt-${promptTab}-save-${selectedKey}`) || busy.includes(`prompt-${previewMode}-save-${selectedKey}`);
+
+  function updateGuidedDraft(patch: Partial<AiPromptGuidedConfig>) {
+    if (!guidedDraft) return;
+    setGuidedDraft({ ...guidedDraft, ...patch });
+  }
+
+  function toggleVariable(variable: AiPromptVariableInfo, enabled: boolean) {
+    if (!guidedDraft || variable.tier === "required") return;
+    const next = new Set(guidedDraft.enabledVariables);
+    if (enabled) {
+      next.add(variable.key);
+    } else {
+      next.delete(variable.key);
+    }
+    setGuidedDraft({ ...guidedDraft, enabledVariables: [...next] });
+  }
+
+  function insertAdvancedVariable(variable: AiPromptVariableInfo) {
+    setAdvancedDraft(`${advancedDraft}${advancedDraft.endsWith("\n") || !advancedDraft ? "" : "\n"}{${variable.key}}`);
+  }
+
   return (
     <div className="prompt-center-grid">
       <section className="surface prompt-list-panel">
@@ -3816,7 +3920,7 @@ function PromptCenterPage({
             >
               <div>
                 <strong>{prompt.title}</strong>
-                <span>{prompt.promptSource === "custom" ? "使用我的提示词" : "使用内置提示词"}</span>
+                <span>{promptModeLabel(prompt.activeMode ?? promptSourceToMode(prompt.promptSource))}</span>
               </div>
               <small>{prompt.description}</small>
               <small>{promptVersionLabel(prompt.version)} · 已生成 {prompt.artifactCount ?? 0} 个产物</small>
@@ -3831,79 +3935,137 @@ function PromptCenterPage({
           icon={<FileText size={18} />}
           title={selectedPrompt ? `${selectedPrompt.title} · 提示词` : "提示词详情"}
         />
-        {selectedPrompt ? (
+        {selectedPrompt && guidedDraft ? (
           <div className="prompt-editor-layout">
             <div className="prompt-control-panel">
               <div className="prompt-control-head">
                 <div>
                   <strong>{selectedPrompt.title}</strong>
                   <span>{selectedPrompt.description}</span>
-                  <span>当前使用：{selectedPrompt.promptSource === "custom" ? "我的自定义提示词" : "系统内置提示词"} · {promptVersionLabel(selectedPrompt.version)} · 已生成 {selectedPrompt.artifactCount ?? 0} 个产物</span>
+                  <span>当前实际运行：{promptModeLabel(activeMode)} · 正在编辑：{promptTabLabel(promptTab)}{promptDirty ? " · 有未保存修改" : ""}</span>
                 </div>
                 <div className="button-row">
-                  <button className="ghost-button compact" onClick={() => void activatePrompt("default")} disabled={busy.startsWith("prompt-activate")}>
-                    使用内置提示词
-                  </button>
-                  <button className="ghost-button compact" onClick={() => void activatePrompt("custom")} disabled={!selectedPrompt.customTemplate || busy.startsWith("prompt-activate")}>
-                    使用我的提示词
-                  </button>
                   <button className="ghost-button compact danger" onClick={() => void resetPrompt()} disabled={busy === `prompt-reset-${selectedKey}`}>
                     <RefreshCw size={14} />
                     恢复内置提示词
                   </button>
-                  <button className="primary-button compact" onClick={() => void savePrompt()} disabled={!promptDraft.trim() || busy === `prompt-save-${selectedKey}`}>
-                    {busy === `prompt-save-${selectedKey}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
-                    保存
-                  </button>
-                </div>
-              </div>
-              <div className="prompt-helper-grid">
-                <div className="prompt-helper-card">
-                  <div className="section-mini-head">
-                    <strong>系统会自动带入的数据</strong>
-                    <span>
-                      当前提示词使用 {selectedPrompt.overview.automaticInputs.length}/{selectedPrompt.overview.totalAutomaticInputs} 项资料
-                    </span>
-                  </div>
-                  <div className="prompt-data-list">
-                    {selectedPrompt.overview.automaticInputs.map((variable) => (
-                      <span key={variable.key} title={`模板占位符：{${variable.key}}`}>
-                        <strong>{variable.label}</strong>
-                        <small>{variable.description}</small>
-                      </span>
-                    ))}
-                  </div>
-                  {selectedPrompt.overview.totalAutomaticInputs > selectedPrompt.overview.automaticInputs.length && (
-                    <small className="prompt-overview-more">
-                      另有 {selectedPrompt.overview.totalAutomaticInputs - selectedPrompt.overview.automaticInputs.length} 项资料会在正文中按需带入
-                    </small>
+                  {promptTab === "guided" && (
+                    <>
+                      <button className="ghost-button compact" onClick={() => void saveGuidedPrompt(false)} disabled={saveBusy}>保存</button>
+                      <button className="primary-button compact" onClick={() => void saveGuidedPrompt(true)} disabled={saveBusy}>
+                        {saveBusy ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                        保存并启用
+                      </button>
+                    </>
+                  )}
+                  {promptTab === "advanced" && (
+                    <>
+                      <button className="ghost-button compact" onClick={() => void saveAdvancedPrompt(false)} disabled={!advancedDraft.trim() || saveBusy}>保存</button>
+                      <button className="primary-button compact" onClick={() => void saveAdvancedPrompt(true)} disabled={!advancedDraft.trim() || advancedHasErrors || saveBusy}>
+                        {saveBusy ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                        保存并启用
+                      </button>
+                    </>
+                  )}
+                  {promptTab === "preview" && (
+                    <button className="primary-button compact" onClick={() => void loadPromptPreview(previewMode)} disabled={busy === `prompt-preview-${selectedKey}-${previewMode}`}>
+                      {busy === `prompt-preview-${selectedKey}-${previewMode}` ? <Loader2 className="spin" size={14} /> : <Eye size={14} />}
+                      生成预览
+                    </button>
                   )}
                 </div>
-                <div className="prompt-helper-card">
+              </div>
+              <div className="prompt-mode-tabs">
+                {(["guided", "advanced", "preview"] as PromptEditorTab[]).map((tab) => (
+                  <button key={tab} className={promptTab === tab ? "active" : ""} onClick={() => setPromptTab(tab)}>
+                    {promptTabLabel(tab)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {promptTab === "guided" && (
+              <div className="prompt-guided-workspace">
+                <section className="prompt-config-block">
                   <div className="section-mini-head">
-                    <strong>AI 需要交付的内容</strong>
-                    <span>
-                      展示 {selectedPrompt.overview.deliverables.length}/{selectedPrompt.overview.totalDeliverables} 个输出栏目
-                    </span>
+                    <strong>工作说明</strong>
+                    <span>运营用户只需要编辑业务目标，不需要维护变量。</span>
+                  </div>
+                  <div className="form-grid">
+                    <label>AI 角色<input value={guidedDraft.role} onChange={(event) => updateGuidedDraft({ role: event.target.value })} /></label>
+                    <label>工作目标<textarea value={guidedDraft.objective} onChange={(event) => updateGuidedDraft({ objective: event.target.value })} /></label>
+                    <label>重点关注<textarea value={guidedDraft.focusRules.join("\n")} onChange={(event) => updateGuidedDraft({ focusRules: splitLines(event.target.value) })} /></label>
+                    <label>安全规则<textarea value={guidedDraft.forbiddenRules.join("\n")} onChange={(event) => updateGuidedDraft({ forbiddenRules: splitLines(event.target.value) })} /></label>
+                  </div>
+                </section>
+                <section className="prompt-config-block">
+                  <div className="section-mini-head">
+                    <strong>AI 会读取的资料</strong>
+                    <span>必需资料锁定，推荐资料可按任务关闭。</span>
+                  </div>
+                  <div className="prompt-data-card-grid">
+                    {selectedPrompt.variables.map((variable) => {
+                      const checked = guidedDraft.enabledVariables.includes(variable.key) || variable.tier === "required";
+                      return (
+                        <label key={variable.key} className={checked ? "prompt-data-card active" : "prompt-data-card"}>
+                          <input type="checkbox" checked={checked} disabled={variable.tier === "required"} onChange={(event) => toggleVariable(variable, event.target.checked)} />
+                          <span><strong>{variable.label}</strong><small>{variable.description}</small></span>
+                          <em>{variableTierLabel(variable.tier)}</em>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </section>
+                <section className="prompt-config-block">
+                  <div className="section-mini-head">
+                    <strong>输出栏目</strong>
+                    <span>每行一个栏目，AI 会按这个结构输出。</span>
+                  </div>
+                  <textarea className="prompt-lines-editor" value={guidedDraft.outputSections.join("\n")} onChange={(event) => updateGuidedDraft({ outputSections: splitLines(event.target.value) })} />
+                </section>
+              </div>
+            )}
+            {promptTab === "advanced" && (
+              <div className="prompt-advanced-workspace">
+                <section className="prompt-text-panel">
+                  <div className="panel-subhead">
+                    <strong>高级模板</strong>
+                    <span>错误变量不能启用，普通用户建议使用普通配置。</span>
+                  </div>
+                  <textarea className="prompt-editor" value={advancedDraft} onChange={(event) => setAdvancedDraft(event.target.value)} />
+                </section>
+                <aside className="prompt-variable-panel">
+                  <div className="section-mini-head">
+                    <strong>可插入变量</strong>
+                    <span>仅高级模板使用</span>
                   </div>
                   <div className="variable-list">
-                    {selectedPrompt.overview.deliverables.map((section) => <span key={section}>{section}</span>)}
+                    {selectedPrompt.variables.map((variable) => (
+                      <button key={variable.key} className="ghost-button compact" onClick={() => insertAdvancedVariable(variable)}>{`{${variable.key}}`}</button>
+                    ))}
                   </div>
-                  {selectedPrompt.overview.totalDeliverables > selectedPrompt.overview.deliverables.length && (
-                    <small className="prompt-overview-more">
-                      另有 {selectedPrompt.overview.totalDeliverables - selectedPrompt.overview.deliverables.length} 个栏目保留在完整提示词中
-                    </small>
-                  )}
+                  <PromptValidationList messages={advancedValidation} />
+                </aside>
+              </div>
+            )}
+            {promptTab === "preview" && (
+              <div className="prompt-preview-workspace">
+                <div className="prompt-preview-toolbar">
+                  <div><strong>最终预览</strong><span>查看当前模式最终会发给 AI 的完整内容。</span></div>
+                  <div className="button-row">
+                    <button className="ghost-button compact" onClick={() => void loadPromptPreview(activeMode)}>预览实际运行版本</button>
+                    <button className="ghost-button compact" onClick={() => void loadPromptPreview(previewMode)}>预览正在编辑版本</button>
+                  </div>
                 </div>
+                {promptPreview ? (
+                  <>
+                    <div className="prompt-preview-meta"><span>模式：{promptModeLabel(promptPreview.mode)}</span><span>{promptPreview.contextSummary}</span></div>
+                    <pre className="prompt-preview-body">{promptPreview.prompt}</pre>
+                  </>
+                ) : (
+                  <EmptyState text="点击预览按钮查看最终提示词" />
+                )}
               </div>
-            </div>
-            <div className="prompt-text-panel">
-              <div className="panel-subhead">
-                <strong>提示词正文</strong>
-                <span>高级编辑区：保存后点击“使用我的提示词”即可生效。</span>
-              </div>
-              <textarea className="prompt-editor" value={promptDraft} onChange={(event) => setPromptDraft(event.target.value)} />
-            </div>
+            )}
           </div>
         ) : (
           <EmptyState text="选择一套提示词查看和编辑" />
@@ -3911,17 +4073,130 @@ function PromptCenterPage({
       </section>
 
       <section className="surface prompt-artifacts-panel">
+        <SectionTitle icon={<ShieldCheck size={18} />} title="运行检查" />
+        {selectedPrompt && guidedDraft ? (
+          <div className="prompt-check-stack">
+            <div className="prompt-status-card">
+              <strong>当前实际运行</strong>
+              <span>{promptModeLabel(activeMode)}</span>
+              <small>{promptDirty ? "当前有未保存修改，运行仍使用已启用版本。" : "当前配置已与页面同步。"}</small>
+            </div>
+            <div className="prompt-status-card">
+              <strong>资料读取</strong>
+              <span>{guidedDraft.enabledVariables.length} 项资料启用</span>
+              <small>普通配置由后端生成最终提示词，高级模板按变量替换。</small>
+            </div>
+            {promptTab === "advanced" && <PromptValidationList messages={advancedValidation} />}
+          </div>
+        ) : (
+          <EmptyState text="请选择提示词" />
+        )}
         <SectionTitle icon={<Bot size={18} />} title="使用记录" />
         <div className="compact-list">
           {relatedArtifacts.slice(0, 10).map((artifact) => (
             <button key={artifact.id} className="compact-list-row" onClick={() => openArtifact(artifact.id)}>
               <strong>{artifact.title}</strong>
-              <small>{artifact.promptSource === "custom" ? "我的提示词" : "内置提示词"} · {new Date(artifact.createdAt).toLocaleString()}</small>
+              <small>{promptSourceLabel(artifact.promptSource)} · {new Date(artifact.createdAt).toLocaleString()}</small>
             </button>
           ))}
           {!relatedArtifacts.length && <EmptyState text="这套提示词还没有生成过产物" />}
         </div>
       </section>
+    </div>
+  );
+}
+
+function splitLines(value: string): string[] {
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function promptSourceToMode(source?: AiPromptInfo["promptSource"]): AiPromptMode {
+  if (source === "guided") return "guided";
+  if (source === "advanced" || source === "custom") return "advanced";
+  return "builtin";
+}
+
+function promptModeLabel(mode?: AiPromptMode): string {
+  if (mode === "guided") return "普通配置";
+  if (mode === "advanced") return "高级模板";
+  return "系统内置";
+}
+
+function promptTabLabel(tab: PromptEditorTab): string {
+  if (tab === "advanced") return "高级模板";
+  if (tab === "preview") return "最终预览";
+  return "普通配置";
+}
+
+function promptSourceLabel(source?: AiArtifact["promptSource"]): string {
+  if (source === "guided") return "普通配置";
+  if (source === "advanced" || source === "custom") return "高级模板";
+  return "系统内置";
+}
+
+function variableTierLabel(tier?: AiPromptVariableInfo["tier"]): string {
+  if (tier === "required") return "必需";
+  if (tier === "optional") return "可选";
+  return "推荐";
+}
+
+function validatePromptDraft(prompt: AiPromptDetail, template: string): AiPromptValidationMessage[] {
+  const messages: AiPromptValidationMessage[] = [];
+  const validKeys = new Set(prompt.variables.map((variable) => variable.key));
+  const usedKeys = [...new Set([...template.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((match) => match[1]))];
+  const defaultKeys = [...new Set([...prompt.defaultTemplate.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((match) => match[1]))];
+
+  if (!template.trim()) {
+    messages.push({ level: "error", message: "高级模板不能为空。" });
+  }
+  if ((template.match(/\{/g)?.length ?? 0) !== (template.match(/\}/g)?.length ?? 0)) {
+    messages.push({ level: "error", message: "存在未闭合的花括号，请检查变量格式。" });
+  }
+  for (const key of usedKeys) {
+    if (!validKeys.has(key)) {
+      messages.push({ level: "error", message: `未知变量：{${key}}。`, variable: key, suggestion: closestVariableKey(key, prompt.variables) });
+    }
+  }
+  for (const key of defaultKeys) {
+    if (!usedKeys.includes(key)) {
+      const variable = prompt.variables.find((item) => item.key === key);
+      messages.push({
+        level: variable?.tier === "required" ? "error" : "warning",
+        message: `当前模板未使用「${variable?.label ?? key}」，AI 可能拿不到这类资料。`,
+        variable: key
+      });
+    }
+  }
+  return messages;
+}
+
+function closestVariableKey(key: string, variables: AiPromptVariableInfo[]): string | undefined {
+  const normalized = key.toLowerCase();
+  return variables.find((variable) => {
+    const variableKey = variable.key.toLowerCase();
+    return variableKey.includes(normalized) || normalized.includes(variableKey.replace(/s$/, ""));
+  })?.key;
+}
+
+function PromptValidationList({ messages }: { messages: AiPromptValidationMessage[] }) {
+  const errors = messages.filter((message) => message.level === "error").length;
+  return (
+    <div className="prompt-validation-list">
+      <div className="section-mini-head">
+        <strong>模板校验</strong>
+        <span>{messages.length ? `${errors} 个错误 · ${messages.length - errors} 个提醒` : "可以启用"}</span>
+      </div>
+      {messages.length ? messages.map((message, index) => (
+        <div key={`${message.message}-${index}`} className={message.level === "error" ? "validation-row error" : "validation-row"}>
+          <strong>{message.level === "error" ? "错误" : "提醒"}</strong>
+          <span>{message.message}{message.suggestion ? ` 建议使用：{${message.suggestion}}` : ""}</span>
+        </div>
+      )) : (
+        <div className="validation-row ok">
+          <strong>通过</strong>
+          <span>未发现变量错误。</span>
+        </div>
+      )}
     </div>
   );
 }

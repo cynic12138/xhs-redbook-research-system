@@ -7,7 +7,10 @@ import type {
   AiModelInput,
   AiPromptConfig,
   AiPromptDetail,
+  AiPromptGuidedConfig,
   AiPromptInfo,
+  AiPromptMode,
+  AiPromptPreview,
   AiPromptSource,
   AiReport,
   AiWorkflowDefinition,
@@ -25,12 +28,16 @@ import { getEnvValue, saveEnvValue } from "../utils/env.js";
 import {
   AI_ASSISTANT_PROMPT_VERSION,
   buildAiWorkflowPrompt,
+  buildAdvancedWorkflowPrompt,
   buildAssistantPrompt,
-  buildCustomWorkflowPrompt,
+  buildDefaultGuidedConfig,
+  buildGuidedWorkflowPrompt,
   buildReportPrompt,
   getDefaultPromptTemplate,
   getPromptVariables,
-  listAiPromptInfos
+  listAiPromptInfos,
+  templateVariableKeys,
+  validatePromptTemplate
 } from "./aiPrompts.js";
 import { getAnalytics, listNotes } from "./queryService.js";
 
@@ -111,15 +118,17 @@ export function listAiWorkflows(): AiWorkflowDefinition[] {
 export async function listAiPrompts(): Promise<AiPromptInfo[]> {
   const [configs, artifacts] = await Promise.all([store.read("aiPromptConfigs"), store.read("aiArtifacts")]);
   return listAiPromptInfos().map((info) => {
-    const config = configs.find((item) => item.key === info.key);
+    const rawConfig = configs.find((item) => item.key === info.key);
+    const config = normalizePromptConfig(info.key, rawConfig);
     const related = artifacts.filter((artifact) => artifact.promptKey === info.key);
     return {
       ...info,
-      promptSource: config?.activeSource ?? "default",
-      isCustomized: Boolean(config?.customTemplate?.trim()),
+      promptSource: promptSourceForMode(config.activeMode ?? "builtin"),
+      activeMode: config.activeMode,
+      isCustomized: Boolean(rawConfig?.guidedConfig || rawConfig?.advancedConfig?.template?.trim() || rawConfig?.customTemplate?.trim()),
       artifactCount: related.length,
-      lastUsedAt: config?.lastUsedAt ?? related.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.createdAt,
-      updatedAt: config?.updatedAt
+      lastUsedAt: config.lastUsedAt ?? related.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.createdAt,
+      updatedAt: config.updatedAt
     };
   });
 }
@@ -130,30 +139,41 @@ export async function getAiPromptDetail(key: AiWorkflowRunInput["workflowKey"]):
   if (!info) {
     throw new Error("AI prompt not found.");
   }
-  const config = configs.find((item) => item.key === key);
+  const rawConfig = configs.find((item) => item.key === key);
+  const config = normalizePromptConfig(key, rawConfig);
   const defaultTemplate = getDefaultPromptTemplate(key);
-  const activeTemplate = config?.activeSource === "custom" && config.customTemplate?.trim() ? config.customTemplate : defaultTemplate;
+  const advancedTemplate = config.advancedConfig?.template ?? "";
+  const activeTemplate = activeTemplateForConfig(key, config);
   const variables = getPromptVariables();
-  const automaticInputs = promptVariablesForTemplate(activeTemplate, variables);
+  const automaticInputs = config.activeMode === "guided"
+    ? variables.filter((variable) => config.guidedConfig?.enabledVariables.includes(variable.key))
+    : promptVariablesForTemplate(activeTemplate, variables);
   const related = artifacts
     .filter((artifact) => artifact.promptKey === key)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const outputSections = config.activeMode === "guided" ? config.guidedConfig?.outputSections ?? info.outputSections : info.outputSections;
   return {
     ...info,
-    promptSource: config?.activeSource ?? "default",
-    isCustomized: Boolean(config?.customTemplate?.trim()),
+    promptSource: promptSourceForMode(config.activeMode ?? "builtin"),
+    activeMode: config.activeMode ?? "builtin",
+    isCustomized: Boolean(rawConfig?.guidedConfig || rawConfig?.advancedConfig?.template?.trim() || rawConfig?.customTemplate?.trim()),
     artifactCount: related.length,
-    lastUsedAt: config?.lastUsedAt ?? related[0]?.createdAt,
-    updatedAt: config?.updatedAt,
+    lastUsedAt: config.lastUsedAt ?? related[0]?.createdAt,
+    updatedAt: config.updatedAt,
     defaultTemplate,
-    customTemplate: config?.customTemplate,
+    customTemplate: advancedTemplate,
     activeTemplate,
+    guidedConfig: config.guidedConfig ?? buildDefaultGuidedConfig(key),
+    advancedConfig: {
+      template: advancedTemplate || defaultTemplate,
+      validation: validatePromptTemplate(key, advancedTemplate || defaultTemplate)
+    },
     variables,
     overview: {
       automaticInputs: automaticInputs.slice(0, 6),
       totalAutomaticInputs: automaticInputs.length,
-      deliverables: info.outputSections.slice(0, 7),
-      totalDeliverables: info.outputSections.length
+      deliverables: outputSections.slice(0, 7),
+      totalDeliverables: outputSections.length
     },
     recentArtifacts: related.slice(0, 8).map((artifact) => ({
       id: artifact.id,
@@ -174,40 +194,119 @@ function promptVariablesForTemplate(
 }
 
 export async function saveAiPromptConfig(key: AiWorkflowRunInput["workflowKey"], customTemplate: string): Promise<AiPromptDetail> {
+  return saveAiPromptAdvancedConfig(key, customTemplate, true);
+}
+
+export async function saveAiPromptGuidedConfig(
+  key: AiWorkflowRunInput["workflowKey"],
+  guidedConfig: AiPromptGuidedConfig,
+  activate = false
+): Promise<AiPromptDetail> {
   const now = nowIso();
-  await store.update("aiPromptConfigs", (configs) => upsertPromptConfig(configs, {
-    key,
-    customTemplate: customTemplate.trim(),
-    activeSource: "custom",
-    updatedAt: now
-  }));
+  await store.update("aiPromptConfigs", (configs) => {
+    const current = normalizePromptConfig(key, configs.find((item) => item.key === key));
+    const nextMode = activate ? "guided" : current.activeMode ?? "builtin";
+    return upsertPromptConfig(configs, {
+      ...current,
+      activeMode: nextMode,
+      activeSource: nextMode === "advanced" ? "custom" : "default",
+      guidedConfig: normalizeGuidedConfig(key, guidedConfig),
+      updatedAt: now
+    });
+  });
+  return getAiPromptDetail(key);
+}
+
+export async function saveAiPromptAdvancedConfig(
+  key: AiWorkflowRunInput["workflowKey"],
+  template: string,
+  activate = false
+): Promise<AiPromptDetail> {
+  const cleaned = template.trim();
+  const validation = validatePromptTemplate(key, cleaned);
+  if (activate && validation.some((item) => item.level === "error")) {
+    throw new Error("高级模板存在变量错误，无法启用。");
+  }
+  const now = nowIso();
+  await store.update("aiPromptConfigs", (configs) => {
+    const current = normalizePromptConfig(key, configs.find((item) => item.key === key));
+    const nextMode = activate ? "advanced" : current.activeMode ?? "builtin";
+    return upsertPromptConfig(configs, {
+      ...current,
+      activeMode: nextMode,
+      activeSource: nextMode === "advanced" ? "custom" : "default",
+      advancedConfig: { template: cleaned },
+      customTemplate: cleaned,
+      updatedAt: now
+    });
+  });
   return getAiPromptDetail(key);
 }
 
 export async function resetAiPromptConfig(key: AiWorkflowRunInput["workflowKey"]): Promise<AiPromptDetail> {
   const now = nowIso();
-  await store.update("aiPromptConfigs", (configs) => upsertPromptConfig(configs, {
-    key,
-    customTemplate: "",
-    activeSource: "default",
-    updatedAt: now
-  }));
+  await store.update("aiPromptConfigs", (configs) => {
+    const current = normalizePromptConfig(key, configs.find((item) => item.key === key));
+    return upsertPromptConfig(configs, {
+      ...current,
+      activeMode: "builtin",
+      activeSource: "default",
+      updatedAt: now
+    });
+  });
   return getAiPromptDetail(key);
 }
 
 export async function activateAiPrompt(key: AiWorkflowRunInput["workflowKey"], source: AiPromptSource): Promise<AiPromptDetail> {
+  return activateAiPromptMode(key, source === "custom" || source === "advanced" ? "advanced" : source === "guided" ? "guided" : "builtin");
+}
+
+export async function activateAiPromptMode(key: AiWorkflowRunInput["workflowKey"], mode: AiPromptMode): Promise<AiPromptDetail> {
   const now = nowIso();
   await store.update("aiPromptConfigs", (configs) => {
-    const current = configs.find((item) => item.key === key);
+    const current = normalizePromptConfig(key, configs.find((item) => item.key === key));
+    if (mode === "advanced" && validatePromptTemplate(key, current.advancedConfig?.template ?? "").some((item) => item.level === "error")) {
+      throw new Error("高级模板存在变量错误，无法启用。");
+    }
     return upsertPromptConfig(configs, {
-      key,
-      customTemplate: current?.customTemplate ?? "",
-      activeSource: source === "custom" && current?.customTemplate?.trim() ? "custom" : "default",
+      ...current,
+      activeMode: mode,
+      activeSource: mode === "advanced" ? "custom" : "default",
       updatedAt: now,
-      lastUsedAt: current?.lastUsedAt
+      lastUsedAt: current.lastUsedAt
     });
   });
   return getAiPromptDetail(key);
+}
+
+export async function previewAiPrompt(
+  key: AiWorkflowRunInput["workflowKey"],
+  input: {
+    mode?: AiPromptMode;
+    guidedConfig?: AiPromptGuidedConfig;
+    advancedTemplate?: string;
+    jobId?: string;
+    noteId?: string;
+    focus?: string;
+  } = {}
+): Promise<AiPromptPreview> {
+  const configs = await store.read("aiPromptConfigs");
+  const current = normalizePromptConfig(key, configs.find((item) => item.key === key));
+  const mode = input.mode ?? current.activeMode ?? "builtin";
+  const config: AiPromptConfig = {
+    ...current,
+    activeMode: mode,
+    guidedConfig: input.guidedConfig ? normalizeGuidedConfig(key, input.guidedConfig) : current.guidedConfig,
+    advancedConfig: { template: input.advancedTemplate ?? current.advancedConfig?.template ?? "" }
+  };
+  const context = await buildAiContext(input.jobId, input.noteId);
+  const prompt = buildWorkflowPromptForConfig(key, config, context, input.focus);
+  return {
+    mode,
+    prompt: prompt.prompt,
+    contextSummary: prompt.contextSummary,
+    validation: mode === "advanced" ? validatePromptTemplate(key, config.advancedConfig?.template ?? "") : []
+  };
 }
 
 export async function listAiArtifacts(jobId?: string): Promise<AiArtifact[]> {
@@ -515,18 +614,86 @@ async function resolveWorkflowPrompt(
   focus?: string
 ): Promise<ReturnType<typeof buildAiWorkflowPrompt>> {
   const configs = await store.read("aiPromptConfigs");
-  const config = configs.find((item) => item.key === key);
-  const useCustom = config?.activeSource === "custom" && Boolean(config.customTemplate?.trim());
-  const prompt = useCustom ? buildCustomWorkflowPrompt(key, config.customTemplate ?? "", context, focus) : buildAiWorkflowPrompt(key, context, focus);
+  const config = normalizePromptConfig(key, configs.find((item) => item.key === key));
+  const prompt = buildWorkflowPromptForConfig(key, config, context, focus);
   const now = nowIso();
   await store.update("aiPromptConfigs", (items) => upsertPromptConfig(items, {
-    key,
-    customTemplate: config?.customTemplate ?? "",
-    activeSource: useCustom ? "custom" : "default",
-    updatedAt: config?.updatedAt ?? now,
+    ...config,
+    activeSource: config.activeMode === "advanced" ? "custom" : "default",
+    updatedAt: config.updatedAt || now,
     lastUsedAt: now
   }));
   return prompt;
+}
+
+function buildWorkflowPromptForConfig(
+  key: AiWorkflowRunInput["workflowKey"],
+  config: AiPromptConfig,
+  context: AiContext,
+  focus?: string
+): ReturnType<typeof buildAiWorkflowPrompt> {
+  if (config.activeMode === "guided" && config.guidedConfig) {
+    return buildGuidedWorkflowPrompt(key, config.guidedConfig, context, focus);
+  }
+  if (config.activeMode === "advanced" && config.advancedConfig?.template?.trim()) {
+    const validation = validatePromptTemplate(key, config.advancedConfig.template);
+    if (!validation.some((item) => item.level === "error")) {
+      return buildAdvancedWorkflowPrompt(key, config.advancedConfig.template, context, focus);
+    }
+  }
+  return buildAiWorkflowPrompt(key, context, focus);
+}
+
+function normalizePromptConfig(key: AiWorkflowRunInput["workflowKey"], config?: AiPromptConfig): AiPromptConfig {
+  const advancedTemplate = config?.advancedConfig?.template ?? config?.customTemplate ?? "";
+  const activeMode = config?.activeMode ?? (config?.activeSource === "custom" && advancedTemplate.trim() ? "advanced" : "builtin");
+  const normalized: AiPromptConfig = {
+    key,
+    activeMode,
+    guidedConfig: normalizeGuidedConfig(key, config?.guidedConfig),
+    advancedConfig: { template: advancedTemplate },
+    customTemplate: advancedTemplate,
+    activeSource: activeMode === "advanced" ? "custom" : "default",
+    updatedAt: config?.updatedAt ?? "",
+    lastUsedAt: config?.lastUsedAt
+  };
+  return normalized;
+}
+
+function normalizeGuidedConfig(key: AiWorkflowRunInput["workflowKey"], config?: AiPromptGuidedConfig): AiPromptGuidedConfig {
+  const defaults = buildDefaultGuidedConfig(key);
+  const validKeys = new Set(getPromptVariables().map((variable) => variable.key));
+  const enabledVariables = [...new Set([...(config?.enabledVariables?.length ? config.enabledVariables : defaults.enabledVariables), "job", "focus"])]
+    .filter((variableKey) => validKeys.has(variableKey));
+  return {
+    role: config?.role?.trim() || defaults.role,
+    objective: config?.objective?.trim() || defaults.objective,
+    focusRules: normalizeTextList(config?.focusRules, defaults.focusRules),
+    forbiddenRules: normalizeTextList(config?.forbiddenRules, defaults.forbiddenRules),
+    outputSections: normalizeTextList(config?.outputSections, defaults.outputSections),
+    enabledVariables
+  };
+}
+
+function normalizeTextList(value: string[] | undefined, fallback: string[]): string[] {
+  const cleaned = value?.map((item) => item.trim()).filter(Boolean) ?? [];
+  return cleaned.length ? cleaned : fallback;
+}
+
+function activeTemplateForConfig(key: AiWorkflowRunInput["workflowKey"], config: AiPromptConfig): string {
+  if (config.activeMode === "advanced" && config.advancedConfig?.template?.trim()) {
+    return config.advancedConfig.template;
+  }
+  if (config.activeMode === "guided" && config.guidedConfig) {
+    return config.guidedConfig.enabledVariables.map((variableKey) => `{${variableKey}}`).join("\n");
+  }
+  return getDefaultPromptTemplate(key);
+}
+
+function promptSourceForMode(mode: AiPromptMode): AiPromptSource {
+  if (mode === "guided") return "guided";
+  if (mode === "advanced") return "advanced";
+  return "default";
 }
 
 function upsertPromptConfig(configs: AiPromptConfig[], next: AiPromptConfig): AiPromptConfig[] {

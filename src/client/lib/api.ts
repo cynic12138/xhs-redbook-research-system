@@ -8,7 +8,10 @@ import type {
   AiOrchestration,
   AiOrchestrationCreateInput,
   AiPromptDetail,
+  AiPromptGuidedConfig,
   AiPromptInfo,
+  AiPromptMode,
+  AiPromptPreview,
   AiPromptSource,
   AiReport,
   AiWorkflowDefinition,
@@ -164,8 +167,15 @@ export const api = {
   listAiPrompts: () => apiGet<AiPromptInfo[]>("/api/ai/prompts"),
   getAiPrompt: (key: AiWorkflowKey) => apiGet<AiPromptDetail>(`/api/ai/prompts/${key}`),
   saveAiPrompt: (key: AiWorkflowKey, customTemplate: string) => apiPut<AiPromptDetail>(`/api/ai/prompts/${key}`, { customTemplate }),
+  saveAiPromptGuided: (key: AiWorkflowKey, config: AiPromptGuidedConfig, activate?: boolean) =>
+    apiPut<AiPromptDetail>(`/api/ai/prompts/${key}/guided`, { config, activate }),
+  saveAiPromptAdvanced: (key: AiWorkflowKey, template: string, activate?: boolean) =>
+    apiPut<AiPromptDetail>(`/api/ai/prompts/${key}/advanced`, { template, activate }),
   resetAiPrompt: (key: AiWorkflowKey) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/reset`),
   activateAiPrompt: (key: AiWorkflowKey, source: AiPromptSource) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/activate`, { source }),
+  activateAiPromptMode: (key: AiWorkflowKey, mode: AiPromptMode) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/activate`, { mode }),
+  previewAiPrompt: (key: AiWorkflowKey, input: { mode?: AiPromptMode; guidedConfig?: AiPromptGuidedConfig; advancedTemplate?: string; jobId?: string; noteId?: string; focus?: string }) =>
+    apiPost<AiPromptPreview>(`/api/ai/prompts/${key}/preview`, input),
   runAiWorkflow: (input: AiWorkflowRunInput) => apiPost<AiArtifact>("/api/ai/workflows/run", input),
   assistantChat: (input: AiAssistantChatInput) => apiPost<AiAssistantChatResponse>("/api/ai/assistant/chat", input),
   createAiOrchestration: (input: AiOrchestrationCreateInput) => apiPost<AiOrchestration>("/api/ai/orchestrations", input),

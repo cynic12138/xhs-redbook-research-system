@@ -1,6 +1,9 @@
 import type {
+  AiPromptGuidedConfig,
   AiPromptInfo,
   AiPromptSource,
+  AiPromptValidationMessage,
+  AiPromptVariableInfo,
   AiWorkflowKey,
   AnalyticsReport,
   AuthorPostRecord,
@@ -113,20 +116,20 @@ const workflowPromptBuilders: Record<AiWorkflowKey, PromptBuilder> = {
   "note-writing": buildNoteWritingPrompt
 };
 
-const promptVariables = [
-  { key: "job", label: "任务信息", description: "当前关键词任务、排序、类型、进度。" },
-  { key: "overview", label: "数据总览", description: "笔记数、图文/视频数、平均点赞、总评论、总收藏。" },
-  { key: "keywords", label: "关键词指标", description: "关键词层级、Top1、Top10 均值、机会分等。" },
-  { key: "topNotes", label: "热门笔记", description: "当前任务内按热度排序的笔记样本。" },
-  { key: "topComments", label: "高赞评论", description: "与当前任务或选中笔记相关的评论样本。" },
-  { key: "authors", label: "作者榜", description: "作者粉丝、样本作品、均赞、爆发倍数等。" },
-  { key: "authorPosts", label: "作者作品样本", description: "作者近期作品标题和互动数据。" },
-  { key: "templates", label: "爆款模板候选", description: "本地规则提取的爆款分、钩子和内容类型。" },
-  { key: "selectedNote", label: "选中笔记", description: "当前选中的单篇笔记及正文、互动、媒体信息。" },
-  { key: "noteContent", label: "正文与媒体", description: "正文长度、正文预览、图片数量、视频状态。" },
-  { key: "engagement", label: "互动数据", description: "点赞、收藏、评论、分享和互动比例。" },
-  { key: "authorBaseline", label: "作者基线", description: "选中笔记作者的作品数、均赞、最高赞和样本。" },
-  { key: "focus", label: "补充要求", description: "用户在运行工作流时填写的关注点。" }
+const promptVariables: AiPromptVariableInfo[] = [
+  { key: "job", label: "任务信息", description: "当前关键词任务、排序、类型、进度。", tier: "required" },
+  { key: "overview", label: "数据总览", description: "笔记数、图文/视频数、平均点赞、总评论、总收藏。", tier: "recommended" },
+  { key: "keywords", label: "关键词指标", description: "关键词层级、Top1、Top10 均值、机会分等。", tier: "recommended" },
+  { key: "topNotes", label: "热门笔记", description: "当前任务内按热度排序的笔记样本。", tier: "recommended" },
+  { key: "topComments", label: "高赞评论", description: "与当前任务或选中笔记相关的评论样本。", tier: "recommended" },
+  { key: "authors", label: "作者榜", description: "作者粉丝、样本作品、均赞、爆发倍数等。", tier: "optional" },
+  { key: "authorPosts", label: "作者作品样本", description: "作者近期作品标题和互动数据。", tier: "optional" },
+  { key: "templates", label: "爆款模板候选", description: "本地规则提取的爆款分、钩子和内容类型。", tier: "optional" },
+  { key: "selectedNote", label: "选中笔记", description: "当前选中的单篇笔记及正文、互动、媒体信息。", tier: "optional" },
+  { key: "noteContent", label: "正文与媒体", description: "正文长度、正文预览、图片数量、视频状态。", tier: "optional" },
+  { key: "engagement", label: "互动数据", description: "点赞、收藏、评论、分享和互动比例。", tier: "optional" },
+  { key: "authorBaseline", label: "作者基线", description: "选中笔记作者的作品数、均赞、最高赞和样本。", tier: "optional" },
+  { key: "focus", label: "补充要求", description: "用户在运行工作流时填写的关注点。", tier: "required" }
 ];
 
 export function listAiPromptInfos(): AiPromptInfo[] {
@@ -157,11 +160,103 @@ export function buildCustomWorkflowPrompt(key: AiWorkflowKey, template: string, 
   };
 }
 
+export function buildAdvancedWorkflowPrompt(key: AiWorkflowKey, template: string, context: AiPromptContext, focus?: string): BuiltPrompt {
+  const info = getPromptInfo(key);
+  return {
+    prompt: renderPromptTemplate(template, context, focus),
+    promptKey: key,
+    promptTitle: info.title,
+    promptSource: "advanced",
+    promptVersion: `${AI_PROMPT_VERSION}-advanced`,
+    contextSummary: summarizeContext(context)
+  };
+}
+
+export function buildDefaultGuidedConfig(key: AiWorkflowKey): AiPromptGuidedConfig {
+  const info = getPromptInfo(key);
+  const enabledVariables = templateVariableKeys(defaultPromptTemplates[key]);
+  return {
+    role: `${info.title}助手`,
+    objective: info.description,
+    focusRules: [
+      "只基于系统读取的数据输出结论，不编造数字、作者、评论或平台规则。",
+      "把数据结论、用户需求和运营建议分开说明。",
+      "数据不足时明确标注缺口，不强行下判断。"
+    ],
+    forbiddenRules: [
+      "不建议自动发布、自动评论、自动点赞、自动收藏。",
+      "不输出无法从输入数据追溯的绝对化判断。",
+      "不使用夸大功效、医疗疗效、保证承诺等高风险表达。"
+    ],
+    outputSections: info.outputSections,
+    enabledVariables
+  };
+}
+
+export function buildGuidedWorkflowPrompt(
+  key: AiWorkflowKey,
+  config: AiPromptGuidedConfig,
+  context: AiPromptContext,
+  focus?: string
+): BuiltPrompt {
+  const info = getPromptInfo(key);
+  return {
+    prompt: renderGuidedPrompt(key, config, context, focus),
+    promptKey: key,
+    promptTitle: info.title,
+    promptSource: "guided",
+    promptVersion: `${AI_PROMPT_VERSION}-guided`,
+    contextSummary: summarizeContext(context)
+  };
+}
+
+export function validatePromptTemplate(key: AiWorkflowKey, template: string): AiPromptValidationMessage[] {
+  const messages: AiPromptValidationMessage[] = [];
+  const validKeys = new Set(promptVariables.map((variable) => variable.key));
+  const usedKeys = templateVariableKeys(template);
+  const defaultKeys = templateVariableKeys(defaultPromptTemplates[key]);
+
+  if (!template.trim()) {
+    messages.push({ level: "error", message: "高级模板不能为空。" });
+  }
+  if ((template.match(/\{/g)?.length ?? 0) !== (template.match(/\}/g)?.length ?? 0)) {
+    messages.push({ level: "error", message: "存在未闭合的花括号，请检查变量格式。" });
+  }
+
+  for (const keyName of usedKeys) {
+    if (!validKeys.has(keyName)) {
+      messages.push({
+        level: "error",
+        message: `未知变量：{${keyName}}。`,
+        variable: keyName,
+        suggestion: closestPromptVariable(keyName)
+      });
+    }
+  }
+
+  for (const keyName of defaultKeys) {
+    if (!usedKeys.includes(keyName)) {
+      const variable = promptVariables.find((item) => item.key === keyName);
+      messages.push({
+        level: variable?.tier === "required" ? "error" : "warning",
+        message: `当前模板未使用「${variable?.label ?? keyName}」，AI 可能拿不到这类资料。`,
+        variable: keyName
+      });
+    }
+  }
+
+  return messages;
+}
+
+export function templateVariableKeys(template: string): string[] {
+  return [...new Set([...template.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((match) => match[1]))];
+}
+
 export function getDefaultPromptTemplate(key: AiWorkflowKey): string {
   return defaultPromptTemplates[key];
 }
 
-export function getPromptVariables(): typeof promptVariables {
+export function getPromptVariables(): AiPromptVariableInfo[] {
   return promptVariables;
 }
 
@@ -963,9 +1058,56 @@ function summarizeContext(context: AiPromptContext): string {
   ].join(" · ");
 }
 
+function renderGuidedPrompt(key: AiWorkflowKey, config: AiPromptGuidedConfig, context: AiPromptContext, focus?: string): string {
+  const info = getPromptInfo(key);
+  const values = promptTemplateValues(context, focus);
+  const variableMap = new Map(promptVariables.map((variable) => [variable.key, variable]));
+  const enabledVariables = config.enabledVariables.length ? config.enabledVariables : buildDefaultGuidedConfig(key).enabledVariables;
+  const dataLines = enabledVariables
+    .filter((variableKey) => variableMap.has(variableKey))
+    .map((variableKey) => {
+      const variable = variableMap.get(variableKey);
+      return `### ${variable?.label ?? variableKey}\n${json(values[variableKey] ?? null)}`;
+    })
+    .join("\n\n");
+  const focusRules = config.focusRules.filter((item) => item.trim());
+  const forbiddenRules = config.forbiddenRules.filter((item) => item.trim());
+  const outputSections = config.outputSections.filter((item) => item.trim());
+
+  return `${baseInstruction(config.role.trim() || `${info.title}助手`)}
+
+工作目标：
+${config.objective.trim() || info.description}
+
+重点关注：
+${focusRules.map((rule) => `- ${rule}`).join("\n") || "- 结合输入数据给出可执行建议。"}
+
+系统会自动读取的资料：
+${dataLines || "暂无启用资料。"}
+
+安全规则：
+${forbiddenRules.map((rule) => `- ${rule}`).join("\n") || "- 不编造输入数据之外的信息。"}
+
+输出格式：
+# ${info.title}
+${outputSections.map((section, index) => `## ${index + 1}. ${section}`).join("\n") || info.outputSections.map((section, index) => `## ${index + 1}. ${section}`).join("\n")}
+
+质量检查：
+- 每个建议都要能追溯到输入数据。
+- 如果数据不足，明确写出“不足以判断”的地方。
+- 输出中文 Markdown。`;
+}
+
 function renderPromptTemplate(template: string, context: AiPromptContext, focus?: string): string {
+  const values = promptTemplateValues(context, focus);
+  return template.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? json(values[key]) : match
+  );
+}
+
+function promptTemplateValues(context: AiPromptContext, focus?: string): Record<string, unknown> {
   const selected = context.selectedNote;
-  const values: Record<string, unknown> = {
+  return {
     job: compactJob(context.job),
     overview: context.analytics?.overview ?? {},
     keywords: context.analytics?.keywords.slice(0, 12) ?? [],
@@ -980,9 +1122,14 @@ function renderPromptTemplate(template: string, context: AiPromptContext, focus?
     authorBaseline: authorBaseline(context),
     focus: focus?.trim() || "给出可执行建议，并标注依据来自哪些数据。"
   };
-  return template.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (match, key: string) =>
-    Object.prototype.hasOwnProperty.call(values, key) ? json(values[key]) : match
-  );
+}
+
+function closestPromptVariable(key: string): string | undefined {
+  const normalized = key.toLowerCase();
+  return promptVariables.find((variable) => {
+    const variableKey = variable.key.toLowerCase();
+    return variableKey.includes(normalized) || normalized.includes(variableKey.replace(/s$/, ""));
+  })?.key;
 }
 
 function getPromptInfo(key: AiWorkflowKey): AiPromptInfo {

@@ -2714,6 +2714,11 @@ body {
 
 .prompt-editor-panel {
   gap: 10px;
+  overflow: auto;
+}
+
+.prompt-center-grid > .prompt-editor-panel {
+  overflow: auto;
 }
 
 .prompt-center-grid > .surface,
@@ -2761,6 +2766,186 @@ body {
 .panel-subhead span {
   color: #687386;
   font-size: 12px;
+}
+
+.prompt-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prompt-mode-tabs button {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: #354154;
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.prompt-mode-tabs button.active {
+  border-color: #ff335f;
+  color: #de214d;
+  background: #fff0f4;
+}
+
+.prompt-guided-workspace,
+.prompt-preview-workspace {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+}
+
+.prompt-config-block,
+.prompt-variable-panel,
+.prompt-status-card,
+.prompt-validation-list {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.prompt-config-block textarea,
+.prompt-config-block input {
+  width: 100%;
+}
+
+.prompt-data-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prompt-data-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e4eaf2;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.prompt-data-card.active {
+  border-color: #ffc2d0;
+  background: #fff7fa;
+}
+
+.prompt-data-card span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prompt-data-card small,
+.prompt-status-card small {
+  color: #687386;
+  line-height: 1.45;
+}
+
+.prompt-data-card em {
+  align-self: start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #526070;
+  background: #eef3f8;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.prompt-lines-editor {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.prompt-advanced-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.prompt-variable-panel {
+  align-content: start;
+  min-height: 0;
+}
+
+.prompt-variable-panel .variable-list {
+  margin-top: 0;
+}
+
+.prompt-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prompt-preview-toolbar > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.prompt-preview-toolbar span,
+.prompt-preview-meta {
+  color: #687386;
+  font-size: 12px;
+}
+
+.prompt-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prompt-preview-body {
+  min-height: 520px;
+  max-height: 68vh;
+  margin: 0;
+  padding: 14px;
+  border-radius: 8px;
+  color: #e2e8f0;
+  background: #101827;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.prompt-check-stack {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.prompt-status-card span {
+  color: #de214d;
+  font-weight: 800;
+}
+
+.validation-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  color: #7c5b11;
+  background: #fff8e5;
+  font-size: 12px;
+}
+
+.validation-row.error {
+  color: #b42342;
+  background: #fff0f4;
+}
+
+.validation-row.ok {
+  color: #047857;
+  background: #ecfdf5;
 }
 
 .prompt-text-panel {
@@ -2994,6 +3179,10 @@ body {
     resize: vertical;
   }
 
+  .prompt-advanced-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .prompt-artifacts-panel {
     grid-column: 1 / -1;
   }
@@ -3014,8 +3203,23 @@ body {
   }
 
   .guide-steps,
+  .prompt-data-card-grid,
   .audience-signal-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prompt-control-head,
+  .prompt-preview-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .prompt-control-head {
+    display: grid;
+  }
+
+  .prompt-preview-toolbar {
+    display: grid;
   }
 }
 
@@ -4132,6 +4336,17 @@ label {
 
   .workbench {
     padding: 8px;
+  }
+
+  .prompt-mode-tabs,
+  .prompt-data-card,
+  .validation-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prompt-preview-body,
+  .prompt-text-panel .prompt-editor {
+    min-height: 360px;
   }
 
   .metric-row {
