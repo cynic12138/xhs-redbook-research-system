@@ -83,7 +83,7 @@
 - `draft-review`：AI 审稿员。
 - `note-writing`：小红书笔记撰写。
 
-工作流产物继续写入 `aiArtifacts`，因此 AI 工作台、导出和 AI 工作说明可以复用现有能力。
+工作流产物继续写入 `aiArtifacts`，因此 AI 工作台、导出和提示词可以复用现有能力。
 
 ## 前端入口
 

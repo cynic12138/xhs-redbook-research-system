@@ -299,7 +299,7 @@ const modules: Array<{ key: ModuleKey; label: string; icon: ReactNode }> = [
   { key: "competitors", label: "竞品分析", icon: <Layers size={18} /> },
   { key: "comments", label: "评论运营", icon: <MessageSquareReply size={18} /> },
   { key: "content", label: "内容创作台", icon: <FileText size={18} /> },
-  { key: "prompts", label: "AI 工作说明", icon: <KeyRound size={18} /> },
+  { key: "prompts", label: "提示词", icon: <KeyRound size={18} /> },
   { key: "ai", label: "AI 工作台", icon: <Bot size={18} /> }
 ];
 
@@ -2317,8 +2317,8 @@ function ResearchPage(props: {
           title="下一步"
           lines={[
             "抓取完成后优先看关键词机会分和收藏/点赞比。",
-            "点击“生成内容策划”会使用当前启用的选题策划工作说明。",
-            "产物会自动进入 AI 工作台，可在 AI 工作说明里查看它来自哪套说明。"
+            "点击“生成内容策划”会使用当前启用的选题策划提示词。",
+            "产物会自动进入 AI 工作台，可在提示词里查看它来自哪套提示词。"
           ]}
         />
       </section>
@@ -2890,7 +2890,7 @@ function ViralPage({
               lines={[
                 "点击“AI 深度拆解”会围绕当前选中笔记生成爆点、标题钩子、正文结构、评论心理和可复刻 brief。",
                 "点击“生成模板库”会从多篇高分样本里提炼标题公式、正文框架和选题复用方式。",
-                "AI 产物会进入 AI 工作台，并标记它使用的工作说明，后续可以继续编辑说明再生成。"
+                "AI 产物会进入 AI 工作台，并标记它使用的提示词，后续可以继续编辑提示词再生成。"
               ]}
             />
           </div>
@@ -3806,7 +3806,7 @@ function PromptCenterPage({
   return (
     <div className="prompt-center-grid">
       <section className="surface prompt-list-panel">
-        <SectionTitle icon={<KeyRound size={18} />} title="AI 工作说明" />
+        <SectionTitle icon={<KeyRound size={18} />} title="提示词" />
         <div className="prompt-card-list">
           {prompts.map((prompt) => (
             <button
@@ -3816,7 +3816,7 @@ function PromptCenterPage({
             >
               <div>
                 <strong>{prompt.title}</strong>
-                <span>{prompt.promptSource === "custom" ? "使用我的版本" : "使用内置版本"}</span>
+                <span>{prompt.promptSource === "custom" ? "使用我的提示词" : "使用内置提示词"}</span>
               </div>
               <small>{prompt.description}</small>
               <small>{promptVersionLabel(prompt.version)} · 已生成 {prompt.artifactCount ?? 0} 个产物</small>
@@ -3829,7 +3829,7 @@ function PromptCenterPage({
       <section className="surface prompt-editor-panel">
         <SectionTitle
           icon={<FileText size={18} />}
-          title={selectedPrompt ? `${selectedPrompt.title} · 工作说明` : "AI 工作说明详情"}
+          title={selectedPrompt ? `${selectedPrompt.title} · 提示词` : "提示词详情"}
         />
         {selectedPrompt ? (
           <div className="prompt-editor-layout">
@@ -3838,18 +3838,18 @@ function PromptCenterPage({
                 <div>
                   <strong>{selectedPrompt.title}</strong>
                   <span>{selectedPrompt.description}</span>
-                  <span>当前使用：{selectedPrompt.promptSource === "custom" ? "我的自定义说明" : "系统内置说明"} · {promptVersionLabel(selectedPrompt.version)} · 已生成 {selectedPrompt.artifactCount ?? 0} 个产物</span>
+                  <span>当前使用：{selectedPrompt.promptSource === "custom" ? "我的自定义提示词" : "系统内置提示词"} · {promptVersionLabel(selectedPrompt.version)} · 已生成 {selectedPrompt.artifactCount ?? 0} 个产物</span>
                 </div>
                 <div className="button-row">
                   <button className="ghost-button compact" onClick={() => void activatePrompt("default")} disabled={busy.startsWith("prompt-activate")}>
-                    使用内置说明
+                    使用内置提示词
                   </button>
                   <button className="ghost-button compact" onClick={() => void activatePrompt("custom")} disabled={!selectedPrompt.customTemplate || busy.startsWith("prompt-activate")}>
-                    使用我的说明
+                    使用我的提示词
                   </button>
                   <button className="ghost-button compact danger" onClick={() => void resetPrompt()} disabled={busy === `prompt-reset-${selectedKey}`}>
                     <RefreshCw size={14} />
-                    恢复内置说明
+                    恢复内置提示词
                   </button>
                   <button className="primary-button compact" onClick={() => void savePrompt()} disabled={!promptDraft.trim() || busy === `prompt-save-${selectedKey}`}>
                     {busy === `prompt-save-${selectedKey}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
@@ -3885,14 +3885,14 @@ function PromptCenterPage({
             </div>
             <div className="prompt-text-panel">
               <div className="panel-subhead">
-                <strong>工作说明正文</strong>
-                <span>高级编辑区：保存后点击“使用我的说明”即可生效。</span>
+                <strong>提示词正文</strong>
+                <span>高级编辑区：保存后点击“使用我的提示词”即可生效。</span>
               </div>
               <textarea className="prompt-editor" value={promptDraft} onChange={(event) => setPromptDraft(event.target.value)} />
             </div>
           </div>
         ) : (
-          <EmptyState text="选择一套 AI 工作说明查看和编辑" />
+          <EmptyState text="选择一套提示词查看和编辑" />
         )}
       </section>
 
@@ -3902,10 +3902,10 @@ function PromptCenterPage({
           {relatedArtifacts.slice(0, 10).map((artifact) => (
             <button key={artifact.id} className="compact-list-row" onClick={() => openArtifact(artifact.id)}>
               <strong>{artifact.title}</strong>
-              <small>{artifact.promptSource === "custom" ? "我的说明" : "内置说明"} · {new Date(artifact.createdAt).toLocaleString()}</small>
+              <small>{artifact.promptSource === "custom" ? "我的提示词" : "内置提示词"} · {new Date(artifact.createdAt).toLocaleString()}</small>
             </button>
           ))}
-          {!relatedArtifacts.length && <EmptyState text="这个工作说明还没有生成过产物" />}
+          {!relatedArtifacts.length && <EmptyState text="这套提示词还没有生成过产物" />}
         </div>
       </section>
     </div>
@@ -3981,8 +3981,8 @@ function AiWorkbenchPage(props: {
           markdown: selectedArtifact.markdown,
           meta: [
             selectedArtifact.source === "ai" ? "AI 生成" : "本地规则",
-            selectedArtifact.promptTitle ? `工作说明：${selectedArtifact.promptTitle}` : "",
-            selectedArtifact.promptSource === "custom" ? "我的说明" : selectedArtifact.promptSource === "default" ? "内置说明" : "",
+            selectedArtifact.promptTitle ? `提示词：${selectedArtifact.promptTitle}` : "",
+            selectedArtifact.promptSource === "custom" ? "我的提示词" : selectedArtifact.promptSource === "default" ? "内置提示词" : "",
             selectedArtifact.promptVersion ? promptVersionLabel(selectedArtifact.promptVersion) : "",
             selectedArtifact.contextSummary ?? ""
           ].filter(Boolean),
@@ -4025,7 +4025,7 @@ function AiWorkbenchPage(props: {
                   <button className="resource-select" onClick={() => selectArtifact(artifact.id)}>
                     <strong>{artifact.title}</strong>
                     <small>{artifact.source === "ai" ? "AI 生成" : "本地规则"} · {new Date(artifact.createdAt).toLocaleString()}</small>
-                    {artifact.promptTitle && <small>工作说明 · {artifact.promptTitle}</small>}
+                    {artifact.promptTitle && <small>提示词 · {artifact.promptTitle}</small>}
                   </button>
                   <div className="resource-actions">
                     <a className="ghost-button compact" href={`/api/ai/artifacts/${artifact.id}/export`} aria-label={`导出 ${artifact.title}`}>
@@ -4059,14 +4059,14 @@ function AiWorkbenchPage(props: {
           </div>
           <div className="ai-left-section">
             <div className="section-mini-head">
-              <strong>AI 工作说明</strong>
-              <span>说明 {props.prompts.length}</span>
+              <strong>提示词</strong>
+              <span>提示词 {props.prompts.length}</span>
             </div>
             <div className="prompt-mini-list">
               {props.prompts.map((prompt) => (
                 <button key={prompt.key} className="prompt-version-row" onClick={() => props.openPrompt(prompt.key)}>
                   <span>{prompt.title}</span>
-                  <small>{promptVersionLabel(prompt.version)} · {prompt.promptSource === "custom" ? "我的说明" : "内置说明"}</small>
+                  <small>{promptVersionLabel(prompt.version)} · {prompt.promptSource === "custom" ? "我的提示词" : "内置提示词"}</small>
                 </button>
               ))}
             </div>
@@ -4092,8 +4092,8 @@ function AiWorkbenchPage(props: {
         <div className="side-panel-stack">
           {selectedArtifact ? (
             <div className="artifact-context">
-              <StatusRow label="工作说明" value={selectedArtifact.promptTitle ?? "未记录"} ok={Boolean(selectedArtifact.promptTitle)} />
-              <StatusRow label="来源" value={selectedArtifact.promptSource === "custom" ? "我的说明" : "内置/未记录"} ok={selectedArtifact.promptSource === "custom"} />
+              <StatusRow label="提示词" value={selectedArtifact.promptTitle ?? "未记录"} ok={Boolean(selectedArtifact.promptTitle)} />
+              <StatusRow label="来源" value={selectedArtifact.promptSource === "custom" ? "我的提示词" : "内置/未记录"} ok={selectedArtifact.promptSource === "custom"} />
               <StatusRow label="模板" value={selectedArtifact.promptVersion ? promptVersionLabel(selectedArtifact.promptVersion) : "未记录"} ok={Boolean(selectedArtifact.promptVersion)} />
               <StatusRow label="状态" value={selectedArtifact.status} ok={selectedArtifact.status === "completed"} />
             </div>
@@ -4104,7 +4104,7 @@ function AiWorkbenchPage(props: {
               <StatusRow label="状态" value={selectedReport.status} ok={selectedReport.status === "completed"} />
             </div>
           ) : (
-            <EmptyState text="选择产物后查看工作说明、模型和上下文信息" />
+            <EmptyState text="选择产物后查看提示词、模型和上下文信息" />
           )}
           <div className="report-generator-card">
             <strong>生成 Markdown 报告</strong>
@@ -4156,7 +4156,7 @@ function ArtifactReader({
             {selectedArtifact?.promptKey && selectedArtifact.promptKey !== "assistant" && selectedArtifact.promptKey !== "report" && (
               <button className="ghost-button compact" onClick={() => openPrompt(selectedArtifact.promptKey as AiWorkflowKey)}>
                 <KeyRound size={14} />
-                查看工作说明
+                查看提示词
               </button>
             )}
             {selectedArtifactWorkflow && (
@@ -5510,7 +5510,7 @@ function contentArtifactTypeLabel(workflowKey: AiArtifact["workflowKey"]): strin
 
 function promptVersionLabel(version: string): string {
   if (version.includes("custom")) {
-    return "我的自定义说明";
+    return "我的自定义提示词";
   }
   if (version.startsWith("xhs-ops")) {
     return "内置运营模板";
