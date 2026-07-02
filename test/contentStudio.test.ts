@@ -6,9 +6,11 @@ import { LocalStore } from "../src/server/storage/localStore.js";
 import {
   generateContentDraft,
   deleteContentPlaybook,
+  listContentPlaybookRevisions,
   listContentPlaybooks,
   reviewContentDraft,
   reviewContentDraftBatch,
+  restoreContentPlaybookRevision,
   saveContentPlaybook,
   scanContentDraft
 } from "../src/server/services/contentStudioService.js";
@@ -83,6 +85,35 @@ describe("content studio service", () => {
     expect(updated.personas).toEqual([]);
     expect(updated.scenarios).toEqual([]);
     expect(updated.tags).toEqual([]);
+  });
+
+  it("keeps playbook revisions and can restore an older snapshot", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const created = await saveContentPlaybook({
+      name: "版本规则",
+      productName: "蜂蜜露",
+      forbiddenTerms: ["封神"],
+      sensitiveClaims: ["治疗"]
+    }, undefined, store);
+    await saveContentPlaybook({
+      name: "版本规则",
+      productName: "蜂蜜露",
+      forbiddenTerms: ["闭眼冲"],
+      sensitiveClaims: ["通便特效"]
+    }, created.id, store);
+
+    const revisions = await listContentPlaybookRevisions(created.id, store);
+    expect(revisions).toHaveLength(2);
+    expect(revisions[0]?.snapshot.forbiddenTerms).toEqual(["闭眼冲"]);
+    expect(revisions[1]?.snapshot.forbiddenTerms).toEqual(["封神"]);
+
+    const restored = await restoreContentPlaybookRevision(created.id, revisions[1]!.id, store);
+    expect(restored.forbiddenTerms).toEqual(["封神"]);
+    expect(restored.sensitiveClaims).toEqual(["治疗"]);
+    expect(await listContentPlaybookRevisions(created.id, store)).toHaveLength(3);
+
+    await deleteContentPlaybook(created.id, store);
+    expect(await listContentPlaybookRevisions(created.id, store)).toEqual([]);
   });
 
   it("creates a review artifact without an AI model", async () => {

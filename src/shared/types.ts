@@ -548,6 +548,13 @@ export interface ContentPlaybook {
   updatedAt: string;
 }
 
+export interface ContentPlaybookRevision {
+  id: string;
+  playbookId: string;
+  snapshot: ContentPlaybook;
+  createdAt: string;
+}
+
 export interface ContentPlaybookInput {
   name: string;
   productName: string;

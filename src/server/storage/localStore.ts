@@ -17,6 +17,7 @@ import type {
   CommentRecord,
   ContentDraft,
   ContentPlaybook,
+  ContentPlaybookRevision,
   ContentReviewRun,
   FavoriteNoteRecord,
   HealthReportRecord,
@@ -49,6 +50,7 @@ type CollectionName =
   | "boards"
   | "favoriteNotes"
   | "contentPlaybooks"
+  | "contentPlaybookRevisions"
   | "contentDrafts"
   | "contentReviews"
   | "rateLimit";
@@ -75,6 +77,7 @@ interface DataShape {
   boards: BoardRecord[];
   favoriteNotes: FavoriteNoteRecord[];
   contentPlaybooks: ContentPlaybook[];
+  contentPlaybookRevisions: ContentPlaybookRevision[];
   contentDrafts: ContentDraft[];
   contentReviews: ContentReviewRun[];
   rateLimit: {
@@ -105,6 +108,7 @@ const defaults: DataShape = {
   boards: [],
   favoriteNotes: [],
   contentPlaybooks: [],
+  contentPlaybookRevisions: [],
   contentDrafts: [],
   contentReviews: [],
   rateLimit: {

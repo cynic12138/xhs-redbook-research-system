@@ -5159,6 +5159,49 @@ label {
   line-height: 1.45;
 }
 
+.playbook-version-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.playbook-version-list {
+  display: grid;
+  gap: 8px;
+}
+
+.playbook-version-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.playbook-version-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.playbook-version-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.playbook-version-row small {
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .rule-card {
   display: grid;
   gap: 5px;
@@ -5241,6 +5284,10 @@ label {
   }
 
   .playbook-template-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-version-row {
     grid-template-columns: 1fr;
   }
 

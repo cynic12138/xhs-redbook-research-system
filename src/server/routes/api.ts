@@ -58,9 +58,11 @@ import {
   generateContentDraft,
   listContentDrafts,
   listContentPlaybooks,
+  listContentPlaybookRevisions,
   listContentReviews,
   reviewContentDraftBatch,
   reviewContentDraft,
+  restoreContentPlaybookRevision,
   runContentAssistant,
   saveContentPlaybook
 } from "../services/contentStudioService.js";
@@ -570,6 +572,22 @@ api.put("/content/playbooks/:id", async (req, res, next) => {
 api.delete("/content/playbooks/:id", async (req, res, next) => {
   try {
     res.json(await deleteContentPlaybook(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/content/playbooks/:id/revisions", async (req, res, next) => {
+  try {
+    res.json(await listContentPlaybookRevisions(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/content/playbooks/:id/revisions/:revisionId/restore", async (req, res, next) => {
+  try {
+    res.json(await restoreContentPlaybookRevision(req.params.id, req.params.revisionId));
   } catch (error) {
     next(error);
   }

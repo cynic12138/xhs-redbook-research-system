@@ -109,6 +109,51 @@ describe("API route contracts", () => {
     expect(deleteContentPlaybook).toHaveBeenCalledWith("playbook_existing");
   });
 
+  it("keeps content playbook revision routes stable", async () => {
+    const playbook = {
+      id: "playbook_contract",
+      name: "规则 A",
+      productName: "产品 A",
+      category: "小红书种草",
+      forbiddenTerms: ["封神"],
+      sensitiveClaims: ["治疗"],
+      allowedSellingPoints: [],
+      requiredSections: [],
+      toneWords: [],
+      personas: [],
+      scenarios: [],
+      tags: [],
+      replacements: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const revisions = [{
+      id: "playbook_rev_contract",
+      playbookId: playbook.id,
+      snapshot: playbook,
+      createdAt: "2026-07-01T01:00:00.000Z"
+    }];
+    const listContentPlaybookRevisions = vi.fn(async () => revisions);
+    const restoreContentPlaybookRevision = vi.fn(async () => playbook);
+    mockRouteDependencies({
+      contentStudioService: {
+        listContentPlaybookRevisions,
+        restoreContentPlaybookRevision
+      }
+    });
+    const app = await createApp();
+
+    const listResponse = await requestJson(app, "/api/content/playbooks/playbook_contract/revisions", { method: "GET" });
+    const restoreResponse = await requestJson(app, "/api/content/playbooks/playbook_contract/revisions/playbook_rev_contract/restore", { method: "POST" });
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body).toEqual(revisions);
+    expect(restoreResponse.status).toBe(200);
+    expect(restoreResponse.body).toEqual(playbook);
+    expect(listContentPlaybookRevisions).toHaveBeenCalledWith("playbook_contract");
+    expect(restoreContentPlaybookRevision).toHaveBeenCalledWith("playbook_contract", "playbook_rev_contract");
+  });
+
   it("keeps content playbook validation errors on the shared 400 error contract", async () => {
     const saveContentPlaybook = vi.fn();
     mockRouteDependencies({ contentStudioService: { saveContentPlaybook } });
@@ -196,9 +241,11 @@ function mockRouteDependencies(overrides: {
     generateContentDraft: vi.fn(),
     listContentDrafts: vi.fn(async () => []),
     listContentPlaybooks: vi.fn(async () => []),
+    listContentPlaybookRevisions: vi.fn(async () => []),
     listContentReviews: vi.fn(async () => []),
     reviewContentDraft: vi.fn(),
     reviewContentDraftBatch: vi.fn(),
+    restoreContentPlaybookRevision: vi.fn(),
     runContentAssistant: vi.fn(),
     saveContentPlaybook: vi.fn(),
     ...overrides.contentStudioService

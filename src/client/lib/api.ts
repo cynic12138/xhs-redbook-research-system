@@ -25,6 +25,7 @@ import type {
   ContentDraftResult,
   ContentPlaybook,
   ContentPlaybookInput,
+  ContentPlaybookRevision,
   ContentReviewBatchInput,
   ContentReviewBatchResult,
   ContentReviewInput,
@@ -115,6 +116,10 @@ export const api = {
   saveContentPlaybook: (input: ContentPlaybookInput, id?: string) =>
     id ? apiPut<ContentPlaybook>(`/api/content/playbooks/${encodeURIComponent(id)}`, input) : apiPost<ContentPlaybook>("/api/content/playbooks", input),
   deleteContentPlaybook: (id: string) => apiDelete<{ deleted: number }>(`/api/content/playbooks/${encodeURIComponent(id)}`),
+  listContentPlaybookRevisions: (id: string) =>
+    apiGet<ContentPlaybookRevision[]>(`/api/content/playbooks/${encodeURIComponent(id)}/revisions`),
+  restoreContentPlaybookRevision: (id: string, revisionId: string) =>
+    apiPost<ContentPlaybook>(`/api/content/playbooks/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revisionId)}/restore`),
   listContentDrafts: () => apiGet<ContentDraft[]>("/api/content/drafts"),
   generateContentDraft: (input: ContentDraftInput) => apiPost<ContentDraftResult>("/api/content/drafts", input),
   listContentReviews: () => apiGet<ContentReviewRun[]>("/api/content/reviews"),

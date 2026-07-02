@@ -52,6 +52,7 @@ import type {
   ContentDraft,
   ContentDraftLength,
   ContentPlaybook,
+  ContentPlaybookRevision,
   ContentReviewRun,
   HealthReportRecord,
   NoteScopeClearPreview,
@@ -110,6 +111,8 @@ type ContentStudioProps = {
   setPlaybookForm: (value: ContentPlaybookForm) => void;
   playbookDirty: boolean;
   setPlaybookDirty: (value: boolean) => void;
+  playbookRevisions: ContentPlaybookRevision[];
+  restorePlaybookRevision: (revisionId: string) => Promise<void>;
   briefForm: ContentBriefForm;
   setBriefForm: (value: ContentBriefForm) => void;
   reviewForm: ContentReviewForm;
@@ -304,6 +307,7 @@ export function App() {
   const [aiArtifacts, setAiArtifacts] = useState<AiArtifact[]>([]);
   const [contentPlaybooks, setContentPlaybooks] = useState<ContentPlaybook[]>([]);
   const [selectedContentPlaybookId, setSelectedContentPlaybookId] = useState("");
+  const [contentPlaybookRevisions, setContentPlaybookRevisions] = useState<ContentPlaybookRevision[]>([]);
   const [contentDrafts, setContentDrafts] = useState<ContentDraft[]>([]);
   const [contentReviews, setContentReviews] = useState<ContentReviewRun[]>([]);
   const [contentBriefForm, setContentBriefForm] = useState<ContentBriefForm>(defaultContentBriefForm);
@@ -472,6 +476,10 @@ export function App() {
     setPromptDraft(detail.customTemplate || detail.defaultTemplate);
   }, []);
 
+  const loadContentPlaybookRevisions = useCallback(async (playbookId: string) => {
+    setContentPlaybookRevisions(playbookId ? await api.listContentPlaybookRevisions(playbookId) : []);
+  }, []);
+
   useEffect(() => {
     setNotePage(1);
   }, [activeJobId, activeKeywordScopeId, authorQuery, minLikes, query, resultSort, resultType]);
@@ -484,6 +492,10 @@ export function App() {
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
   }, [refreshCore]);
+
+  useEffect(() => {
+    void loadContentPlaybookRevisions(selectedContentPlaybookId).catch(() => setContentPlaybookRevisions([]));
+  }, [loadContentPlaybookRevisions, selectedContentPlaybookId]);
 
   useEffect(() => {
     if (!auth.needsVerification || authVerifyAttempted) {
@@ -861,9 +873,11 @@ export function App() {
     if (refreshState.playbook) {
       setSelectedContentPlaybook(refreshState.selectedId);
       setContentPlaybookForm(playbookToForm(refreshState.playbook));
+      setContentPlaybookRevisions(await api.listContentPlaybookRevisions(refreshState.selectedId));
     } else {
       setSelectedContentPlaybook("");
       setContentPlaybookForm(defaultPlaybookForm);
+      setContentPlaybookRevisions([]);
     }
     setContentPlaybookDirtyState(false);
   }
@@ -898,6 +912,14 @@ export function App() {
     await run("content-playbook-delete", async () => {
       await api.deleteContentPlaybook(selectedContentPlaybookId);
       await refreshContentPlaybooksAfterChange();
+    });
+  }
+
+  async function restoreContentPlaybookRevisionForm(revisionId: string) {
+    if (!selectedContentPlaybookId) return;
+    await run("content-playbook-restore", async () => {
+      const restored = await api.restoreContentPlaybookRevision(selectedContentPlaybookId, revisionId);
+      await refreshContentPlaybooksAfterChange(restored.id);
     });
   }
 
@@ -1443,6 +1465,8 @@ export function App() {
             setPlaybookForm={setContentPlaybookForm}
             playbookDirty={contentPlaybookDirty}
             setPlaybookDirty={setContentPlaybookDirtyState}
+            playbookRevisions={contentPlaybookRevisions}
+            restorePlaybookRevision={restoreContentPlaybookRevisionForm}
             briefForm={contentBriefForm}
             setBriefForm={setContentBriefForm}
             reviewForm={contentReviewForm}
@@ -3094,7 +3118,7 @@ function ContentWritingPane(props: Pick<ContentStudioProps, "activeJob" | "brief
   );
 }
 
-function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "playbookForm" | "setPlaybookForm" | "playbookDirty" | "setPlaybookDirty" | "createPlaybook" | "deletePlaybook" | "savePlaybook" | "savePlaybookAsNew" | "busy">) {
+function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "playbookForm" | "setPlaybookForm" | "playbookDirty" | "setPlaybookDirty" | "playbookRevisions" | "restorePlaybookRevision" | "createPlaybook" | "deletePlaybook" | "savePlaybook" | "savePlaybookAsNew" | "busy">) {
   const updatePlaybook = (key: keyof ContentPlaybookForm, value: string) => {
     props.setPlaybookForm({ ...props.playbookForm, [key]: value });
     props.setPlaybookDirty(true);
@@ -3157,6 +3181,29 @@ function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selecte
             ))}
           </div>
         </div>
+        {props.selectedPlaybookId && (
+          <div className="playbook-version-panel">
+            <div className="section-mini-head">
+              <strong>版本记录</strong>
+              <span>{props.playbookRevisions.length ? `最近 ${props.playbookRevisions.length} 次保存` : "保存后自动生成版本"}</span>
+            </div>
+            <div className="playbook-version-list">
+              {props.playbookRevisions.slice(0, 6).map((revision, index) => (
+                <div key={revision.id} className="playbook-version-row">
+                  <div>
+                    <strong>{revision.snapshot.name}</strong>
+                    <small>{new Date(revision.createdAt).toLocaleString()} · 禁用 {revision.snapshot.forbiddenTerms.length} · 敏感 {revision.snapshot.sensitiveClaims.length}</small>
+                  </div>
+                  <button className="ghost-button compact" onClick={() => void props.restorePlaybookRevision(revision.id)} disabled={props.busy === "content-playbook-restore" || index === 0}>
+                    {props.busy === "content-playbook-restore" ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+                    {index === 0 ? "当前版本" : "回退"}
+                  </button>
+                </div>
+              ))}
+              {!props.playbookRevisions.length && <EmptyState text="当前规则还没有版本记录，保存后会自动生成。" />}
+            </div>
+          </div>
+        )}
         <div className="content-field-stack rules-editor-grid">
           <label><span>名称</span><input value={props.playbookForm.name} onChange={(event) => updatePlaybook("name", event.target.value)} /></label>
           <label><span>产品</span><input value={props.playbookForm.productName} onChange={(event) => updatePlaybook("productName", event.target.value)} /></label>

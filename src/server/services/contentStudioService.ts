@@ -12,6 +12,7 @@ import type {
   ContentIssueSeverity,
   ContentPlaybook,
   ContentPlaybookInput,
+  ContentPlaybookRevision,
   ContentReviewBatchInput,
   ContentReviewBatchResult,
   ContentReplacementRule,
@@ -83,6 +84,7 @@ const defaultSensitiveClaims = [
 
 const absolutePatterns = [/国家级/u, /最高级/u, /最佳/u, /顶级/u, /第一品牌/u, /百分百/u, /永久/u, /立刻见效/u];
 const hardSellPatterns = [/马上下单/u, /赶紧买/u, /闭眼冲/u, /不买后悔/u, /链接在/u, /全网最低/u];
+const maxPlaybookRevisionsPerPlaybook = 20;
 
 export async function listContentPlaybooks(localStore: StoreLike = store): Promise<ContentPlaybook[]> {
   return localStore.read("contentPlaybooks");
@@ -112,6 +114,7 @@ export async function saveContentPlaybook(input: ContentPlaybookInput, id?: stri
     const exists = items.some((item) => item.id === playbook.id);
     return exists ? items.map((item) => (item.id === playbook.id ? playbook : item)) : [playbook, ...items];
   });
+  await appendContentPlaybookRevision(playbook, localStore);
   return playbook;
 }
 
@@ -122,7 +125,36 @@ export async function deleteContentPlaybook(id: string, localStore: StoreLike = 
     deleted = items.length - next.length;
     return next;
   });
+  if (deleted) {
+    await localStore.update("contentPlaybookRevisions", (items) => items.filter((item) => item.playbookId !== id));
+  }
   return { deleted };
+}
+
+export async function listContentPlaybookRevisions(playbookId: string, localStore: StoreLike = store): Promise<ContentPlaybookRevision[]> {
+  const revisions = await localStore.read("contentPlaybookRevisions");
+  return revisions.filter((item) => item.playbookId === playbookId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function restoreContentPlaybookRevision(playbookId: string, revisionId: string, localStore: StoreLike = store): Promise<ContentPlaybook> {
+  const revision = (await listContentPlaybookRevisions(playbookId, localStore)).find((item) => item.id === revisionId);
+  if (!revision) {
+    throw new Error("规则库版本不存在。");
+  }
+  const current = (await localStore.read("contentPlaybooks")).find((item) => item.id === playbookId);
+  const now = nowIso();
+  const restored: ContentPlaybook = {
+    ...revision.snapshot,
+    id: playbookId,
+    createdAt: current?.createdAt ?? revision.snapshot.createdAt,
+    updatedAt: now
+  };
+  await localStore.update("contentPlaybooks", (items) => {
+    const exists = items.some((item) => item.id === playbookId);
+    return exists ? items.map((item) => (item.id === playbookId ? restored : item)) : [restored, ...items];
+  });
+  await appendContentPlaybookRevision(restored, localStore);
+  return restored;
 }
 
 export async function listContentDrafts(localStore: StoreLike = store): Promise<ContentDraft[]> {
@@ -441,6 +473,19 @@ function defaultReplacements(): ContentReplacementRule[] {
 async function resolvePlaybook(id: string | undefined, localStore: StoreLike): Promise<ContentPlaybook> {
   const playbooks = await listContentPlaybooks(localStore);
   return (id ? playbooks.find((item) => item.id === id) : undefined) ?? playbooks[0] ?? createDefaultPlaybook();
+}
+
+async function appendContentPlaybookRevision(playbook: ContentPlaybook, localStore: StoreLike): Promise<void> {
+  const revision: ContentPlaybookRevision = {
+    id: createId("playbook_rev"),
+    playbookId: playbook.id,
+    snapshot: playbook,
+    createdAt: nowIso()
+  };
+  await localStore.update("contentPlaybookRevisions", (items) => {
+    const samePlaybook = [revision, ...items.filter((item) => item.playbookId === playbook.id)].slice(0, maxPlaybookRevisionsPerPlaybook);
+    return [...samePlaybook, ...items.filter((item) => item.playbookId !== playbook.id)];
+  });
 }
 
 async function buildContentContext(jobId: string | undefined, localStore: StoreLike): Promise<ContentContext> {
