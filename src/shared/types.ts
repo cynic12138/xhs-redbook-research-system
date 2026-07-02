@@ -13,6 +13,7 @@ export type AiArtifactStatus = "completed" | "failed";
 export type AiArtifactSource = "ai" | "local";
 export type AiPromptSource = "default" | "custom" | "guided" | "advanced";
 export type AiPromptMode = "builtin" | "guided" | "advanced";
+export type AiPromptResetScope = "active" | "guided" | "advanced" | "all";
 export type AiPromptValidationLevel = "error" | "warning";
 export type AiOrchestrationStatus = "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled";
 export type AiOrchestrationStepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";

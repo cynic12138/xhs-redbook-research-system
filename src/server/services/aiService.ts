@@ -11,6 +11,7 @@ import type {
   AiPromptInfo,
   AiPromptMode,
   AiPromptPreview,
+  AiPromptResetScope,
   AiPromptSource,
   AiReport,
   AiWorkflowDefinition,
@@ -243,14 +244,31 @@ export async function saveAiPromptAdvancedConfig(
   return getAiPromptDetail(key);
 }
 
-export async function resetAiPromptConfig(key: AiWorkflowRunInput["workflowKey"]): Promise<AiPromptDetail> {
+export async function resetAiPromptConfig(
+  key: AiWorkflowRunInput["workflowKey"],
+  scope: AiPromptResetScope = "active"
+): Promise<AiPromptDetail> {
   const now = nowIso();
   await store.update("aiPromptConfigs", (configs) => {
     const current = normalizePromptConfig(key, configs.find((item) => item.key === key));
-    return upsertPromptConfig(configs, {
+    const next: AiPromptConfig = {
       ...current,
-      activeMode: "builtin",
-      activeSource: "default",
+      updatedAt: now
+    };
+    if (scope === "active" || scope === "all") {
+      next.activeMode = "builtin";
+    }
+    if (scope === "guided" || scope === "all") {
+      next.guidedConfig = buildDefaultGuidedConfig(key);
+    }
+    if (scope === "advanced" || scope === "all") {
+      const defaultTemplate = getDefaultPromptTemplate(key);
+      next.advancedConfig = { template: defaultTemplate };
+      next.customTemplate = defaultTemplate;
+    }
+    next.activeSource = next.activeMode === "advanced" ? "custom" : "default";
+    return upsertPromptConfig(configs, {
+      ...next,
       updatedAt: now
     });
   });

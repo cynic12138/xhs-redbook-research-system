@@ -45,6 +45,7 @@ import type {
   AiPromptInfo,
   AiPromptMode,
   AiPromptPreview,
+  AiPromptResetScope,
   AiPromptValidationMessage,
   AiPromptVariableInfo,
   AiReport,
@@ -1587,9 +1588,9 @@ export function App() {
     });
   }
 
-  async function resetPrompt() {
-    await run(`prompt-reset-${selectedPromptKey}`, async () => {
-      const detail = await api.resetAiPrompt(selectedPromptKey);
+  async function resetPrompt(scope: AiPromptResetScope = "active") {
+    await run(`prompt-reset-${selectedPromptKey}-${scope}`, async () => {
+      const detail = await api.resetAiPrompt(selectedPromptKey, scope);
       applyPromptDetail(detail);
       setAiPrompts(await api.listAiPrompts());
     });
@@ -3876,7 +3877,7 @@ function PromptCenterPage({
   busy: string;
   saveGuidedPrompt: (activate?: boolean) => Promise<void>;
   saveAdvancedPrompt: (activate?: boolean) => Promise<void>;
-  resetPrompt: () => Promise<void>;
+  resetPrompt: (scope?: AiPromptResetScope) => Promise<void>;
   loadPromptPreview: (mode: AiPromptMode) => Promise<void>;
   openArtifact: (artifactId: string) => void;
 }) {
@@ -3886,6 +3887,8 @@ function PromptCenterPage({
   const advancedValidation = selectedPrompt ? validatePromptDraft(selectedPrompt, advancedDraft) : [];
   const advancedHasErrors = advancedValidation.some((item) => item.level === "error");
   const saveBusy = busy.includes(`prompt-${promptTab}-save-${selectedKey}`) || busy.includes(`prompt-${previewMode}-save-${selectedKey}`);
+  const resetScope = promptTab === "advanced" ? "advanced" : promptTab === "guided" ? "guided" : "active";
+  const resetBusy = busy === `prompt-reset-${selectedKey}-${resetScope}`;
 
   function updateGuidedDraft(patch: Partial<AiPromptGuidedConfig>) {
     if (!guidedDraft) return;
@@ -3920,7 +3923,7 @@ function PromptCenterPage({
             >
               <div>
                 <strong>{prompt.title}</strong>
-                <span>{promptModeLabel(prompt.activeMode ?? promptSourceToMode(prompt.promptSource))}</span>
+                <span>当前运行：{promptModeLabel(prompt.activeMode ?? promptSourceToMode(prompt.promptSource))}</span>
               </div>
               <small>{prompt.description}</small>
               <small>{promptVersionLabel(prompt.version)} · 已生成 {prompt.artifactCount ?? 0} 个产物</small>
@@ -3945,9 +3948,9 @@ function PromptCenterPage({
                   <span>当前实际运行：{promptModeLabel(activeMode)} · 正在编辑：{promptTabLabel(promptTab)}{promptDirty ? " · 有未保存修改" : ""}</span>
                 </div>
                 <div className="button-row">
-                  <button className="ghost-button compact danger" onClick={() => void resetPrompt()} disabled={busy === `prompt-reset-${selectedKey}`}>
+                  <button className="ghost-button compact danger" onClick={() => void resetPrompt(resetScope)} disabled={resetBusy}>
                     <RefreshCw size={14} />
-                    恢复内置提示词
+                    {promptResetLabel(promptTab)}
                   </button>
                   {promptTab === "guided" && (
                     <>
@@ -3990,11 +3993,23 @@ function PromptCenterPage({
                     <strong>工作说明</strong>
                     <span>运营用户只需要编辑业务目标，不需要维护变量。</span>
                   </div>
-                  <div className="form-grid">
-                    <label>AI 角色<input value={guidedDraft.role} onChange={(event) => updateGuidedDraft({ role: event.target.value })} /></label>
-                    <label>工作目标<textarea value={guidedDraft.objective} onChange={(event) => updateGuidedDraft({ objective: event.target.value })} /></label>
-                    <label>重点关注<textarea value={guidedDraft.focusRules.join("\n")} onChange={(event) => updateGuidedDraft({ focusRules: splitLines(event.target.value) })} /></label>
-                    <label>安全规则<textarea value={guidedDraft.forbiddenRules.join("\n")} onChange={(event) => updateGuidedDraft({ forbiddenRules: splitLines(event.target.value) })} /></label>
+                  <div className="prompt-instruction-grid">
+                    <label className="prompt-instruction-field">
+                      <span>AI 角色</span>
+                      <textarea value={guidedDraft.role} onChange={(event) => updateGuidedDraft({ role: event.target.value })} />
+                    </label>
+                    <label className="prompt-instruction-field">
+                      <span>工作目标</span>
+                      <textarea value={guidedDraft.objective} onChange={(event) => updateGuidedDraft({ objective: event.target.value })} />
+                    </label>
+                    <label className="prompt-instruction-field">
+                      <span>重点关注</span>
+                      <textarea value={guidedDraft.focusRules.join("\n")} onChange={(event) => updateGuidedDraft({ focusRules: splitLines(event.target.value) })} />
+                    </label>
+                    <label className="prompt-instruction-field">
+                      <span>安全规则</span>
+                      <textarea value={guidedDraft.forbiddenRules.join("\n")} onChange={(event) => updateGuidedDraft({ forbiddenRules: splitLines(event.target.value) })} />
+                    </label>
                   </div>
                 </section>
                 <section className="prompt-config-block">
@@ -4029,7 +4044,7 @@ function PromptCenterPage({
                 <section className="prompt-text-panel">
                   <div className="panel-subhead">
                     <strong>高级模板</strong>
-                    <span>错误变量不能启用，普通用户建议使用普通配置。</span>
+                    <span>错误变量不能启用，普通用户建议使用工作说明。</span>
                   </div>
                   <textarea className="prompt-editor" value={advancedDraft} onChange={(event) => setAdvancedDraft(event.target.value)} />
                 </section>
@@ -4038,9 +4053,16 @@ function PromptCenterPage({
                     <strong>可插入变量</strong>
                     <span>仅高级模板使用</span>
                   </div>
-                  <div className="variable-list">
+                  <div className="prompt-variable-card-list">
                     {selectedPrompt.variables.map((variable) => (
-                      <button key={variable.key} className="ghost-button compact" onClick={() => insertAdvancedVariable(variable)}>{`{${variable.key}}`}</button>
+                      <button key={variable.key} className="prompt-variable-card" onClick={() => insertAdvancedVariable(variable)}>
+                        <span>
+                          <strong>{variable.label}</strong>
+                          <code>{`{${variable.key}}`}</code>
+                        </span>
+                        <small>{variable.description}</small>
+                        <em>{variableTierLabel(variable.tier)}</em>
+                      </button>
                     ))}
                   </div>
                   <PromptValidationList messages={advancedValidation} />
@@ -4084,7 +4106,7 @@ function PromptCenterPage({
             <div className="prompt-status-card">
               <strong>资料读取</strong>
               <span>{guidedDraft.enabledVariables.length} 项资料启用</span>
-              <small>普通配置由后端生成最终提示词，高级模板按变量替换。</small>
+              <small>工作说明由后端生成最终提示词，高级模板按变量替换。</small>
             </div>
             {promptTab === "advanced" && <PromptValidationList messages={advancedValidation} />}
           </div>
@@ -4117,7 +4139,7 @@ function promptSourceToMode(source?: AiPromptInfo["promptSource"]): AiPromptMode
 }
 
 function promptModeLabel(mode?: AiPromptMode): string {
-  if (mode === "guided") return "普通配置";
+  if (mode === "guided") return "工作说明";
   if (mode === "advanced") return "高级模板";
   return "系统内置";
 }
@@ -4125,11 +4147,17 @@ function promptModeLabel(mode?: AiPromptMode): string {
 function promptTabLabel(tab: PromptEditorTab): string {
   if (tab === "advanced") return "高级模板";
   if (tab === "preview") return "最终预览";
-  return "普通配置";
+  return "工作说明";
+}
+
+function promptResetLabel(tab: PromptEditorTab): string {
+  if (tab === "advanced") return "恢复高级模板默认";
+  if (tab === "preview") return "切回系统内置";
+  return "恢复工作说明默认";
 }
 
 function promptSourceLabel(source?: AiArtifact["promptSource"]): string {
-  if (source === "guided") return "普通配置";
+  if (source === "guided") return "工作说明";
   if (source === "advanced" || source === "custom") return "高级模板";
   return "系统内置";
 }

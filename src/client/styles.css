@@ -2814,6 +2814,32 @@ body {
   width: 100%;
 }
 
+.prompt-instruction-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.prompt-instruction-field {
+  display: grid;
+  grid-template-rows: auto minmax(116px, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.prompt-instruction-field span {
+  color: #354154;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.prompt-instruction-field textarea {
+  min-height: 116px;
+  height: 100%;
+  resize: vertical;
+  line-height: 1.55;
+}
+
 .prompt-data-card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2835,6 +2861,48 @@ body {
 .prompt-data-card.active {
   border-color: #ffc2d0;
   background: #fff7fa;
+}
+
+.prompt-data-card input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.prompt-data-card input[type="checkbox"]::before {
+  width: 5px;
+  height: 9px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  content: "";
+  transform: rotate(45deg) scale(0);
+  transform-origin: center;
+}
+
+.prompt-data-card input[type="checkbox"]:checked {
+  border-color: #ff335f;
+  background: #ff335f;
+}
+
+.prompt-data-card input[type="checkbox"]:checked::before {
+  transform: rotate(45deg) scale(1);
+}
+
+.prompt-data-card input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.prompt-data-card input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(255, 51, 95, 0.24);
+  outline-offset: 2px;
 }
 
 .prompt-data-card span {
@@ -2866,7 +2934,7 @@ body {
 
 .prompt-advanced-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 12px;
   min-height: 0;
 }
@@ -2876,8 +2944,72 @@ body {
   min-height: 0;
 }
 
-.prompt-variable-panel .variable-list {
-  margin-top: 0;
+.prompt-variable-card-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.prompt-variable-card {
+  appearance: none;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  width: 100%;
+  height: auto;
+  min-height: 92px;
+  padding: 10px;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  color: #243145;
+  background: #ffffff;
+  text-align: left;
+}
+
+.prompt-variable-card:hover,
+.prompt-variable-card:focus-visible {
+  border-color: #ff9aae;
+  background: #fff7fa;
+}
+
+.prompt-variable-card span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.prompt-variable-card strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-variable-card code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 12px;
+}
+
+.prompt-variable-card small {
+  color: #687386;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.prompt-variable-card em {
+  justify-self: start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #526070;
+  background: #eef3f8;
+  font-size: 12px;
+  font-style: normal;
 }
 
 .prompt-preview-toolbar {
@@ -3183,6 +3315,10 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .prompt-instruction-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .prompt-artifacts-panel {
     grid-column: 1 / -1;
   }
@@ -3203,6 +3339,7 @@ body {
   }
 
   .guide-steps,
+  .prompt-instruction-grid,
   .prompt-data-card-grid,
   .audience-signal-grid {
     grid-template-columns: minmax(0, 1fr);

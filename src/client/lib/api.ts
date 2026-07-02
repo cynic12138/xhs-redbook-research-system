@@ -12,6 +12,7 @@ import type {
   AiPromptInfo,
   AiPromptMode,
   AiPromptPreview,
+  AiPromptResetScope,
   AiPromptSource,
   AiReport,
   AiWorkflowDefinition,
@@ -171,7 +172,8 @@ export const api = {
     apiPut<AiPromptDetail>(`/api/ai/prompts/${key}/guided`, { config, activate }),
   saveAiPromptAdvanced: (key: AiWorkflowKey, template: string, activate?: boolean) =>
     apiPut<AiPromptDetail>(`/api/ai/prompts/${key}/advanced`, { template, activate }),
-  resetAiPrompt: (key: AiWorkflowKey) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/reset`),
+  resetAiPrompt: (key: AiWorkflowKey, scope?: AiPromptResetScope) =>
+    apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/reset`, scope ? { scope } : undefined),
   activateAiPrompt: (key: AiWorkflowKey, source: AiPromptSource) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/activate`, { source }),
   activateAiPromptMode: (key: AiWorkflowKey, mode: AiPromptMode) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/activate`, { mode }),
   previewAiPrompt: (key: AiWorkflowKey, input: { mode?: AiPromptMode; guidedConfig?: AiPromptGuidedConfig; advancedTemplate?: string; jobId?: string; noteId?: string; focus?: string }) =>

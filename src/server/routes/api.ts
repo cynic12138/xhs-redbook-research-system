@@ -894,7 +894,10 @@ api.put("/ai/prompts/:key", async (req, res, next) => {
 
 api.post("/ai/prompts/:key/reset", async (req, res, next) => {
   try {
-    res.json(await resetAiPromptConfig(aiPromptKey.parse(req.params.key)));
+    const body = z.object({
+      scope: z.enum(["active", "guided", "advanced", "all"]).optional()
+    }).parse(req.body ?? {});
+    res.json(await resetAiPromptConfig(aiPromptKey.parse(req.params.key), body.scope));
   } catch (error) {
     next(error);
   }
