@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteToBatchReviewItem, prependUniqueById, upsertById } from "../src/client/App.js";
+import { compactContentText, noteToBatchReviewItem, prependUniqueById, severityLabel, upsertById } from "../src/client/App.js";
 
 describe("client list merge helpers", () => {
   it("upserts one item to the front and removes its older copy", () => {
@@ -39,5 +39,17 @@ describe("client list merge helpers", () => {
       tags: "孕期好物, 日常分享",
       selected: true
     });
+  });
+
+  it("compacts review text previews", () => {
+    expect(compactContentText(" 第一段\n\n第二段  ", 20)).toBe("第一段 第二段");
+    expect(compactContentText("", 20)).toBe("暂无内容");
+    expect(compactContentText("1234567890", 6)).toBe("12345…");
+  });
+
+  it("labels review issue severity", () => {
+    expect(severityLabel("blocker")).toBe("必须修改");
+    expect(severityLabel("warning")).toBe("建议修改");
+    expect(severityLabel("info")).toBe("提示");
   });
 });

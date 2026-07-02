@@ -3125,13 +3125,36 @@ function ContentReviewSidePanel({ reviews, openArtifact }: { reviews: ContentRev
           <StatusRow label="高风险" value={`${reviews.filter((review) => review.risk === "high").length}`} ok={!reviews.some((review) => review.risk === "high")} />
           <StatusRow label="通过" value={`${reviews.filter((review) => review.risk === "pass").length}`} ok={reviews.some((review) => review.risk === "pass")} />
         </div>
-        <div className="resource-list compact-list">
+        <div className="review-card-list">
           {reviews.slice(0, 10).map((review) => (
-            <div key={review.id} className="resource-row">
-              <button className="resource-select" onClick={() => review.artifactId && openArtifact(review.artifactId)}>
-                <strong>{review.revisedTitle || review.originalTitle || "AI 审稿报告"}</strong>
-                <small>{contentRiskLabel(review.risk)} · {review.score}/100 · 问题 {review.issues.length}</small>
-                <small>{new Date(review.createdAt).toLocaleString()}</small>
+            <div key={review.id} className="review-result-card">
+              <div className="review-result-head">
+                <div>
+                  <strong>{review.revisedTitle || review.originalTitle || "AI 审稿报告"}</strong>
+                  <small>{new Date(review.createdAt).toLocaleString()}</small>
+                </div>
+                <span className={`review-risk-pill ${review.risk}`}>{contentRiskLabel(review.risk)} · {review.score}/100</span>
+              </div>
+              <div className="review-diff-grid">
+                <div>
+                  <span>原稿</span>
+                  <p>{compactContentText(review.originalBody, 120)}</p>
+                </div>
+                <div>
+                  <span>修改稿</span>
+                  <p>{compactContentText(review.revisedBody, 120)}</p>
+                </div>
+              </div>
+              <div className="review-issue-list">
+                {review.issues.slice(0, 3).map((issue) => (
+                  <span key={issue.id}>{severityLabel(issue.severity)} · {issue.category}{issue.evidence ? `：${issue.evidence}` : ""}</span>
+                ))}
+                {!review.issues.length && <span>未发现明显风险。</span>}
+                {review.issues.length > 3 && <span>另有 {review.issues.length - 3} 个问题，打开报告查看完整清单。</span>}
+              </div>
+              <button className="ghost-button compact" onClick={() => review.artifactId && openArtifact(review.artifactId)} disabled={!review.artifactId}>
+                <FileText size={14} />
+                打开完整报告
               </button>
             </div>
           ))}
@@ -4746,6 +4769,23 @@ function contentRiskLabel(risk: ContentReviewRun["risk"]): string {
   if (risk === "low") return "低风险";
   if (risk === "medium") return "中风险";
   return "高风险";
+}
+
+export function severityLabel(severity: ContentReviewRun["issues"][number]["severity"]): string {
+  if (severity === "blocker") return "必须修改";
+  if (severity === "warning") return "建议修改";
+  return "提示";
+}
+
+export function compactContentText(value: string, maxLength: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (!compact) {
+    return "暂无内容";
+  }
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+  return `${compact.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
 function isControlledOrchestrationRequest(content: string): boolean {
