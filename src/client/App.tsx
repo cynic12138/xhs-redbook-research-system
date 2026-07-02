@@ -3221,22 +3221,65 @@ function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selecte
 }
 
 function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews" | "artifacts" | "openArtifact">) {
+  const contentArtifacts = getContentArtifacts(props.artifacts);
+  const counts = contentResultCounts(props.drafts, props.reviews, props.artifacts);
   return (
     <div className="content-studio-grid results-grid">
-      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} />
+      <section className="surface content-side-panel">
+        <SectionTitle icon={<Gauge size={18} />} title="结果概览" />
+        <div className="content-result-stack">
+          <div className="artifact-context">
+            <StatusRow label="草稿" value={`${counts.drafts}`} ok={counts.drafts > 0} />
+            <StatusRow label="已审稿" value={`${counts.reviews}`} ok={counts.reviews > 0} />
+            <StatusRow label="高风险" value={`${counts.highRiskReviews}`} ok={counts.highRiskReviews === 0} />
+            <StatusRow label="AI 产物" value={`${counts.contentArtifacts}`} ok={counts.contentArtifacts > 0} />
+          </div>
+          <div className="section-mini-head">
+            <strong>AI 产物</strong>
+            <span>{contentArtifacts.length ? "可跳转到 AI 工作台查看全文" : "生成或审稿后自动归档"}</span>
+          </div>
+          <div className="resource-list result-artifact-list">
+            {contentArtifacts.slice(0, 8).map((artifact) => (
+              <div key={artifact.id} className="resource-row">
+                <button className="resource-select" onClick={() => props.openArtifact(artifact.id)}>
+                  <strong>{artifact.title}</strong>
+                  <small>{contentArtifactTypeLabel(artifact.workflowKey)} · {new Date(artifact.createdAt).toLocaleString()}</small>
+                  <small>{compactContentText(artifact.contextSummary || artifact.markdown, 72)}</small>
+                </button>
+              </div>
+            ))}
+            {!contentArtifacts.length && <EmptyState text="暂无内容产物" />}
+          </div>
+        </div>
+      </section>
       <section className="surface content-primary-panel">
-        <SectionTitle icon={<FileText size={18} />} title="草稿归档" />
-        <div className="resource-list">
-          {props.drafts.map((draft) => (
-            <div key={draft.id} className="resource-row">
-              <button className="resource-select" onClick={() => draft.artifactId && props.openArtifact(draft.artifactId)}>
-                <strong>{draft.title}</strong>
-                <small>{draft.source === "ai" ? "AI 生成" : "本地规则"} · {new Date(draft.createdAt).toLocaleString()}</small>
-                <small>{draft.tags.map((tag) => `#${tag}`).join(" ")}</small>
-              </button>
+        <SectionTitle icon={<FileText size={18} />} title="结果归档" />
+        <div className="content-archive-grid">
+          <div className="content-archive-section">
+            <div className="section-mini-head">
+              <strong>草稿</strong>
+              <span>{counts.reviewedDrafts ? `${counts.reviewedDrafts} 篇已审` : "生成草稿后可继续审稿"}</span>
             </div>
-          ))}
-          {!props.drafts.length && <EmptyState text="暂无草稿" />}
+            <div className="resource-list">
+              {props.drafts.map((draft) => (
+                <div key={draft.id} className="resource-row">
+                  <button className="resource-select" onClick={() => draft.artifactId && props.openArtifact(draft.artifactId)} disabled={!draft.artifactId}>
+                    <strong>{draft.title}</strong>
+                    <small>{draft.source === "ai" ? "AI 生成" : "本地规则"} · {draft.status === "reviewed" ? "已审稿" : "草稿"} · {new Date(draft.createdAt).toLocaleString()}</small>
+                    <small>{draft.tags.map((tag) => `#${tag}`).join(" ") || compactContentText(draft.body, 72)}</small>
+                  </button>
+                </div>
+              ))}
+              {!props.drafts.length && <EmptyState text="暂无草稿" />}
+            </div>
+          </div>
+          <div className="content-archive-section">
+            <div className="section-mini-head">
+              <strong>审稿</strong>
+              <span>{counts.passedReviews ? `${counts.passedReviews} 篇通过` : "审稿后显示风险与修改稿"}</span>
+            </div>
+            <ContentReviewList reviews={props.reviews.slice(0, 8)} openArtifact={props.openArtifact} />
+          </div>
         </div>
       </section>
     </div>
@@ -3253,43 +3296,49 @@ function ContentReviewSidePanel({ reviews, openArtifact }: { reviews: ContentRev
           <StatusRow label="高风险" value={`${reviews.filter((review) => review.risk === "high").length}`} ok={!reviews.some((review) => review.risk === "high")} />
           <StatusRow label="通过" value={`${reviews.filter((review) => review.risk === "pass").length}`} ok={reviews.some((review) => review.risk === "pass")} />
         </div>
-        <div className="review-card-list">
-          {reviews.slice(0, 10).map((review) => (
-            <div key={review.id} className="review-result-card">
-              <div className="review-result-head">
-                <div>
-                  <strong>{review.revisedTitle || review.originalTitle || "AI 审稿报告"}</strong>
-                  <small>{new Date(review.createdAt).toLocaleString()}</small>
-                </div>
-                <span className={`review-risk-pill ${review.risk}`}>{contentRiskLabel(review.risk)} · {review.score}/100</span>
-              </div>
-              <div className="review-diff-grid">
-                <div>
-                  <span>原稿</span>
-                  <p>{compactContentText(review.originalBody, 120)}</p>
-                </div>
-                <div>
-                  <span>修改稿</span>
-                  <p>{compactContentText(review.revisedBody, 120)}</p>
-                </div>
-              </div>
-              <div className="review-issue-list">
-                {review.issues.slice(0, 3).map((issue) => (
-                  <span key={issue.id}>{severityLabel(issue.severity)} · {issue.category}{issue.evidence ? `：${issue.evidence}` : ""}</span>
-                ))}
-                {!review.issues.length && <span>未发现明显风险。</span>}
-                {review.issues.length > 3 && <span>另有 {review.issues.length - 3} 个问题，打开报告查看完整清单。</span>}
-              </div>
-              <button className="ghost-button compact" onClick={() => review.artifactId && openArtifact(review.artifactId)} disabled={!review.artifactId}>
-                <FileText size={14} />
-                打开完整报告
-              </button>
-            </div>
-          ))}
-          {!reviews.length && <EmptyState text="暂无审稿结果" />}
-        </div>
+        <ContentReviewList reviews={reviews.slice(0, 10)} openArtifact={openArtifact} />
       </div>
     </section>
+  );
+}
+
+function ContentReviewList({ reviews, openArtifact }: { reviews: ContentReviewRun[]; openArtifact: (artifactId: string) => void }) {
+  return (
+    <div className="review-card-list">
+      {reviews.map((review) => (
+        <div key={review.id} className="review-result-card">
+          <div className="review-result-head">
+            <div>
+              <strong>{review.revisedTitle || review.originalTitle || "AI 审稿报告"}</strong>
+              <small>{new Date(review.createdAt).toLocaleString()}</small>
+            </div>
+            <span className={`review-risk-pill ${review.risk}`}>{contentRiskLabel(review.risk)} · {review.score}/100</span>
+          </div>
+          <div className="review-diff-grid">
+            <div>
+              <span>原稿</span>
+              <p>{compactContentText(review.originalBody, 120)}</p>
+            </div>
+            <div>
+              <span>修改稿</span>
+              <p>{compactContentText(review.revisedBody, 120)}</p>
+            </div>
+          </div>
+          <div className="review-issue-list">
+            {review.issues.slice(0, 3).map((issue) => (
+              <span key={issue.id}>{severityLabel(issue.severity)} · {issue.category}{issue.evidence ? `：${issue.evidence}` : ""}</span>
+            ))}
+            {!review.issues.length && <span>未发现明显风险。</span>}
+            {review.issues.length > 3 && <span>另有 {review.issues.length - 3} 个问题，打开报告查看完整清单。</span>}
+          </div>
+          <button className="ghost-button compact" onClick={() => review.artifactId && openArtifact(review.artifactId)} disabled={!review.artifactId}>
+            <FileText size={14} />
+            打开完整报告
+          </button>
+        </div>
+      ))}
+      {!reviews.length && <EmptyState text="暂无审稿结果" />}
+    </div>
   );
 }
 
@@ -4923,6 +4972,33 @@ export function compactContentText(value: string, maxLength: number): string {
     return compact;
   }
   return `${compact.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+export function getContentArtifacts<T extends Pick<AiArtifact, "workflowKey" | "createdAt">>(artifacts: T[]): T[] {
+  return artifacts
+    .filter((artifact) => artifact.workflowKey === "note-writing" || artifact.workflowKey === "draft-review")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function contentResultCounts(
+  drafts: Array<Pick<ContentDraft, "status">>,
+  reviews: Array<Pick<ContentReviewRun, "risk">>,
+  artifacts: Array<Pick<AiArtifact, "workflowKey" | "createdAt">>
+) {
+  return {
+    drafts: drafts.length,
+    reviewedDrafts: drafts.filter((draft) => draft.status === "reviewed").length,
+    reviews: reviews.length,
+    highRiskReviews: reviews.filter((review) => review.risk === "high").length,
+    passedReviews: reviews.filter((review) => review.risk === "pass").length,
+    contentArtifacts: getContentArtifacts(artifacts).length
+  };
+}
+
+function contentArtifactTypeLabel(workflowKey: AiArtifact["workflowKey"]): string {
+  if (workflowKey === "note-writing") return "小红书草稿";
+  if (workflowKey === "draft-review") return "AI 审稿报告";
+  return "内容产物";
 }
 
 function isControlledOrchestrationRequest(content: string): boolean {

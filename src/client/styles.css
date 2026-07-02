@@ -4983,6 +4983,25 @@ label {
   gap: 5px;
 }
 
+.content-archive-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.content-archive-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.result-artifact-list {
+  max-height: 460px;
+}
+
 .content-studio-shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -5310,6 +5329,10 @@ label {
   }
 
   .review-diff-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .content-archive-grid {
     grid-template-columns: 1fr;
   }
 

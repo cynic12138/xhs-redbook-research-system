@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyContentPlaybookTemplate,
   compactContentText,
+  contentResultCounts,
+  getContentArtifacts,
   noteToBatchReviewItem,
   prependUniqueById,
   severityLabel,
@@ -58,6 +60,28 @@ describe("client list merge helpers", () => {
     expect(severityLabel("blocker")).toBe("必须修改");
     expect(severityLabel("warning")).toBe("建议修改");
     expect(severityLabel("info")).toBe("提示");
+  });
+
+  it("summarizes content result archive inputs", () => {
+    const artifacts = [
+      { id: "other", workflowKey: "audience-insight", createdAt: "2026-07-01T03:00:00.000Z" },
+      { id: "draft", workflowKey: "note-writing", createdAt: "2026-07-01T01:00:00.000Z" },
+      { id: "review", workflowKey: "draft-review", createdAt: "2026-07-01T02:00:00.000Z" }
+    ] as const;
+
+    expect(getContentArtifacts([...artifacts]).map((artifact) => artifact.id)).toEqual(["review", "draft"]);
+    expect(contentResultCounts(
+      [{ status: "draft" }, { status: "reviewed" }],
+      [{ risk: "high" }, { risk: "pass" }],
+      [...artifacts]
+    )).toEqual({
+      drafts: 2,
+      reviewedDrafts: 1,
+      reviews: 2,
+      highRiskReviews: 1,
+      passedReviews: 1,
+      contentArtifacts: 2
+    });
   });
 
   it("applies a content playbook template while preserving the product name", () => {
