@@ -410,6 +410,7 @@ export interface AiWorkflowDefinition {
 export interface AiPromptInfo {
   key: AiWorkflowKey;
   title: string;
+  description: string;
   version: string;
   inputRequirements: string[];
   outputSections: string[];

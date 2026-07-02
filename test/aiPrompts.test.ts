@@ -78,8 +78,9 @@ describe("AI prompt library", () => {
     const infos = listAiPromptInfos();
 
     expect(infos).toHaveLength(8);
-    expect(infos.every((info) => info.version && info.inputRequirements.length && info.outputSections.length)).toBe(true);
+    expect(infos.every((info) => info.description && info.version && info.inputRequirements.length && info.outputSections.length)).toBe(true);
     expect(infos.map((info) => info.key)).toContain("content-planning");
+    expect(infos.find((info) => info.key === "draft-review")?.title).toBe("种草笔记审稿");
   });
 
   it("builds specialized workflow prompts with distinct sections", () => {
@@ -97,7 +98,7 @@ describe("AI prompt library", () => {
     for (const [key, heading] of expectations) {
       const result = buildAiWorkflowPrompt(key, context);
       expect(result.promptKey).toBe(key);
-      expect(result.promptVersion).toBe("xhs-ops-v2.0");
+      expect(result.promptVersion).toBe("运营模板 2026.07");
       expect(result.promptSource).toBe("default");
       expect(result.contextSummary).toContain("武汉相亲");
       expect(result.prompt).toContain(heading);
@@ -110,7 +111,7 @@ describe("AI prompt library", () => {
     const result = buildCustomWorkflowPrompt("note-analysis", template, context, "只看标题");
 
     expect(result.promptSource).toBe("custom");
-    expect(result.promptTitle).toBe("单篇笔记分析");
+    expect(result.promptTitle).toBe("单篇笔记优化");
     expect(result.prompt).toContain("武汉相亲");
     expect(result.prompt).toContain("武汉相亲避坑清单");
     expect(result.prompt).toContain("只看标题");

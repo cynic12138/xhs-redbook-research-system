@@ -1479,6 +1479,10 @@ label {
   font-size: 12px;
 }
 
+.prompt-card small {
+  line-height: 1.45;
+}
+
 .prompt-editor-layout {
   display: grid;
   gap: 12px;
@@ -1518,6 +1522,43 @@ label {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+
+.prompt-helper-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prompt-data-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prompt-data-list span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.prompt-data-list strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-data-list small {
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .variable-list {
@@ -2682,7 +2723,7 @@ body {
 .prompt-control-panel {
   display: grid;
   gap: 10px;
-  max-height: 210px;
+  max-height: 300px;
   padding: 12px;
   border: 1px solid #dfe5ec;
   border-radius: 8px;
@@ -4025,6 +4066,7 @@ label {
   .status-grid,
   .browser-bridge-card,
   .prompt-helper-grid,
+  .prompt-data-list,
   .side-panel-stack,
   .audience-signal-grid {
     grid-template-columns: minmax(0, 1fr);

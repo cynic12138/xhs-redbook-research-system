@@ -44,56 +44,56 @@ interface ReportInput {
 const workflowDefinitions: AiWorkflowDefinition[] = [
   {
     key: "content-planning",
-    title: "内容策划",
+    title: "选题策划方案",
     description: "基于关键词、热门笔记和评论需求生成选题日历、标题方向和正文结构。",
     module: "research",
     requires: ["job", "analytics"]
   },
   {
     key: "audience-insight",
-    title: "受众洞察",
+    title: "用户需求洞察",
     description: "从评论和互动信号中提炼用户画像、痛点、问题和用户原话。",
     module: "audience",
     requires: ["job", "comments"]
   },
   {
     key: "competitor-analysis",
-    title: "竞品分析",
+    title: "竞品账号分析",
     description: "对比头部作者、互动数据和内容风格，生成竞品账号分析。",
     module: "competitors",
     requires: ["job", "authors"]
   },
   {
     key: "viral-deep-dive",
-    title: "AI 爆款拆解",
+    title: "单篇爆款拆解",
     description: "解释当前爆款为什么爆、哪些结构可复用、哪些风险需要避开。",
     module: "viral",
     requires: ["job", "note", "comments", "analytics"]
   },
   {
     key: "viral-template",
-    title: "爆款模板",
+    title: "爆款结构模板",
     description: "从 Top 笔记中提炼标题公式、正文段落、CTA 和适用场景。",
     module: "viral",
     requires: ["job", "analytics"]
   },
   {
     key: "note-analysis",
-    title: "单篇笔记分析",
+    title: "单篇笔记优化",
     description: "分析选中笔记的标题、正文、评论需求和可改写方向。",
     module: "notes",
     requires: ["note", "comments"]
   },
   {
     key: "draft-review",
-    title: "AI 审稿员",
+    title: "种草笔记审稿",
     description: "按产品规则、平台风险和小红书表达习惯审稿，并给出最小修改版。",
     module: "content",
     requires: []
   },
   {
     key: "note-writing",
-    title: "笔记撰写",
+    title: "小红书笔记撰写",
     description: "基于结构化 Brief、热门笔记和评论需求生成小红书笔记草稿。",
     module: "content",
     requires: []
