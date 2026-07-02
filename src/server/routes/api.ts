@@ -58,6 +58,7 @@ import {
   deleteContentProject,
   deleteContentProjectMaterial,
   deleteContentPlaybook,
+  generateContentDraftBatch,
   generateContentDraft,
   listContentDrafts,
   listContentPlaybooks,
@@ -213,6 +214,10 @@ const contentDraftInput = z.object({
   jobId: z.string().optional(),
   modelId: z.string().optional(),
   brief: contentBriefInput
+});
+
+const contentDraftBatchInput = contentDraftInput.extend({
+  count: z.number().int().min(1).max(8).optional()
 });
 
 const contentReviewInput = z.object({
@@ -710,6 +715,14 @@ api.get("/content/drafts", async (_req, res) => {
 api.post("/content/drafts", async (req, res, next) => {
   try {
     res.status(201).json(await generateContentDraft(contentDraftInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/content/drafts/batch", async (req, res, next) => {
+  try {
+    res.status(201).json(await generateContentDraftBatch(contentDraftBatchInput.parse(req.body)));
   } catch (error) {
     next(error);
   }

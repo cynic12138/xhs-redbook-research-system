@@ -253,6 +253,35 @@ describe("API route contracts", () => {
     expect(deleteContentProjectMaterial).toHaveBeenCalledWith("content_project_contract", "content_material_contract");
   });
 
+  it("keeps content draft batch generation route stable", async () => {
+    const generateContentDraftBatch = vi.fn(async () => ({ results: [] }));
+    mockRouteDependencies({ contentStudioService: { generateContentDraftBatch } });
+    const app = await createApp();
+
+    const response = await requestJson(app, "/api/content/drafts/batch", {
+      method: "POST",
+      body: {
+        projectId: "content_project_contract",
+        count: 2,
+        brief: {
+          productName: "蜂蜜露",
+          persona: "孕妈",
+          painPoint: "出门不方便",
+          scenario: "出门携带",
+          channel: "朋友推荐",
+          sellingPoints: ["掌心大小"],
+          tone: "真实分享",
+          length: "short",
+          keywords: ["日常分享"]
+        }
+      }
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({ results: [] });
+    expect(generateContentDraftBatch).toHaveBeenCalledWith(expect.objectContaining({ projectId: "content_project_contract", count: 2 }));
+  });
+
   it("keeps content playbook validation errors on the shared 400 error contract", async () => {
     const saveContentPlaybook = vi.fn();
     mockRouteDependencies({ contentStudioService: { saveContentPlaybook } });
@@ -341,6 +370,7 @@ function mockRouteDependencies(overrides: {
     deleteContentProjectMaterial: vi.fn(async () => ({ deleted: 0 })),
     deleteContentPlaybook: vi.fn(async () => ({ deleted: 0 })),
     generateContentDraft: vi.fn(),
+    generateContentDraftBatch: vi.fn(),
     listContentDrafts: vi.fn(async () => []),
     listContentPlaybooks: vi.fn(async () => []),
     listContentPlaybookRevisions: vi.fn(async () => []),

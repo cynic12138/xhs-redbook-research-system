@@ -6,6 +6,8 @@ import type {
   CommentRecord,
   ContentBrief,
   ContentDraft,
+  ContentDraftBatchInput,
+  ContentDraftBatchResult,
   ContentDraftInput,
   ContentDraftLength,
   ContentDraftResult,
@@ -348,6 +350,23 @@ export async function generateContentDraft(input: ContentDraftInput, localStore:
   return { draft: updatedDraft, review: reviewResult.review, artifact, reviewArtifact: reviewResult.artifact };
 }
 
+export async function generateContentDraftBatch(input: ContentDraftBatchInput, localStore: StoreLike = store): Promise<ContentDraftBatchResult> {
+  const project = await resolveProject(input.projectId, localStore);
+  const materials = project ? await listContentProjectMaterials(project.id, localStore) : [];
+  const count = Math.min(Math.max(input.count ?? 3, 1), 8);
+  const results: ContentDraftResult[] = [];
+  for (let index = 0; index < count; index += 1) {
+    results.push(await generateContentDraft({
+      ...input,
+      projectId: project?.id ?? input.projectId,
+      playbookId: input.playbookId ?? project?.playbookId,
+      jobId: input.jobId ?? project?.jobId,
+      brief: buildBatchBrief(input.brief, project, materials, index)
+    }, localStore));
+  }
+  return { results };
+}
+
 export async function reviewContentDraft(input: ContentReviewInput, localStore: StoreLike = store): Promise<ContentReviewResult> {
   const project = await resolveProject(input.projectId, localStore);
   const playbook = await resolvePlaybook(input.playbookId ?? project?.playbookId, localStore);
@@ -662,6 +681,25 @@ function buildLocalDraft(brief: ContentBrief, playbook: ContentPlaybook, context
 function localTitle(productName: string, angle?: string): string {
   const suffix = angle?.replace(/\s+/g, "").slice(0, 18) || "真实使用感";
   return `${productName}这点让我愿意留下来用：${suffix}`;
+}
+
+function buildBatchBrief(base: ContentBrief, project: ContentProject | undefined, materials: ContentProjectMaterial[], index: number): ContentBrief {
+  const material = materials[index % Math.max(materials.length, 1)];
+  const targetAudience = project?.targetAudience[index % Math.max(project.targetAudience.length, 1)];
+  const scenario = project?.scenarios[index % Math.max(project.scenarios.length, 1)];
+  const materialKeywords = material?.tags ?? [];
+  return {
+    ...base,
+    projectId: project?.id ?? base.projectId,
+    playbookId: project?.playbookId ?? base.playbookId,
+    jobId: project?.jobId ?? base.jobId,
+    productName: project?.productName || base.productName,
+    persona: targetAudience || base.persona,
+    scenario: scenario || base.scenario,
+    painPoint: material ? `${material.title}：${material.content.slice(0, 80)}` : base.painPoint,
+    sellingPoints: unique([...base.sellingPoints, ...(material ? [material.title] : []), ...(project?.goals ?? [])]).slice(0, 8),
+    keywords: unique([...base.keywords, ...materialKeywords, ...(project?.goals ?? [])]).slice(0, 12)
+  };
 }
 
 function buildDraftGenerationPrompt(brief: ContentBrief, playbook: ContentPlaybook, context: ContentContext): string {

@@ -139,6 +139,8 @@ type ContentStudioProps = {
   restorePlaybookRevision: (revisionId: string) => Promise<void>;
   briefForm: ContentBriefForm;
   setBriefForm: (value: ContentBriefForm) => void;
+  batchDraftCount: number;
+  setBatchDraftCount: (value: number) => void;
   reviewForm: ContentReviewForm;
   setReviewForm: (value: ContentReviewForm) => void;
   batchItems: BatchReviewItem[];
@@ -154,6 +156,7 @@ type ContentStudioProps = {
   deletePlaybook: () => Promise<void>;
   savePlaybookAsNew: () => Promise<void>;
   generateDraft: () => Promise<void>;
+  generateDraftBatch: () => Promise<void>;
   reviewDraft: () => Promise<void>;
   reviewBatch: (items: BatchReviewItem[]) => Promise<void>;
   savePlaybook: () => Promise<void>;
@@ -355,6 +358,7 @@ export function App() {
   const [contentDrafts, setContentDrafts] = useState<ContentDraft[]>([]);
   const [contentReviews, setContentReviews] = useState<ContentReviewRun[]>([]);
   const [contentBriefForm, setContentBriefForm] = useState<ContentBriefForm>(defaultContentBriefForm);
+  const [contentDraftBatchCount, setContentDraftBatchCount] = useState(3);
   const [contentReviewForm, setContentReviewForm] = useState<ContentReviewForm>(defaultContentReviewForm);
   const [contentBatchItems, setContentBatchItems] = useState<BatchReviewItem[]>(defaultBatchReviewItems);
   const [contentStudioTab, setContentStudioTab] = useState<ContentStudioTab>("review");
@@ -1140,6 +1144,36 @@ export function App() {
     });
   }
 
+  async function generateContentDraftBatchFromForm() {
+    await run("content-draft-batch", async () => {
+      const result = await api.generateContentDraftBatch({
+        projectId: selectedContentProjectId || undefined,
+        playbookId: selectedContentPlaybookId || undefined,
+        jobId: effectiveContentJobId || undefined,
+        modelId: selectedModel?.id,
+        count: contentDraftBatchCount,
+        brief: {
+          ...briefFromForm(contentBriefForm),
+          projectId: selectedContentProjectId || undefined,
+          playbookId: selectedContentPlaybookId || undefined,
+          jobId: effectiveContentJobId || undefined
+        }
+      });
+      const drafts = result.results.map((item) => item.draft);
+      const reviews = result.results.map((item) => item.review);
+      const artifacts = result.results.flatMap((item) => [item.reviewArtifact, item.artifact]);
+      setContentDrafts((items) => prependUniqueById(items, drafts));
+      setContentReviews((items) => prependUniqueById(items, reviews));
+      setAiArtifacts((items) => prependUniqueById(items, artifacts));
+      if (artifacts[0]) {
+        setSelectedArtifactId(artifacts[0].id);
+        setSelectedReportId("");
+      }
+      setContentStudioTab("results");
+      await loadOperations();
+    });
+  }
+
   async function reviewContentDraftFromForm() {
     if (!contentReviewForm.body.trim()) {
       setError("请先粘贴需要审稿的小红书笔记正文。");
@@ -1678,6 +1712,8 @@ export function App() {
             restorePlaybookRevision={restoreContentPlaybookRevisionForm}
             briefForm={contentBriefForm}
             setBriefForm={setContentBriefForm}
+            batchDraftCount={contentDraftBatchCount}
+            setBatchDraftCount={setContentDraftBatchCount}
             reviewForm={contentReviewForm}
             setReviewForm={setContentReviewForm}
             batchItems={contentBatchItems}
@@ -1693,6 +1729,7 @@ export function App() {
             deletePlaybook={deleteContentPlaybookForm}
             savePlaybookAsNew={saveContentPlaybookAsNewForm}
             generateDraft={generateContentDraftFromForm}
+            generateDraftBatch={generateContentDraftBatchFromForm}
             reviewDraft={reviewContentDraftFromForm}
             reviewBatch={reviewSelectedBatchItems}
             savePlaybook={saveContentPlaybookForm}
@@ -3390,7 +3427,7 @@ function ContentBatchReviewPane(props: Pick<ContentStudioProps, "batchItems" | "
   );
 }
 
-function ContentWritingPane(props: Pick<ContentStudioProps, "activeJob" | "briefForm" | "setBriefForm" | "generateDraft" | "busy" | "drafts" | "openArtifact">) {
+function ContentWritingPane(props: Pick<ContentStudioProps, "activeJob" | "briefForm" | "setBriefForm" | "batchDraftCount" | "setBatchDraftCount" | "generateDraft" | "generateDraftBatch" | "busy" | "drafts" | "projectMaterials" | "openArtifact">) {
   const updateBrief = (key: keyof ContentBriefForm, value: string) => props.setBriefForm({ ...props.briefForm, [key]: value } as ContentBriefForm);
   const latestDraft = props.drafts[0];
   return (
@@ -3416,13 +3453,23 @@ function ContentWritingPane(props: Pick<ContentStudioProps, "activeJob" | "brief
                 <option value="long">长</option>
               </select>
             </label>
+            <label>
+              <span>批量篇数</span>
+              <input type="number" min={1} max={8} value={props.batchDraftCount} onChange={(event) => props.setBatchDraftCount(Math.min(Math.max(Number(event.target.value) || 1, 1), 8))} />
+            </label>
           </div>
           <label><span>产品特点</span><textarea value={props.briefForm.sellingPoints} onChange={(event) => updateBrief("sellingPoints", event.target.value)} /></label>
           <label><span>关键词/标签</span><input value={props.briefForm.keywords} onChange={(event) => updateBrief("keywords", event.target.value)} /></label>
-          <button className="primary-button full" onClick={() => void props.generateDraft()} disabled={props.busy === "content-draft"}>
-            {props.busy === "content-draft" ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
-            生成草稿并审稿
-          </button>
+          <div className="button-row">
+            <button className="primary-button full" onClick={() => void props.generateDraft()} disabled={props.busy === "content-draft"}>
+              {props.busy === "content-draft" ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+              生成单篇并审稿
+            </button>
+            <button className="ghost-button full" onClick={() => void props.generateDraftBatch()} disabled={props.busy === "content-draft-batch"}>
+              {props.busy === "content-draft-batch" ? <Loader2 className="spin" size={16} /> : <Layers size={16} />}
+              批量生成{props.batchDraftCount}篇{props.projectMaterials.length ? ` · 素材${props.projectMaterials.length}` : ""}
+            </button>
+          </div>
         </div>
       </section>
       <section className="surface content-side-panel">

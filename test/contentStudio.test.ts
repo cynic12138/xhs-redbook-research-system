@@ -6,6 +6,7 @@ import { LocalStore } from "../src/server/storage/localStore.js";
 import {
   addContentProjectMaterialsFromNotes,
   generateContentDraft,
+  generateContentDraftBatch,
   deleteContentProject,
   deleteContentProjectMaterial,
   deleteContentPlaybook,
@@ -17,6 +18,7 @@ import {
   reviewContentDraftBatch,
   restoreContentPlaybookRevision,
   saveContentProject,
+  saveContentProjectMaterial,
   saveContentPlaybook,
   scanContentDraft
 } from "../src/server/services/contentStudioService.js";
@@ -204,6 +206,45 @@ describe("content studio service", () => {
 
     await deleteContentProjectMaterial(project.id, latestMaterials[0]!.id, store);
     expect(await listContentProjectMaterials(project.id, store)).toEqual([]);
+  });
+
+  it("generates multiple project drafts from material angles", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const project = await saveContentProject({
+      name: "批量写作项目",
+      productName: "蜂蜜露",
+      targetAudience: ["孕妈", "上班族"],
+      scenarios: ["出门携带", "办公室"],
+      goals: ["多角度种草"]
+    }, undefined, store);
+    await saveContentProjectMaterial({
+      projectId: project.id,
+      source: "manual",
+      category: "scenario",
+      title: "包里备用",
+      content: "用户在出门时希望小巧、不占包。"
+    }, store);
+
+    const result = await generateContentDraftBatch({
+      projectId: project.id,
+      count: 2,
+      brief: {
+        productName: "蜂蜜露",
+        persona: "孕妈",
+        painPoint: "出门不方便",
+        scenario: "出门携带",
+        channel: "朋友推荐",
+        sellingPoints: ["掌心大小"],
+        tone: "真实分享",
+        length: "short",
+        keywords: ["日常分享"]
+      }
+    }, store);
+
+    expect(result.results).toHaveLength(2);
+    expect(result.results.every((item) => item.draft.projectId === project.id)).toBe(true);
+    expect(await store.read("contentDrafts")).toHaveLength(2);
+    expect(await store.read("contentReviews")).toHaveLength(2);
   });
 
   it("creates a review artifact without an AI model", async () => {

@@ -656,6 +656,10 @@ export interface ContentDraftInput {
   brief: ContentBrief;
 }
 
+export interface ContentDraftBatchInput extends ContentDraftInput {
+  count?: number;
+}
+
 export interface ContentReviewInput {
   projectId?: string;
   playbookId?: string;
@@ -745,6 +749,10 @@ export interface ContentDraftResult {
   review: ContentReviewRun;
   artifact: AiArtifact;
   reviewArtifact: AiArtifact;
+}
+
+export interface ContentDraftBatchResult {
+  results: ContentDraftResult[];
 }
 
 export interface ContentReviewBatchResult {
