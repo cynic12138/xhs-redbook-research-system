@@ -369,6 +369,7 @@ describe("content studio API routes", () => {
 
   it("creates a content review through the API route", async () => {
     vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      acceptContentDraftReview: vi.fn(),
       addContentProjectMaterialsFromNotes: vi.fn(),
       deleteContentProject: vi.fn(),
       deleteContentProjectMaterial: vi.fn(),
@@ -458,6 +459,7 @@ describe("content studio API routes", () => {
 
   it("creates batch content reviews through the API route", async () => {
     vi.doMock("../src/server/services/contentStudioService.js", () => ({
+      acceptContentDraftReview: vi.fn(),
       addContentProjectMaterialsFromNotes: vi.fn(),
       deleteContentProject: vi.fn(),
       deleteContentProjectMaterial: vi.fn(),

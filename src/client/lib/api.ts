@@ -142,6 +142,8 @@ export const api = {
   listContentDrafts: () => apiGet<ContentDraft[]>("/api/content/drafts"),
   generateContentDraft: (input: ContentDraftInput) => apiPost<ContentDraftResult>("/api/content/drafts", input),
   generateContentDraftBatch: (input: ContentDraftBatchInput) => apiPost<ContentDraftBatchResult>("/api/content/drafts/batch", input),
+  acceptContentDraftReview: (draftId: string, reviewId?: string) =>
+    apiPost<ContentDraft>(`/api/content/drafts/${encodeURIComponent(draftId)}/accept-review`, { reviewId }),
   listContentReviews: () => apiGet<ContentReviewRun[]>("/api/content/reviews"),
   reviewContentDraft: (input: ContentReviewInput) => apiPost<ContentReviewResult>("/api/content/reviews", input),
   reviewContentDraftBatch: (input: ContentReviewBatchInput) => apiPost<ContentReviewBatchResult>("/api/content/reviews/batch", input),

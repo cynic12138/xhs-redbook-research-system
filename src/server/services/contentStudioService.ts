@@ -278,6 +278,32 @@ export async function listContentReviews(localStore: StoreLike = store): Promise
   return localStore.read("contentReviews");
 }
 
+export async function acceptContentDraftReview(draftId: string, reviewId?: string, localStore: StoreLike = store): Promise<ContentDraft> {
+  const drafts = await localStore.read("contentDrafts");
+  const draft = drafts.find((item) => item.id === draftId);
+  if (!draft) {
+    throw new Error("草稿不存在。");
+  }
+  const reviews = await localStore.read("contentReviews");
+  const review = (reviewId ? reviews.find((item) => item.id === reviewId && item.draftId === draftId) : undefined) ??
+    reviews.find((item) => item.id === draft.reviewId && item.draftId === draftId) ??
+    reviews.find((item) => item.draftId === draftId);
+  if (!review) {
+    throw new Error("草稿还没有可接受的审稿结果。");
+  }
+  const accepted: ContentDraft = {
+    ...draft,
+    title: review.revisedTitle || draft.title,
+    body: review.revisedBody || draft.body,
+    tags: review.revisedTags.length ? review.revisedTags : draft.tags,
+    reviewId: review.id,
+    status: "finalized",
+    updatedAt: nowIso()
+  };
+  await localStore.update("contentDrafts", (items) => items.map((item) => (item.id === draftId ? accepted : item)));
+  return accepted;
+}
+
 export async function generateContentDraft(input: ContentDraftInput, localStore: StoreLike = store): Promise<ContentDraftResult> {
   const project = await resolveProject(input.projectId, localStore);
   const playbook = await resolvePlaybook(input.playbookId ?? project?.playbookId, localStore);

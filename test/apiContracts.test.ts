@@ -282,6 +282,42 @@ describe("API route contracts", () => {
     expect(generateContentDraftBatch).toHaveBeenCalledWith(expect.objectContaining({ projectId: "content_project_contract", count: 2 }));
   });
 
+  it("keeps content draft accept-review route stable", async () => {
+    const accepted = {
+      id: "draft_contract",
+      title: "修改稿标题",
+      body: "修改稿正文",
+      tags: ["好物"],
+      brief: {
+        productName: "蜂蜜露",
+        persona: "孕妈",
+        painPoint: "出门不方便",
+        scenario: "出门携带",
+        channel: "朋友推荐",
+        sellingPoints: [],
+        tone: "真实分享",
+        length: "short",
+        keywords: []
+      },
+      source: "local",
+      status: "finalized",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const acceptContentDraftReview = vi.fn(async () => accepted);
+    mockRouteDependencies({ contentStudioService: { acceptContentDraftReview } });
+    const app = await createApp();
+
+    const response = await requestJson(app, "/api/content/drafts/draft_contract/accept-review", {
+      method: "POST",
+      body: { reviewId: "review_contract" }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(accepted);
+    expect(acceptContentDraftReview).toHaveBeenCalledWith("draft_contract", "review_contract");
+  });
+
   it("keeps content playbook validation errors on the shared 400 error contract", async () => {
     const saveContentPlaybook = vi.fn();
     mockRouteDependencies({ contentStudioService: { saveContentPlaybook } });
@@ -365,6 +401,7 @@ function mockRouteDependencies(overrides: {
     ...overrides.queryService
   }));
   vi.doMock("../src/server/services/contentStudioService.js", () => ({
+    acceptContentDraftReview: vi.fn(),
     addContentProjectMaterialsFromNotes: vi.fn(async () => []),
     deleteContentProject: vi.fn(async () => ({ deleted: 0 })),
     deleteContentProjectMaterial: vi.fn(async () => ({ deleted: 0 })),

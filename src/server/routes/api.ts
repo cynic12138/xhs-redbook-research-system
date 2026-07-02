@@ -54,6 +54,7 @@ import {
 import { createAiOrchestrationWithToolsFallback, probeAiModelTools } from "../services/aiToolCallingService.js";
 import { getAiOrchestration, listAiOrchestrations } from "../services/aiOrchestratorService.js";
 import {
+  acceptContentDraftReview,
   addContentProjectMaterialsFromNotes,
   deleteContentProject,
   deleteContentProjectMaterial,
@@ -218,6 +219,10 @@ const contentDraftInput = z.object({
 
 const contentDraftBatchInput = contentDraftInput.extend({
   count: z.number().int().min(1).max(8).optional()
+});
+
+const contentDraftAcceptReviewInput = z.object({
+  reviewId: z.string().optional()
 });
 
 const contentReviewInput = z.object({
@@ -723,6 +728,15 @@ api.post("/content/drafts", async (req, res, next) => {
 api.post("/content/drafts/batch", async (req, res, next) => {
   try {
     res.status(201).json(await generateContentDraftBatch(contentDraftBatchInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/content/drafts/:id/accept-review", async (req, res, next) => {
+  try {
+    const input = contentDraftAcceptReviewInput.parse(req.body ?? {});
+    res.json(await acceptContentDraftReview(req.params.id, input.reviewId));
   } catch (error) {
     next(error);
   }

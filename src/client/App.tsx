@@ -159,6 +159,7 @@ type ContentStudioProps = {
   generateDraftBatch: () => Promise<void>;
   reviewDraft: () => Promise<void>;
   reviewBatch: (items: BatchReviewItem[]) => Promise<void>;
+  acceptDraftReview: (draftId: string, reviewId?: string) => Promise<void>;
   savePlaybook: () => Promise<void>;
   openArtifact: (artifactId: string) => void;
   busy: string;
@@ -1230,6 +1231,15 @@ export function App() {
     });
   }
 
+  async function acceptContentDraftReviewForm(draftId: string, reviewId?: string) {
+    await run(`content-draft-accept-${draftId}`, async () => {
+      const draft = await api.acceptContentDraftReview(draftId, reviewId);
+      setContentDrafts((items) => upsertById(items, draft));
+      setContentStudioTab("results");
+      await loadOperations();
+    });
+  }
+
   function sendSelectedNotesToBatchReview() {
     const selectedNoteIdSet = new Set(selectedNoteIds);
     const selectedNotes = notes.filter((note) => selectedNoteIdSet.has(note.id) && note.desc.trim());
@@ -1732,6 +1742,7 @@ export function App() {
             generateDraftBatch={generateContentDraftBatchFromForm}
             reviewDraft={reviewContentDraftFromForm}
             reviewBatch={reviewSelectedBatchItems}
+            acceptDraftReview={acceptContentDraftReviewForm}
             savePlaybook={saveContentPlaybookForm}
             openArtifact={(artifactId) => {
               setSelectedArtifactId(artifactId);
@@ -3591,9 +3602,10 @@ function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selecte
   );
 }
 
-function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews" | "artifacts" | "openArtifact">) {
+function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews" | "artifacts" | "acceptDraftReview" | "openArtifact" | "busy">) {
   const contentArtifacts = getContentArtifacts(props.artifacts);
   const counts = contentResultCounts(props.drafts, props.reviews, props.artifacts);
+  const reviewByDraftId = new Map(props.reviews.filter((review) => review.draftId).map((review) => [review.draftId, review]));
   return (
     <div className="content-studio-grid results-grid">
       <section className="surface content-side-panel">
@@ -3636,8 +3648,16 @@ function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews"
                 <div key={draft.id} className="resource-row">
                   <button className="resource-select" onClick={() => draft.artifactId && props.openArtifact(draft.artifactId)} disabled={!draft.artifactId}>
                     <strong>{draft.title}</strong>
-                    <small>{draft.source === "ai" ? "AI 生成" : "本地规则"} · {draft.status === "reviewed" ? "已审稿" : "草稿"} · {new Date(draft.createdAt).toLocaleString()}</small>
+                    <small>{draft.source === "ai" ? "AI 生成" : "本地规则"} · {contentDraftStatusLabel(draft.status)} · {new Date(draft.createdAt).toLocaleString()}</small>
                     <small>{draft.tags.map((tag) => `#${tag}`).join(" ") || compactContentText(draft.body, 72)}</small>
+                  </button>
+                  <button
+                    className="ghost-button compact"
+                    onClick={() => void props.acceptDraftReview(draft.id, reviewByDraftId.get(draft.id)?.id)}
+                    disabled={!reviewByDraftId.has(draft.id) || draft.status === "finalized" || props.busy === `content-draft-accept-${draft.id}`}
+                  >
+                    {props.busy === `content-draft-accept-${draft.id}` ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                    {draft.status === "finalized" ? "已定稿" : "接受修改稿"}
                   </button>
                 </div>
               ))}
@@ -5377,6 +5397,12 @@ function contentProjectStatusLabel(status: ContentProjectStatus): string {
   return "已定稿";
 }
 
+function contentDraftStatusLabel(status: ContentDraft["status"]): string {
+  if (status === "finalized") return "已定稿";
+  if (status === "reviewed") return "已审稿";
+  return "草稿";
+}
+
 function contentMaterialCategoryLabel(category: ContentProjectMaterialCategory): string {
   if (category === "pain") return "痛点";
   if (category === "scenario") return "场景";
@@ -5415,7 +5441,7 @@ export function contentResultCounts(
 ) {
   return {
     drafts: drafts.length,
-    reviewedDrafts: drafts.filter((draft) => draft.status === "reviewed").length,
+    reviewedDrafts: drafts.filter((draft) => draft.status === "reviewed" || draft.status === "finalized").length,
     reviews: reviews.length,
     highRiskReviews: reviews.filter((review) => review.risk === "high").length,
     passedReviews: reviews.filter((review) => review.risk === "pass").length,

@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalStore } from "../src/server/storage/localStore.js";
 import {
+  acceptContentDraftReview,
   addContentProjectMaterialsFromNotes,
   generateContentDraft,
   generateContentDraftBatch,
@@ -301,6 +302,29 @@ describe("content studio service", () => {
     expect(result.reviewArtifact.workflowKey).toBe("draft-review");
     expect(await store.read("contentDrafts")).toHaveLength(1);
     expect(await store.read("contentReviews")).toHaveLength(1);
+  });
+
+  it("accepts a reviewed draft as the finalized version", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const result = await generateContentDraft({
+      brief: {
+        productName: "蜂蜜露",
+        persona: "孕妈",
+        painPoint: "出门不方便",
+        scenario: "出门携带",
+        channel: "朋友推荐",
+        sellingPoints: ["掌心大小"],
+        tone: "真实分享",
+        length: "short",
+        keywords: ["日常分享"]
+      }
+    }, store);
+
+    const accepted = await acceptContentDraftReview(result.draft.id, result.review.id, store);
+    expect(accepted.status).toBe("finalized");
+    expect(accepted.title).toBe(result.review.revisedTitle);
+    expect(accepted.body).toBe(result.review.revisedBody);
+    expect((await store.read("contentDrafts"))[0]?.status).toBe("finalized");
   });
 });
 
