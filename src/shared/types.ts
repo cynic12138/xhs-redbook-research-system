@@ -430,6 +430,16 @@ export interface AiPromptDetail extends AiPromptInfo {
     label: string;
     description: string;
   }>;
+  overview: {
+    automaticInputs: Array<{
+      key: string;
+      label: string;
+      description: string;
+    }>;
+    totalAutomaticInputs: number;
+    deliverables: string[];
+    totalDeliverables: number;
+  };
   recentArtifacts: Array<{
     id: string;
     title: string;

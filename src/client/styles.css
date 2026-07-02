@@ -1529,6 +1529,10 @@ label {
   align-content: start;
   gap: 8px;
   min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
 }
 
 .prompt-data-list {
@@ -1541,10 +1545,10 @@ label {
   display: grid;
   gap: 3px;
   min-width: 0;
-  padding: 8px;
-  border: 1px solid var(--border);
+  padding: 7px 8px;
+  border: 1px solid #e7edf4;
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: #f8fafc;
 }
 
 .prompt-data-list strong {
@@ -1559,6 +1563,12 @@ label {
   color: var(--foreground-secondary);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.prompt-overview-more {
+  color: var(--foreground-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .variable-list {
@@ -2723,12 +2733,11 @@ body {
 .prompt-control-panel {
   display: grid;
   gap: 10px;
-  max-height: 300px;
   padding: 12px;
   border: 1px solid #dfe5ec;
   border-radius: 8px;
   background: #fbfcfd;
-  overflow: auto;
+  overflow: visible;
 }
 
 .prompt-control-head {
@@ -2736,6 +2745,10 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
+}
+
+.prompt-control-head .button-row {
+  justify-content: flex-end;
 }
 
 .prompt-control-head > div:first-child {
@@ -2951,6 +2964,34 @@ body {
 @media (max-width: 1360px) {
   .prompt-center-grid {
     grid-template-columns: 280px minmax(0, 1fr);
+    align-content: start;
+    grid-auto-rows: max-content;
+  }
+
+  .prompt-center-grid > .prompt-list-panel,
+  .prompt-center-grid > .prompt-editor-panel,
+  .prompt-center-grid > .prompt-artifacts-panel,
+  .prompt-editor-layout {
+    height: auto;
+    overflow: visible;
+  }
+
+  .prompt-center-grid > .prompt-editor-panel {
+    display: grid;
+    align-content: start;
+    min-height: max-content;
+  }
+
+  .prompt-editor-layout {
+    flex: 0 0 auto;
+    grid-template-rows: auto auto;
+    min-height: auto;
+  }
+
+  .prompt-text-panel .prompt-editor {
+    min-height: 520px;
+    height: auto;
+    resize: vertical;
   }
 
   .prompt-artifacts-panel {
@@ -3210,10 +3251,6 @@ body {
 .notes-layout,
 .overview-frame {
   min-height: 0;
-}
-
-.prompt-control-panel {
-  max-height: 190px;
 }
 
 .prompt-helper-grid {

@@ -132,6 +132,9 @@ export async function getAiPromptDetail(key: AiWorkflowRunInput["workflowKey"]):
   }
   const config = configs.find((item) => item.key === key);
   const defaultTemplate = getDefaultPromptTemplate(key);
+  const activeTemplate = config?.activeSource === "custom" && config.customTemplate?.trim() ? config.customTemplate : defaultTemplate;
+  const variables = getPromptVariables();
+  const automaticInputs = promptVariablesForTemplate(activeTemplate, variables);
   const related = artifacts
     .filter((artifact) => artifact.promptKey === key)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -144,8 +147,14 @@ export async function getAiPromptDetail(key: AiWorkflowRunInput["workflowKey"]):
     updatedAt: config?.updatedAt,
     defaultTemplate,
     customTemplate: config?.customTemplate,
-    activeTemplate: config?.activeSource === "custom" && config.customTemplate?.trim() ? config.customTemplate : defaultTemplate,
-    variables: getPromptVariables(),
+    activeTemplate,
+    variables,
+    overview: {
+      automaticInputs: automaticInputs.slice(0, 6),
+      totalAutomaticInputs: automaticInputs.length,
+      deliverables: info.outputSections.slice(0, 7),
+      totalDeliverables: info.outputSections.length
+    },
     recentArtifacts: related.slice(0, 8).map((artifact) => ({
       id: artifact.id,
       title: artifact.title,
@@ -153,6 +162,15 @@ export async function getAiPromptDetail(key: AiWorkflowRunInput["workflowKey"]):
       source: artifact.source
     }))
   };
+}
+
+function promptVariablesForTemplate(
+  template: string,
+  variables: AiPromptDetail["variables"]
+): AiPromptDetail["variables"] {
+  const usedKeys = new Set([...template.matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g)].map((match) => match[1]));
+  const matched = variables.filter((variable) => usedKeys.has(variable.key));
+  return matched.length ? matched : variables;
 }
 
 export async function saveAiPromptConfig(key: AiWorkflowRunInput["workflowKey"], customTemplate: string): Promise<AiPromptDetail> {

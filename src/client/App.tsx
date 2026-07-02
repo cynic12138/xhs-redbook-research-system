@@ -3861,25 +3861,39 @@ function PromptCenterPage({
                 <div className="prompt-helper-card">
                   <div className="section-mini-head">
                     <strong>系统会自动带入的数据</strong>
-                    <span>编辑时保留花括号，运行时会自动替换成真实资料</span>
+                    <span>
+                      当前提示词使用 {selectedPrompt.overview.automaticInputs.length}/{selectedPrompt.overview.totalAutomaticInputs} 项资料
+                    </span>
                   </div>
                   <div className="prompt-data-list">
-                    {selectedPrompt.variables.map((variable) => (
+                    {selectedPrompt.overview.automaticInputs.map((variable) => (
                       <span key={variable.key} title={`模板占位符：{${variable.key}}`}>
                         <strong>{variable.label}</strong>
                         <small>{variable.description}</small>
                       </span>
                     ))}
                   </div>
+                  {selectedPrompt.overview.totalAutomaticInputs > selectedPrompt.overview.automaticInputs.length && (
+                    <small className="prompt-overview-more">
+                      另有 {selectedPrompt.overview.totalAutomaticInputs - selectedPrompt.overview.automaticInputs.length} 项资料会在正文中按需带入
+                    </small>
+                  )}
                 </div>
                 <div className="prompt-helper-card">
                   <div className="section-mini-head">
                     <strong>AI 需要交付的内容</strong>
-                    <span>这些栏目会约束 AI 输出，不容易跑题</span>
+                    <span>
+                      展示 {selectedPrompt.overview.deliverables.length}/{selectedPrompt.overview.totalDeliverables} 个输出栏目
+                    </span>
                   </div>
                   <div className="variable-list">
-                    {selectedPrompt.outputSections.map((section) => <span key={section}>{section}</span>)}
+                    {selectedPrompt.overview.deliverables.map((section) => <span key={section}>{section}</span>)}
                   </div>
+                  {selectedPrompt.overview.totalDeliverables > selectedPrompt.overview.deliverables.length && (
+                    <small className="prompt-overview-more">
+                      另有 {selectedPrompt.overview.totalDeliverables - selectedPrompt.overview.deliverables.length} 个栏目保留在完整提示词中
+                    </small>
+                  )}
                 </div>
               </div>
             </div>
