@@ -5176,6 +5176,63 @@ label {
   padding-bottom: 2px;
 }
 
+.assistant-drawer .context-badges {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.assistant-drawer .context-badges span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-search-plan {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #fecdd3;
+  border-radius: 14px;
+  background: #fff1f4;
+  box-shadow: 0 10px 24px rgba(225, 29, 72, 0.08);
+}
+
+.assistant-search-plan > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.assistant-search-plan span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.assistant-search-plan strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-search-plan small {
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.assistant-search-plan-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .assistant-suggestion-card {
   align-self: start;
   min-height: 56px;
@@ -5187,6 +5244,20 @@ label {
 
 .assistant-suggestion-card small {
   line-height: 1.25;
+}
+
+@media (max-width: 640px) {
+  .assistant-drawer .context-badges {
+    grid-template-columns: 1fr;
+  }
+
+  .assistant-search-plan-actions {
+    justify-content: stretch;
+  }
+
+  .assistant-search-plan-actions .compact {
+    flex: 1;
+  }
 }
 
 .auth-flow-card {

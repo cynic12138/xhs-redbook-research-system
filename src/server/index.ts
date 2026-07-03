@@ -10,6 +10,19 @@ const app = express();
 const port = getPort();
 const clientDist = path.join(process.cwd(), "dist", "client");
 
+function logBackgroundError(scope: string, error: unknown): void {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error(`[background:${scope}] ${message}`);
+}
+
+process.on("unhandledRejection", (reason) => {
+  logBackgroundError("unhandledRejection", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  logBackgroundError("uncaughtException", error);
+});
+
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use("/api", api);
@@ -33,8 +46,8 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 app.listen(port, "127.0.0.1", () => {
   console.log(`API listening on http://127.0.0.1:${port}`);
   if (getAutoResumeJobs()) {
-    void jobs.resumeActiveJobs();
+    void jobs.resumeActiveJobs().catch((error) => logBackgroundError("resumeActiveJobs", error));
   } else {
-    void jobs.pauseActiveJobsOnStartup();
+    void jobs.pauseActiveJobsOnStartup().catch((error) => logBackgroundError("pauseActiveJobsOnStartup", error));
   }
 });

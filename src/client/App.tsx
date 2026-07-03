@@ -122,6 +122,10 @@ type ContentPlaybookForm = {
   tags: string;
 };
 type ContentPlaybookTemplateKey = "general" | "maternal" | "food" | "education";
+type AssistantSearchPlan = {
+  instruction: string;
+  keywords: string[];
+};
 type ContentStudioProps = {
   activeTab: ContentStudioTab;
   setActiveTab: (value: ContentStudioTab) => void;
@@ -387,6 +391,7 @@ export function App() {
   const [assistantWidth, setAssistantWidth] = useState(() => readStoredNumber("xhs.aiDrawerWidth", 420));
   const [assistantMessages, setAssistantMessages] = useState<AiAssistantMessage[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
+  const [assistantSearchPlan, setAssistantSearchPlan] = useState<AssistantSearchPlan | null>(null);
   const [selectedModelId, setSelectedModelId] = useState(() => readStoredString("xhs.selectedModelId", ""));
   const [assistantGuideDismissed, setAssistantGuideDismissed] = useState(() => localStorage.getItem("xhs.assistantGuideDismissed") === "true");
   const [selectedWorkflow, setSelectedWorkflow] = useState<AiWorkflowKey>("content-planning");
@@ -408,6 +413,7 @@ export function App() {
   const [modelForm, setModelForm] = useState<ModelForm>(emptyModelForm);
   const [modelMessages, setModelMessages] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [busy, setBusy] = useState("");
+  const busyRef = useRef("");
   const [error, setError] = useState("");
   const [assistantError, setAssistantError] = useState("");
   const setSelectedContentPlaybook = useCallback((value: string) => {
@@ -791,6 +797,10 @@ export function App() {
   }, [notes, notesTotal]);
 
   async function run<T>(key: string, task: () => Promise<T>): Promise<T | undefined> {
+    if (busyRef.current === key) {
+      return undefined;
+    }
+    busyRef.current = key;
     setBusy(key);
     setError("");
     try {
@@ -803,7 +813,10 @@ export function App() {
       }
       return undefined;
     } finally {
-      setBusy("");
+      if (busyRef.current === key) {
+        busyRef.current = "";
+        setBusy("");
+      }
     }
   }
 
@@ -908,6 +921,12 @@ export function App() {
 
   async function resumeJob() {
     if (!activeJobId) return;
+    if (activeJob?.breakerReason && isRateLimitReason(activeJob.breakerReason)) {
+      const shouldResume = window.confirm("当前任务因小红书 IP 限流暂停。建议等待 10-30 分钟，并降低抓取页数或并发后再恢复。现在仍要恢复吗？");
+      if (!shouldResume) {
+        return;
+      }
+    }
     await run("resume", async () => {
       await api.resumeJob(activeJobId);
       await refreshCore();
@@ -1440,6 +1459,7 @@ export function App() {
     const content = assistantInput.trim();
     if (!content) return;
     setAssistantError("");
+    setAssistantSearchPlan(null);
     const userMessage: AiAssistantMessage = {
       id: `local_${Date.now()}`,
       role: "user",
@@ -1471,25 +1491,18 @@ export function App() {
       });
       return;
     }
-    if (isControlledOrchestrationRequest(content)) {
-      await run("assistant-chat", async () => {
-        const orchestration = await api.createAiOrchestration({
-          instruction: content,
-          modelId: selectedModel?.id
-        });
-        setAiOrchestrations((items) => upsertById(items, orchestration));
-        setActiveOrchestrationId(orchestration.id);
-        setAssistantMessages((messages) => [
-          ...messages,
-          {
-            id: `orch_msg_${orchestration.id}`,
-            role: "assistant",
-            content: `已创建 AI 编排会话：${orchestration.keywords.join(" / ")}。我会按步骤抓取关键词、等待笔记入库，并生成内容规划、爆款结构和评论需求分析。`,
-            createdAt: new Date().toISOString()
-          }
-        ]);
-        await loadOrchestrations();
-      });
+    const searchPlan = parseAssistantSearchPlan(content);
+    if (searchPlan) {
+      setAssistantSearchPlan(searchPlan);
+      setAssistantMessages((messages) => [
+        ...messages,
+        {
+          id: `search_plan_${Date.now()}`,
+          role: "assistant",
+          content: `我识别到你想抓取关键词：${searchPlan.keywords.join(" / ")}。请先确认，确认后会创建抓取任务并自动进入内容分析编排。`,
+          createdAt: new Date().toISOString()
+        }
+      ]);
       return;
     }
     await run("assistant-chat", async () => {
@@ -1510,6 +1523,31 @@ export function App() {
         setSelectedReportId("");
       }
       await loadOperations();
+    });
+  }
+
+  async function confirmAssistantSearchPlan() {
+    if (!assistantSearchPlan) return;
+    const plan = assistantSearchPlan;
+    await run("assistant-chat", async () => {
+      const orchestration = await api.createAiOrchestration({
+        instruction: plan.instruction,
+        keywords: plan.keywords,
+        modelId: selectedModel?.id
+      });
+      setAiOrchestrations((items) => upsertById(items, orchestration));
+      setActiveOrchestrationId(orchestration.id);
+      setAssistantSearchPlan(null);
+      setAssistantMessages((messages) => [
+        ...messages,
+        {
+          id: `orch_msg_${orchestration.id}`,
+          role: "assistant",
+          content: `已创建 AI 编排会话：${orchestration.keywords.join(" / ")}。我会按步骤抓取关键词、等待笔记入库，并生成内容规划、爆款结构和评论需求分析。`,
+          createdAt: new Date().toISOString()
+        }
+      ]);
+      await loadOrchestrations();
     });
   }
 
@@ -1936,6 +1974,9 @@ export function App() {
         assistantError={assistantError}
         orchestrations={aiOrchestrations}
         activeOrchestrationId={activeOrchestrationId}
+        pendingSearchPlan={assistantSearchPlan}
+        confirmSearchPlan={confirmAssistantSearchPlan}
+        dismissSearchPlan={() => setAssistantSearchPlan(null)}
         onOpenModels={() => setModelSettingsOpen(true)}
         onNewSearch={() => setActiveModule("research")}
         onOpenJob={(jobId) => {
@@ -4529,6 +4570,9 @@ function AiAssistantDrawer({
   assistantError,
   orchestrations,
   activeOrchestrationId,
+  pendingSearchPlan,
+  confirmSearchPlan,
+  dismissSearchPlan,
   onOpenModels,
   onNewSearch,
   onOpenJob,
@@ -4558,6 +4602,9 @@ function AiAssistantDrawer({
   assistantError: string;
   orchestrations: AiOrchestration[];
   activeOrchestrationId: string;
+  pendingSearchPlan: AssistantSearchPlan | null;
+  confirmSearchPlan: () => Promise<void>;
+  dismissSearchPlan: () => void;
   onOpenModels: () => void;
   onNewSearch: () => void;
   onOpenJob: (jobId: string) => void;
@@ -4674,10 +4721,10 @@ function AiAssistantDrawer({
         </div>
       </div>
       <ContextBadgeRow items={contextItems} />
-      {(notices.length > 0 || !guideDismissed) && (
+      {(notices.length > 0 || (!guideDismissed && !messages.length)) && (
         <div className="assistant-status-stack">
           {notices.map((notice) => <AssistantStateNotice key={notice.key} notice={notice} />)}
-          {!guideDismissed && (
+          {!guideDismissed && !messages.length && (
             <div className="assistant-guide">
               <div>
                 <strong>首次使用 AI 助手</strong>
@@ -4688,12 +4735,31 @@ function AiAssistantDrawer({
           )}
         </div>
       )}
+      {pendingSearchPlan && (
+        <section className="assistant-search-plan" aria-label="确认关键词抓取">
+          <div>
+            <span>确认抓取任务</span>
+            <strong>{pendingSearchPlan.keywords.join(" / ")}</strong>
+            <small>确认后会创建本地抓取任务，并在有笔记入库后继续生成内容策划、爆款结构和评论需求分析。</small>
+          </div>
+          <div className="assistant-search-plan-actions">
+            <button className="ghost-button compact" onClick={dismissSearchPlan} disabled={busy === "assistant-chat"}>
+              <X size={14} />
+              取消
+            </button>
+            <button className="primary-button compact" onClick={() => void confirmSearchPlan()} disabled={busy === "assistant-chat"}>
+              {busy === "assistant-chat" ? <Loader2 className="spin" size={14} /> : <Search size={14} />}
+              确认抓取
+            </button>
+          </div>
+        </section>
+      )}
       {activeOrchestration && (
         <div className="assistant-orchestration-slot">
           <OrchestrationTimeline orchestration={activeOrchestration} onOpenJob={onOpenJob} onOpenArtifacts={onOpenArtifacts} />
         </div>
       )}
-      {workflows.length > 0 && (
+      {workflows.length > 0 && !messages.length && !pendingSearchPlan && (
         <section className="assistant-next-actions compact-actions" aria-label="AI 建议动作">
           <div className="assistant-next-actions-head">
             <span>快捷动作</span>
@@ -5847,9 +5913,54 @@ function promptVersionLabel(version: string): string {
   return version;
 }
 
-function isControlledOrchestrationRequest(content: string): boolean {
+function parseAssistantSearchPlan(content: string): AssistantSearchPlan | null {
   const text = content.trim();
-  return /抓取|搜索/.test(text) && /关键词/.test(text) && /话题|机会|爆款|评论|选题|分析/.test(text);
+  if (!/(抓取|搜索|采集|爬取)/u.test(text) || !/(关键词|关键字)/u.test(text)) {
+    return null;
+  }
+  const keywords = extractAssistantKeywords(text);
+  if (!keywords.length) {
+    return null;
+  }
+  return {
+    instruction: text,
+    keywords
+  };
+}
+
+function extractAssistantKeywords(text: string): string[] {
+  const patterns = [
+    /(?:关键词|关键字)\s*[:：]?\s*([^\n，,。；;]+)/u,
+    /(?:抓取|搜索|采集|爬取)\s*(?:关键词|关键字)?\s*([^\n，,。；;]+)/u,
+    /(?:通过|用|以)\s*([^\n，,。；;]+?)\s*(?:关键词|关键字)\s*(?:进行|做)?\s*(?:抓取|搜索|采集|爬取)/u
+  ];
+  for (const pattern of patterns) {
+    const candidate = pattern.exec(text)?.[1];
+    if (!candidate) {
+      continue;
+    }
+    const keywords = splitAssistantKeywordCandidate(candidate);
+    if (keywords.length) {
+      return keywords;
+    }
+  }
+  return [];
+}
+
+function splitAssistantKeywordCandidate(candidate: string): string[] {
+  const cleaned = candidate
+    .replace(/[“”"'`]/g, "")
+    .split(/然后|并且|并|再|顺便|同时|生成|分析|这个关键词|这些关键词|该关键词|这个关键字|这些关键字|该关键字/u)[0]
+    ?.replace(/^(?:帮我|请|进行|关于|围绕|抓取|搜索|采集|爬取|关键词|关键字)\s*/u, "")
+    .replace(/(?:的)?(?:抓取|搜索|采集|爬取).*$/u, "")
+    .trim();
+  if (!cleaned) {
+    return [];
+  }
+  return cleaned
+    .split(/[\s、/|]+/u)
+    .map((item) => item.trim())
+    .filter((item) => item && !["这个", "这些", "该", "关键词", "关键字", "抓取", "搜索", "采集", "爬取"].includes(item));
 }
 
 function isContentStudioRequest(content: string): boolean {
@@ -5936,6 +6047,9 @@ function orchestrationStatusLabel(status: AiOrchestration["status"]): string {
 }
 
 function formatBreakerReason(reason: string): string {
+  if (isRateLimitReason(reason)) {
+    return "小红书返回 IP 限流（300012），任务已自动暂停。建议等待 10-30 分钟后再恢复，并降低抓取页数、评论页数或并发，避免连续触发风控。";
+  }
   if (reason.includes("Daily detail-read budget reached")) {
     const match = reason.match(/\((\d+)\)/);
     const budget = match?.[1] ?? "当前";
@@ -5951,6 +6065,10 @@ function formatBreakerReason(reason: string): string {
     return "登录 Cookie 失效或缺失，请重新验证登录连接。";
   }
   return reason;
+}
+
+function isRateLimitReason(reason: string): boolean {
+  return /IP rate limit|300012|rate limit/i.test(reason);
 }
 
 function formatAuthError(reason: string): string {

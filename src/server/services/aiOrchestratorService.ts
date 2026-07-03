@@ -110,9 +110,22 @@ export function startAiOrchestration(id: string, storage: StoreLike = store, opt
     return;
   }
   activeRuns.add(id);
-  void runAiOrchestration(id, storage, options).finally(() => {
-    activeRuns.delete(id);
-  });
+  void runAiOrchestration(id, storage, options)
+    .catch(async (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[ai-orchestration:${id}] ${message}`);
+      await patchOrchestration(id, storage, (item) => ({
+        ...item,
+        status: "failed",
+        error: message
+      })).catch((patchError) => {
+        const patchMessage = patchError instanceof Error ? patchError.message : String(patchError);
+        console.error(`[ai-orchestration:${id}:patch] ${patchMessage}`);
+      });
+    })
+    .finally(() => {
+      activeRuns.delete(id);
+    });
 }
 
 export async function runAiOrchestration(
@@ -354,8 +367,10 @@ async function patchOrchestration(
 function extractKeywords(instruction: string): string[] {
   const patterns = [
     /关键词\s*[:：]?\s*([^\n，,。；;]+)/u,
-    /抓取\s*(?:关键词)?\s*([^\n，,。；;]+)/u,
-    /搜索\s*(?:关键词)?\s*([^\n，,。；;]+)/u
+    /关键字\s*[:：]?\s*([^\n，,。；;]+)/u,
+    /抓取\s*(?:关键词|关键字)?\s*([^\n，,。；;]+)/u,
+    /搜索\s*(?:关键词|关键字)?\s*([^\n，,。；;]+)/u,
+    /(?:通过|用|以)\s*([^\n，,。；;]+?)\s*(?:关键词|关键字)\s*(?:进行|做)?\s*(?:抓取|搜索|采集|爬取)/u
   ];
 
   for (const pattern of patterns) {
@@ -371,13 +386,16 @@ function extractKeywords(instruction: string): string[] {
 function splitKeywordCandidate(candidate: string): string[] {
   const cleaned = candidate
     .replace(/^关键词\s*[:：]?/u, "")
-    .split(/然后|并且|基于|生成|再/u)[0]
+    .split(/然后|并且|并|基于|生成|分析|这个关键词|这些关键词|该关键词|这个关键字|这些关键字|该关键字|再/u)[0]
     ?.replace(/[“”"'`]/g, "")
+    .replace(/(?:的)?(?:抓取|搜索|采集|爬取).*$/u, "")
     .trim();
   if (!cleaned) {
     return [];
   }
-  return cleaned.split(/[、/|]+/u);
+  return cleaned
+    .split(/[\s、/|]+/u)
+    .filter((item) => item && !["这个", "这些", "该", "关键词", "关键字", "抓取", "搜索", "采集", "爬取"].includes(item));
 }
 
 function normalizeKeywords(values: string[] = []): string[] {

@@ -31,6 +31,15 @@ const activeTimers = new Map<string, Set<NodeJS.Timeout>>();
 const activeWorkers = new Map<string, number>();
 const queueKinds: QueueKind[] = ["read", "comments", "user", "user-posts", "analyze"];
 
+function reportJobBackgroundError(scope: string, error: unknown): void {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error(`[job:${scope}] ${message}`);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class JobService {
   async createJob(input: SearchJobInput): Promise<SearchJob> {
     const job: SearchJob = {
@@ -115,7 +124,7 @@ export class JobService {
   }
 
   start(jobId: string, delayMs = 0): void {
-    void this.ensureWorkers(jobId, delayMs);
+    void this.ensureWorkers(jobId, delayMs).catch((error) => reportJobBackgroundError("ensureWorkers", error));
   }
 
   private async ensureWorkers(jobId: string, delayMs = 0): Promise<void> {
@@ -141,7 +150,7 @@ export class JobService {
       if (!timers?.size) {
         activeTimers.delete(jobId);
       }
-      void this.runWorker(jobId);
+      void this.runWorker(jobId).catch((error) => reportJobBackgroundError("runWorker", error));
     }, delayMs);
     const timers = activeTimers.get(jobId) ?? new Set<NodeJS.Timeout>();
     timers.add(timer);
@@ -153,6 +162,11 @@ export class JobService {
     let shouldContinue = false;
     try {
       shouldContinue = await this.processNext(jobId);
+    } catch (error) {
+      const reason = errorMessage(error);
+      reportJobBackgroundError(`processNext:${jobId}`, error);
+      await this.pauseJob(jobId, reason).catch((pauseError) => reportJobBackgroundError(`pauseJob:${jobId}`, pauseError));
+      shouldContinue = false;
     } finally {
       const nextCount = Math.max(0, (activeWorkers.get(jobId) ?? 1) - 1);
       if (nextCount) {

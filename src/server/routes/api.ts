@@ -976,31 +976,54 @@ api.get("/ai/orchestrations/:id/events", async (req, res) => {
     Connection: "keep-alive"
   });
   let closed = false;
+  let timer: NodeJS.Timeout | undefined;
+  const closeStream = () => {
+    closed = true;
+    if (timer) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+    if (!res.destroyed && !res.writableEnded) {
+      res.end();
+    }
+  };
+  const writeEvent = (event: string, data: unknown) => {
+    if (closed || res.destroyed || res.writableEnded) {
+      return false;
+    }
+    try {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      return true;
+    } catch {
+      closeStream();
+      return false;
+    }
+  };
   const send = async () => {
     if (closed) return;
     const orchestration = await getAiOrchestration(req.params.id);
     if (!orchestration) {
-      res.write(`event: error\ndata: ${JSON.stringify({ error: "AI orchestration not found" })}\n\n`);
-      res.end();
-      closed = true;
+      writeEvent("error", { error: "AI orchestration not found" });
+      closeStream();
       return;
     }
-    res.write(`event: orchestration\ndata: ${JSON.stringify(orchestration)}\n\n`);
+    writeEvent("orchestration", orchestration);
     if (["completed", "failed", "cancelled"].includes(orchestration.status)) {
-      res.end();
-      closed = true;
+      closeStream();
     }
   };
-  const timer = setInterval(() => {
+  timer = setInterval(() => {
     void send().catch((error) => {
-      res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : String(error) })}\n\n`);
+      writeEvent("error", { error: error instanceof Error ? error.message : String(error) });
     });
   }, 2000);
   req.on("close", () => {
-    closed = true;
-    clearInterval(timer);
+    closeStream();
   });
-  await send();
+  await send().catch((error) => {
+    writeEvent("error", { error: error instanceof Error ? error.message : String(error) });
+    closeStream();
+  });
 });
 
 api.get("/ai/artifacts", async (req, res) => {
