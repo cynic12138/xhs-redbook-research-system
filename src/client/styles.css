@@ -6115,9 +6115,19 @@ label {
   line-height: 1.4;
 }
 
+.template-current-badge {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  color: var(--primary) !important;
+  background: #ffe4ec;
+  font-size: 12px !important;
+  font-weight: 800;
+}
+
 .template-item-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 

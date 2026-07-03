@@ -2980,7 +2980,7 @@ function ViralPage({
             </div>
           }
         />
-        <p className="panel-note">按本地爆款分排序。可以直接查看某篇样本、做单篇深拆，或勾选 2 篇以上做多篇对比拆解。</p>
+        <p className="panel-note">按本地爆款分排序。点击样本卡片可查看本地拆解，或勾选 2 篇以上做多篇对比拆解。</p>
         <div className="template-list">
           {templates.map((item) => {
             const isActive = item.noteId === activeSampleId;
@@ -2989,14 +2989,11 @@ function ViralPage({
               <div key={item.noteId} className={isActive ? "template-item active" : "template-item"}>
                 <button className="template-item-main" type="button" onClick={() => openSample(item.noteId)} aria-current={isActive ? "true" : undefined}>
                   <strong>{item.title}</strong>
+                  {isActive && <span className="template-current-badge">当前查看</span>}
                   <span>爆款分 {item.score} · {contentTypeLabel(item.contentType)}</span>
                   <div>{item.hookPatterns.map((hook) => <em key={hook}>{hook}</em>)}</div>
                 </button>
                 <div className="template-item-actions">
-                  <button className="ghost-button compact" type="button" onClick={() => openSample(item.noteId)}>
-                    <Eye size={14} />
-                    查看
-                  </button>
                   <button className="ghost-button compact" onClick={() => void runSingleDive(item.noteId)} disabled={busy === "workflow-viral-deep-dive"}>
                     {busy === "workflow-viral-deep-dive" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
                     深拆
