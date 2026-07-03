@@ -79,6 +79,13 @@ const workflowDefinitions: AiWorkflowDefinition[] = [
     requires: ["job", "note", "comments", "analytics"]
   },
   {
+    key: "viral-batch-deep-dive",
+    title: "多篇爆款对比拆解",
+    description: "对比多篇高表现笔记的共同结构、差异和可复用边界。",
+    module: "viral",
+    requires: ["job", "note", "comments", "analytics"]
+  },
+  {
     key: "viral-template",
     title: "爆款结构模板",
     description: "从 Top 笔记中提炼标题公式、正文段落、CTA 和适用场景。",
@@ -305,6 +312,7 @@ export async function previewAiPrompt(
     advancedTemplate?: string;
     jobId?: string;
     noteId?: string;
+    noteIds?: string[];
     focus?: string;
   } = {}
 ): Promise<AiPromptPreview> {
@@ -317,7 +325,8 @@ export async function previewAiPrompt(
     guidedConfig: input.guidedConfig ? normalizeGuidedConfig(key, input.guidedConfig) : current.guidedConfig,
     advancedConfig: { template: input.advancedTemplate ?? current.advancedConfig?.template ?? "" }
   };
-  const context = await buildAiContext(input.jobId, input.noteId);
+  const normalizedNoteIds = Array.from(new Set((input.noteIds ?? []).map((id) => id.trim()).filter(Boolean)));
+  const context = await buildAiContext(input.jobId, input.noteId, normalizedNoteIds);
   const prompt = buildWorkflowPromptForConfig(key, config, context, input.focus);
   return {
     mode,
@@ -352,13 +361,17 @@ export async function runAiWorkflow(input: AiWorkflowRunInput): Promise<AiArtifa
     throw new Error("AI workflow not found.");
   }
 
-  const context = await buildAiContext(input.jobId, input.noteId);
-  const title = `${workflow.title}${context.job ? ` - ${context.job.keywords.join(" / ")}` : ""}`;
+  const normalizedNoteIds = Array.from(new Set((input.noteIds ?? []).map((id) => id.trim()).filter(Boolean)));
+  const context = await buildAiContext(input.jobId, input.noteId, normalizedNoteIds);
+  const selectedCount = context.selectedNotes.length;
+  const titlePrefix = workflow.key === "viral-batch-deep-dive" && selectedCount ? `${workflow.title}（${selectedCount} 篇）` : workflow.title;
+  const title = `${titlePrefix}${context.job ? ` - ${context.job.keywords.join(" / ")}` : ""}`;
   const prompt = await resolveWorkflowPrompt(workflow.key, context, input.focus);
   return createArtifact({
     workflowKey: workflow.key,
     jobId: input.jobId,
     noteId: input.noteId,
+    noteIds: normalizedNoteIds.length ? normalizedNoteIds : undefined,
     title,
     prompt: prompt.prompt,
     modelId: input.modelId,
@@ -588,6 +601,7 @@ interface AiContext {
   analytics?: AnalyticsReport;
   notes: NoteRecord[];
   selectedNote?: NoteRecord;
+  selectedNotes: NoteRecord[];
   comments: CommentRecord[];
   authors: AuthorRecord[];
   authorPosts: AuthorPostRecord[];
@@ -596,13 +610,14 @@ interface AiContext {
 function emptyAiContext(): AiContext {
   return {
     notes: [],
+    selectedNotes: [],
     comments: [],
     authors: [],
     authorPosts: []
   };
 }
 
-async function buildAiContext(jobId?: string, noteId?: string): Promise<AiContext> {
+async function buildAiContext(jobId?: string, noteId?: string, noteIds: string[] = []): Promise<AiContext> {
   const [jobs, comments, authors, authorPosts] = await Promise.all([
     store.read("searchJobs"),
     store.read("comments"),
@@ -612,14 +627,20 @@ async function buildAiContext(jobId?: string, noteId?: string): Promise<AiContex
   const sortedJobs = [...jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const job = (jobId ? jobs.find((item) => item.id === jobId) : undefined) ?? sortedJobs[0];
   const notes = job ? await listNotes({ jobId: job.id, sort: "hot" }) : await listNotes({ sort: "hot" });
-  const selectedNote = noteId ? notes.find((note) => note.id === noteId) ?? (await store.read("notes")).find((note) => note.id === noteId) : undefined;
-  const relatedNoteIds = new Set((selectedNote ? [selectedNote] : notes.slice(0, 30)).map((note) => note.id));
+  const requestedNoteIds = Array.from(new Set([noteId, ...noteIds].filter(Boolean) as string[]));
+  const allNotes = requestedNoteIds.length ? await store.read("notes") : notes;
+  const selectedNotes = requestedNoteIds
+    .map((id) => notes.find((note) => note.id === id) ?? allNotes.find((note) => note.id === id))
+    .filter((note): note is NoteRecord => Boolean(note));
+  const selectedNote = selectedNotes[0];
+  const relatedNoteIds = new Set((selectedNotes.length ? selectedNotes : notes.slice(0, 30)).map((note) => note.id));
   const analytics = job ? await getAnalytics(job.id) : undefined;
   return {
     job,
     analytics,
     notes,
     selectedNote,
+    selectedNotes,
     comments: comments.filter((comment) => relatedNoteIds.has(comment.noteId)).sort((a, b) => b.likedCount - a.likedCount),
     authors,
     authorPosts
@@ -726,6 +747,7 @@ async function createArtifact(input: {
   workflowKey: AiArtifact["workflowKey"];
   jobId?: string;
   noteId?: string;
+  noteIds?: string[];
   title: string;
   prompt: string;
   promptKey?: AiArtifact["promptKey"];
@@ -767,6 +789,7 @@ async function createArtifact(input: {
     workflowKey: input.workflowKey,
     jobId: input.jobId,
     noteId: input.noteId,
+    noteIds: input.noteIds,
     title: input.title,
     markdown,
     source,
@@ -849,7 +872,7 @@ function localActionsFor(key: AiWorkflowDefinition["key"], selected?: NoteRecord
   if (key === "competitor-analysis") {
     return "- 选 3 个头部作者做内容支柱对比。\n- 找出其高赞但低评论的内容作为模板，避开高争议话题。";
   }
-  if (key === "viral-deep-dive" || key === "viral-template") {
+  if (key === "viral-deep-dive" || key === "viral-batch-deep-dive" || key === "viral-template") {
     return `- 复盘标题钩子、正文开头、评论触发点。\n- ${selected ? `以《${selected.title}》为样本生成 3 个同结构选题。` : "先选择一篇高热笔记再做单篇拆解。"}`;
   }
   if (key === "draft-review") {
@@ -867,8 +890,9 @@ function summarizeContext(context: AiContext): string {
     `笔记：${context.notes.length}`,
     `评论：${context.comments.length}`,
     `作者：${context.authors.length}`,
+    context.selectedNotes.length > 1 ? `选中样本：${context.selectedNotes.length} 篇` : "",
     context.selectedNote ? `选中：${context.selectedNote.title}` : "未选中笔记"
-  ].join(" · ");
+  ].filter(Boolean).join(" · ");
 }
 
 function buildLocalReport(

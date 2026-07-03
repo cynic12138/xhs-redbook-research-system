@@ -76,6 +76,7 @@ const context = {
   analytics,
   notes: [note],
   selectedNote: note,
+  selectedNotes: [note],
   comments,
   authors: [{ id: "u1", nickname: "alice", fansCount: 10000, followingCount: 10, likedCount: 20000, noteCount: 12, updatedAt: "2026-06-18T00:00:00.000Z" }],
   authorPosts: [{ id: "p1", authorId: "u1", title: "线下相亲复盘", type: "normal" as const, likedCount: 500, collectedCount: 200, commentCount: 40 }]
@@ -85,7 +86,7 @@ describe("AI prompt library", () => {
   it("describes every workflow prompt for the frontend", () => {
     const infos = listAiPromptInfos();
 
-    expect(infos).toHaveLength(8);
+    expect(infos).toHaveLength(9);
     expect(infos.every((info) => info.description && info.version && info.inputRequirements.length && info.outputSections.length)).toBe(true);
     expect(infos.map((info) => info.key)).toContain("content-planning");
     expect(infos.find((info) => info.key === "draft-review")?.title).toBe("种草笔记审稿");
@@ -97,6 +98,7 @@ describe("AI prompt library", () => {
       ["audience-insight", "# 受众洞察报告"],
       ["competitor-analysis", "# 竞品分析报告"],
       ["viral-deep-dive", "# 单篇爆款拆解"],
+      ["viral-batch-deep-dive", "# 多篇爆款对比拆解"],
       ["viral-template", "# 爆款模板库"],
       ["note-analysis", "# 单篇笔记优化分析"],
       ["draft-review", "# AI 审稿报告"],

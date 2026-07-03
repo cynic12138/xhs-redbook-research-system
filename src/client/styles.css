@@ -1614,9 +1614,28 @@ label {
   border-radius: 8px;
 }
 
+.template-item-main {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
 .template-item span {
   color: #687386;
   font-size: 13px;
+}
+
+.template-item-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 4px;
 }
 
 .reply-action {
@@ -4106,10 +4125,31 @@ label {
 .prompt-card.active,
 .compact-list-row.active,
 .report-row.active,
-.drawer-model-row.active {
+.drawer-model-row.active,
+.template-item.active {
   border-color: #fda4af;
   background: var(--primary-soft);
   box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.template-item .template-item-main div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.template-item .template-item-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.template-item-actions .compact {
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 6px;
 }
 
 .note-type {

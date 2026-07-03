@@ -386,12 +386,51 @@ describe("API route contracts", () => {
       modelId: "model_contract"
     });
   });
+
+  it("passes multi-note AI workflow inputs through the API route", async () => {
+    const runAiWorkflow = vi.fn(async (input) => ({
+      id: "artifact_contract",
+      workflowKey: input.workflowKey,
+      jobId: input.jobId,
+      noteIds: input.noteIds,
+      title: "多篇爆款对比拆解",
+      markdown: "# 多篇爆款对比拆解",
+      source: "local",
+      status: "completed",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    }));
+    mockRouteDependencies({ aiService: { runAiWorkflow } });
+    const app = await createApp();
+    const response = await requestJson(app, "/api/ai/workflows/run", {
+      method: "POST",
+      body: {
+        workflowKey: "viral-batch-deep-dive",
+        jobId: "job_contract",
+        noteIds: ["note_a", "note_b"],
+        focus: "对比共同结构"
+      }
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      workflowKey: "viral-batch-deep-dive",
+      noteIds: ["note_a", "note_b"]
+    });
+    expect(runAiWorkflow).toHaveBeenCalledWith({
+      workflowKey: "viral-batch-deep-dive",
+      jobId: "job_contract",
+      noteIds: ["note_a", "note_b"],
+      focus: "对比共同结构"
+    });
+  });
 });
 
 function mockRouteDependencies(overrides: {
   queryService?: Record<string, unknown>;
   contentStudioService?: Record<string, unknown>;
   aiToolCallingService?: Record<string, unknown>;
+  aiService?: Record<string, unknown>;
 } = {}) {
   vi.doMock("../src/server/services/commentOps.js", () => ({
     approveReplyAction: vi.fn(),
@@ -483,7 +522,8 @@ function mockRouteDependencies(overrides: {
     saveAiPromptConfig: vi.fn(),
     setDefaultAiModel: vi.fn(),
     testAiModel: vi.fn(),
-    updateAiModel: vi.fn()
+    updateAiModel: vi.fn(),
+    ...overrides.aiService
   }));
   vi.doMock("../src/server/services/redbookService.js", () => ({
     redbook: {

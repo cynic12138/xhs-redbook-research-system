@@ -22,6 +22,7 @@ export interface AiPromptContext {
   analytics?: AnalyticsReport;
   notes: NoteRecord[];
   selectedNote?: NoteRecord;
+  selectedNotes?: NoteRecord[];
   comments: CommentRecord[];
   authors: AuthorRecord[];
   authorPosts: AuthorPostRecord[];
@@ -72,6 +73,14 @@ const promptInfos: AiPromptInfo[] = [
     outputSections: ["爆款结论", "标题钩子", "正文结构", "媒体与呈现", "互动结构", "评论心理", "可复刻模板", "风险"]
   },
   {
+    key: "viral-batch-deep-dive",
+    title: "多篇爆款对比拆解",
+    description: "对比多篇高表现笔记的共同结构、差异和可复用边界。",
+    version: AI_PROMPT_VERSION,
+    inputRequirements: ["选中样本组", "本地爆款分析", "高赞评论", "同任务热门笔记", "关键词指标"],
+    outputSections: ["样本组结论", "共同爆点", "差异拆解", "标题与开头模式", "正文结构矩阵", "评论触发点", "可复用模板", "不建议照搬的点"]
+  },
+  {
     key: "viral-template",
     title: "爆款结构模板",
     description: "从多篇高互动笔记中提炼标题公式、正文框架和适用场景。",
@@ -110,6 +119,7 @@ const workflowPromptBuilders: Record<AiWorkflowKey, PromptBuilder> = {
   "audience-insight": buildAudienceInsightPrompt,
   "competitor-analysis": buildCompetitorAnalysisPrompt,
   "viral-deep-dive": buildViralDeepDivePrompt,
+  "viral-batch-deep-dive": buildViralBatchDeepDivePrompt,
   "viral-template": buildViralTemplatePrompt,
   "note-analysis": buildNoteAnalysisPrompt,
   "draft-review": buildDraftReviewPrompt,
@@ -126,6 +136,7 @@ const promptVariables: AiPromptVariableInfo[] = [
   { key: "authorPosts", label: "作者作品样本", description: "作者近期作品标题和互动数据。", tier: "optional" },
   { key: "templates", label: "爆款模板候选", description: "本地规则提取的爆款分、钩子和内容类型。", tier: "optional" },
   { key: "selectedNote", label: "选中笔记", description: "当前选中的单篇笔记及正文、互动、媒体信息。", tier: "optional" },
+  { key: "selectedNotes", label: "选中样本组", description: "当前选中的多篇笔记及互动、正文摘要、爆款分析。", tier: "optional" },
   { key: "noteContent", label: "正文与媒体", description: "正文长度、正文预览、图片数量、视频状态。", tier: "optional" },
   { key: "engagement", label: "互动数据", description: "点赞、收藏、评论、分享和互动比例。", tier: "optional" },
   { key: "authorBaseline", label: "作者基线", description: "选中笔记作者的作品数、均赞、最高赞和样本。", tier: "optional" },
@@ -414,6 +425,42 @@ const defaultPromptTemplates: Record<AiWorkflowKey, string> = {
 
 质量检查：
 - 可复刻模板只能给结构和 brief，不直接仿写原文。`,
+  "viral-batch-deep-dive": `你是一名小红书爆款样本对比拆解专家。你的工作是对多篇高表现笔记做横向对比，找出共同结构、差异和可复用边界。
+
+工作目标：
+- 不把多篇样本简单汇总，而是提炼共同爆点和差异化原因。
+- 说明哪些结构可复用，哪些依赖作者身份、素材稀缺性或偶发流量。
+- 输出能指导下一轮选题和内容生产的结构模板。
+
+系统会自动带入的数据：
+- 任务信息：{job}
+- 选中样本组：{selectedNotes}
+- 本地爆款模板候选：{templates}
+- 高赞评论：{topComments}
+- 同任务热门笔记：{topNotes}
+- 关键词指标：{keywords}
+- 运营补充要求：{focus}
+
+判断方法：
+- 至少比较 2 篇样本的共同点和差异点。
+- 不复写原文，不输出洗稿式改写。
+- 每个结论要能追溯到标题、正文、互动、评论或作者条件。
+- 不建议自动发布、自动评论、自动点赞、自动收藏。
+
+输出格式：
+# 多篇爆款对比拆解
+## 1. 样本组结论
+## 2. 共同爆点
+## 3. 差异拆解
+## 4. 标题与开头模式
+## 5. 正文结构矩阵
+## 6. 评论触发点
+## 7. 可复用模板
+## 8. 不建议照搬的点
+
+质量检查：
+- 每个可复用模板都要说明适用场景和不适用场景。
+- 如果样本不足或评论不足，明确标注置信度。`,
   "viral-template": `你是一名小红书内容模板设计师。你的工作是把多篇高表现笔记提炼成可批量使用的标题公式和正文框架。
 
 工作目标：
@@ -783,6 +830,56 @@ function buildViralDeepDivePrompt(context: AiPromptContext, focus?: string): str
 说明哪些点不能直接照搬，哪些点可能造成同质化或误导。`;
 }
 
+function buildViralBatchDeepDivePrompt(context: AiPromptContext, focus?: string): string {
+  const selectedNotes = context.selectedNotes?.length ? context.selectedNotes : context.notes.slice(0, 5);
+  return `${baseInstruction("小红书爆款样本对比拆解专家")}
+
+你的任务：
+对选中的多篇高表现笔记做横向对比，找出共同爆点、差异原因和可复用边界。
+
+分析原则：
+- 必须围绕选中样本组，不要泛泛分析整个任务。
+- 至少比较标题、开头、正文结构、媒体形式、互动比例、评论触发点。
+- 区分“可复用结构”“依赖作者/产品/素材的条件”和“不可照搬风险”。
+- 不输出洗稿内容，不复写原文，只输出结构和 brief。
+
+输入数据：
+任务信息：${json(compactJob(context.job))}
+选中样本组：${json(selectedNotes.map(compactNote))}
+本地爆款模板候选：${json(context.analytics?.templates.slice(0, 12) ?? [])}
+关键词指标：${json(context.analytics?.keywords.slice(0, 12) ?? [])}
+高赞评论：${json(context.comments.slice(0, 60).map(compactComment))}
+同任务热门笔记：${json(context.notes.slice(0, 30).map(compactNote))}
+补充要求：${focus?.trim() || "对比多篇样本的共同结构、差异和可复用边界。"}
+
+请按以下 Markdown 结构输出：
+# 多篇爆款对比拆解
+
+## 1. 样本组结论
+用 3-5 条说明这组样本共同说明了什么内容机会。
+
+## 2. 共同爆点
+比较标题、开头、场景、情绪、利益点和信息密度的共同点。
+
+## 3. 差异拆解
+逐篇说明每篇样本的独特点，以及这些差异为什么影响互动。
+
+## 4. 标题与开头模式
+提炼可复用的标题公式和开头方式，每条标注来源样本。
+
+## 5. 正文结构矩阵
+用矩阵方式比较：开头、主体、证据、转折、结尾 CTA。
+
+## 6. 评论触发点
+从评论中提炼用户为什么提问、收藏、认同或争议。
+
+## 7. 可复用模板
+输出 3 个可用于新内容的结构 brief，说明适用场景和不适用场景。
+
+## 8. 不建议照搬的点
+说明哪些点依赖作者身份、个人经历、素材稀缺性或可能带来同质化风险。`;
+}
+
 function buildViralTemplatePrompt(context: AiPromptContext, focus?: string): string {
   return `${baseInstruction("小红书内容模板设计师")}
 
@@ -1054,8 +1151,9 @@ function summarizeContext(context: AiPromptContext): string {
     `笔记：${context.notes.length}`,
     `评论：${context.comments.length}`,
     `作者：${context.authors.length}`,
+    (context.selectedNotes?.length ?? 0) > 1 ? `选中样本：${context.selectedNotes?.length} 篇` : "",
     context.selectedNote ? `选中：${context.selectedNote.title}` : "未选中笔记"
-  ].join(" · ");
+  ].filter(Boolean).join(" · ");
 }
 
 function renderGuidedPrompt(key: AiWorkflowKey, config: AiPromptGuidedConfig, context: AiPromptContext, focus?: string): string {
@@ -1114,6 +1212,7 @@ function promptTemplateValues(context: AiPromptContext, focus?: string): Record<
     authors: context.analytics?.authors.slice(0, 12) ?? [],
     templates: context.analytics?.templates.slice(0, 12) ?? [],
     selectedNote: selected ? compactNote(selected) : null,
+    selectedNotes: (context.selectedNotes ?? []).map(compactNote),
     topNotes: context.notes.slice(0, 30).map(compactNote),
     topComments: context.comments.slice(0, 50).map(compactComment),
     authorPosts: context.authorPosts.slice(0, 60),

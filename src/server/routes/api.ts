@@ -114,9 +114,10 @@ const replyPlanInput = z.object({
 });
 
 const aiWorkflowInput = z.object({
-  workflowKey: z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis", "draft-review", "note-writing"]),
+  workflowKey: z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-batch-deep-dive", "viral-template", "note-analysis", "draft-review", "note-writing"]),
   jobId: z.string().optional(),
   noteId: z.string().optional(),
+  noteIds: z.array(z.string().min(1)).optional(),
   modelId: z.string().optional(),
   focus: z.string().optional()
 });
@@ -142,7 +143,7 @@ const aiOrchestrationInput = z
     modelId: value.modelId
   }));
 
-const aiPromptKey = z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-template", "note-analysis", "draft-review", "note-writing"]);
+const aiPromptKey = z.enum(["content-planning", "audience-insight", "competitor-analysis", "viral-deep-dive", "viral-batch-deep-dive", "viral-template", "note-analysis", "draft-review", "note-writing"]);
 const aiPromptMode = z.enum(["builtin", "guided", "advanced"]);
 const aiPromptGuidedConfigInput = z.object({
   role: z.string().min(1),
@@ -924,6 +925,7 @@ api.post("/ai/prompts/:key/preview", async (req, res, next) => {
       advancedTemplate: z.string().optional(),
       jobId: z.string().optional(),
       noteId: z.string().optional(),
+      noteIds: z.array(z.string().min(1)).optional(),
       focus: z.string().optional()
     }).parse(req.body ?? {});
     res.json(await previewAiPrompt(aiPromptKey.parse(req.params.key), body));

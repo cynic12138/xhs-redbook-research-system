@@ -84,7 +84,8 @@ type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "com
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
 type ModelForm = { providerKey: AiModelProviderKey; name: string; provider: string; baseUrl: string; model: string; apiKey: string };
 type ReaderPreview = { kind: "artifact" | "report"; title: string; markdown: string; meta: string[]; exportUrl: string };
-type RunWorkflow = (workflowKey: AiWorkflowKey, focus?: string) => Promise<AiArtifact | undefined>;
+type RunWorkflowOptions = { noteId?: string; noteIds?: string[] };
+type RunWorkflow = (workflowKey: AiWorkflowKey, focus?: string, options?: RunWorkflowOptions) => Promise<AiArtifact | undefined>;
 type ContentBriefForm = {
   productName: string;
   persona: string;
@@ -1400,13 +1401,15 @@ export function App() {
     });
   }
 
-  async function runWorkflow(workflowKey: AiWorkflowKey, focus?: string): Promise<AiArtifact | undefined> {
+  async function runWorkflow(workflowKey: AiWorkflowKey, focus?: string, options: RunWorkflowOptions = {}): Promise<AiArtifact | undefined> {
     const workflow = aiWorkflows.find((item) => item.key === workflowKey);
     if (workflow?.requires.includes("job") && !contextJobId) {
       setError("当前没有可用于分析的有效任务，请先创建并完成一次关键词抓取。");
       return undefined;
     }
-    if (workflow?.requires.includes("note") && !selected) {
+    const workflowNoteIds = Array.from(new Set(options.noteIds ?? []));
+    const workflowNoteId = options.noteIds ? options.noteId : options.noteId ?? selected?.id;
+    if (workflow?.requires.includes("note") && !workflowNoteId && !workflowNoteIds.length) {
       setError("请先选择一篇笔记。");
       return undefined;
     }
@@ -1414,7 +1417,8 @@ export function App() {
       const artifact = await api.runAiWorkflow({
         workflowKey,
         jobId: contextJobId || undefined,
-        noteId: selected?.id,
+        noteId: workflowNoteId,
+        noteIds: workflowNoteIds.length ? workflowNoteIds : undefined,
         modelId: selectedModel?.id,
         focus
       });
@@ -1775,7 +1779,7 @@ export function App() {
             busy={busy}
           />
         )}
-        {activeModule === "viral" && <ViralPage analytics={analytics} selected={selected} artifacts={aiArtifacts} runWorkflow={runWorkflow} busy={busy} />}
+        {activeModule === "viral" && <ViralPage analytics={analytics} notes={notes} selected={selected} artifacts={aiArtifacts} runWorkflow={runWorkflow} busy={busy} />}
         {activeModule === "audience" && (
           <AudiencePage analytics={analytics} notes={notes} artifacts={aiArtifacts} runWorkflow={runWorkflow} busy={busy} />
         )}
@@ -2900,19 +2904,58 @@ function percentLabel(value?: number): string {
 
 function ViralPage({
   analytics,
+  notes,
   selected,
   artifacts,
   runWorkflow,
   busy
 }: {
   analytics: AnalyticsReport | null;
+  notes: NoteRecord[];
   selected: NoteRecord | null;
   artifacts: AiArtifact[];
   runWorkflow: RunWorkflow;
   busy: string;
 }) {
-  const latestDeepDive = artifacts.find((artifact) => artifact.workflowKey === "viral-deep-dive");
+  const templates = analytics?.templates ?? [];
+  const noteById = useMemo(() => new Map(notes.map((note) => [note.id, note])), [notes]);
+  const [activeSampleId, setActiveSampleId] = useState("");
+  const [compareSampleIds, setCompareSampleIds] = useState<string[]>([]);
+  const fallbackSampleId = templates[0]?.noteId ?? selected?.id ?? "";
+
+  useEffect(() => {
+    if (activeSampleId && (templates.some((item) => item.noteId === activeSampleId) || selected?.id === activeSampleId)) {
+      return;
+    }
+    setActiveSampleId(fallbackSampleId);
+  }, [activeSampleId, fallbackSampleId, selected?.id, templates]);
+
+  useEffect(() => {
+    const validIds = new Set(templates.map((item) => item.noteId));
+    setCompareSampleIds((ids) => {
+      const next = ids.filter((id) => validIds.has(id));
+      return next.length === ids.length ? ids : next;
+    });
+  }, [templates]);
+
+  const activeTemplate = templates.find((item) => item.noteId === activeSampleId);
+  const activeNote = (activeSampleId ? noteById.get(activeSampleId) : undefined) ?? (selected?.id === activeSampleId ? selected : undefined);
+  const compareCount = compareSampleIds.length;
+  const latestDeepDive =
+    artifacts.find((artifact) => artifact.workflowKey === "viral-deep-dive" && activeSampleId && artifact.noteId === activeSampleId) ??
+    artifacts.find((artifact) => artifact.workflowKey === "viral-deep-dive");
+  const latestBatchDive = artifacts.find((artifact) => artifact.workflowKey === "viral-batch-deep-dive");
   const latestTemplate = artifacts.find((artifact) => artifact.workflowKey === "viral-template");
+  const toggleCompareSample = (noteId: string) => {
+    setCompareSampleIds((ids) => ids.includes(noteId) ? ids.filter((id) => id !== noteId) : Array.from(new Set([...ids, noteId])));
+  };
+  const runSingleDive = (noteId: string) => runWorkflow("viral-deep-dive", undefined, { noteId });
+  const runBatchDive = () =>
+    runWorkflow(
+      "viral-batch-deep-dive",
+      `对比拆解当前选中的 ${compareSampleIds.length} 篇爆款样本，输出共同结构、差异和可复用边界。`,
+      { noteIds: compareSampleIds }
+    );
   return (
     <div className="viral-layout">
       <section className="surface viral-template-panel">
@@ -2920,88 +2963,127 @@ function ViralPage({
           icon={<Flame size={18} />}
           title="爆款样本库"
           action={
-            <button className="primary-button compact" onClick={() => void runWorkflow("viral-template")} disabled={busy === "workflow-viral-template"}>
-              {busy === "workflow-viral-template" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-              生成模板库
-            </button>
+            <div className="button-row">
+              <button className="ghost-button compact" onClick={() => void runBatchDive()} disabled={compareCount < 2 || busy === "workflow-viral-batch-deep-dive"}>
+                {busy === "workflow-viral-batch-deep-dive" ? <Loader2 className="spin" size={14} /> : <Layers size={14} />}
+                对比已选{compareCount ? `（${compareCount}）` : ""}
+              </button>
+              <button className="primary-button compact" onClick={() => void runWorkflow("viral-template")} disabled={busy === "workflow-viral-template"}>
+                {busy === "workflow-viral-template" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                生成模板库
+              </button>
+            </div>
           }
         />
-        <p className="panel-note">按本地爆款分排序，先找值得拆的样本，再让 AI 提炼可复用标题公式和正文框架。</p>
+        <p className="panel-note">按本地爆款分排序。可以直接查看某篇样本、做单篇深拆，或勾选 2 篇以上做多篇对比拆解。</p>
         <div className="template-list">
-          {analytics?.templates.map((item) => (
-            <div key={item.noteId} className="template-item">
-              <strong>{item.title}</strong>
-              <span>爆款分 {item.score} · {contentTypeLabel(item.contentType)}</span>
-              <div>{item.hookPatterns.map((hook) => <em key={hook}>{hook}</em>)}</div>
-            </div>
-          ))}
-          {!analytics?.templates.length && <EmptyState text="抓取完成后，这里会列出高潜爆款样本" />}
+          {templates.map((item) => {
+            const isActive = item.noteId === activeSampleId;
+            const isCompared = compareSampleIds.includes(item.noteId);
+            return (
+              <div key={item.noteId} className={isActive ? "template-item active" : "template-item"}>
+                <button className="template-item-main" onClick={() => setActiveSampleId(item.noteId)}>
+                  <strong>{item.title}</strong>
+                  <span>爆款分 {item.score} · {contentTypeLabel(item.contentType)}</span>
+                  <div>{item.hookPatterns.map((hook) => <em key={hook}>{hook}</em>)}</div>
+                </button>
+                <div className="template-item-actions">
+                  <button className="ghost-button compact" onClick={() => setActiveSampleId(item.noteId)}>
+                    <Eye size={14} />
+                    查看
+                  </button>
+                  <button className="ghost-button compact" onClick={() => void runSingleDive(item.noteId)} disabled={busy === "workflow-viral-deep-dive"}>
+                    {busy === "workflow-viral-deep-dive" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                    深拆
+                  </button>
+                  <button className={isCompared ? "ghost-button compact danger" : "ghost-button compact"} onClick={() => toggleCompareSample(item.noteId)}>
+                    {isCompared ? <X size={14} /> : <CheckCircle2 size={14} />}
+                    {isCompared ? "移出" : "对比"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {!templates.length && <EmptyState text="抓取完成后，这里会列出高潜爆款样本" />}
         </div>
       </section>
       <section className="surface viral-current-panel">
         <SectionTitle
           icon={<Sparkles size={18} />}
-          title="当前笔记拆解"
+          title="当前样本拆解"
           action={
-            <button className="primary-button compact" onClick={() => void runWorkflow("viral-deep-dive")} disabled={!selected || busy === "workflow-viral-deep-dive"}>
+            <button className="primary-button compact" onClick={() => void runSingleDive(activeSampleId)} disabled={!activeSampleId || busy === "workflow-viral-deep-dive"}>
               {busy === "workflow-viral-deep-dive" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
               AI 深度拆解
             </button>
           }
         />
-        {selected?.analysis ? (
+        {activeNote?.analysis || activeTemplate ? (
           <div className="viral-current-scroll">
             <div className="selected-note-summary">
-              <span>来自笔记库当前选中笔记</span>
-              <strong>{selected.title || "未命名笔记"}</strong>
-              <small>{selected.authorName ?? "未知作者"} · {selected.type === "video" ? "视频" : "图文"}</small>
+              <span>来自爆款样本库当前选中样本</span>
+              <strong>{activeNote?.title || activeTemplate?.title || "未命名笔记"}</strong>
+              <small>
+                {activeNote?.authorName ?? "作者待确认"} · {activeNote?.type === "video" ? "视频" : "图文/未知"} · 已选对比 {compareCount} 篇
+              </small>
             </div>
-            <div className="analysis-grid">
-              <Metric label="爆款分" value={String(selected.analysis.score)} />
-              <Metric label="收藏/赞" value={percentLabel(selected.analysis.collectLikeRatio)} />
-              <Metric label="评论/赞" value={percentLabel(selected.analysis.commentLikeRatio)} />
-              <Metric label="作者倍数" value={`${selected.analysis.viralMultiplier}x`} />
-            </div>
+            {activeNote?.analysis ? (
+              <div className="analysis-grid">
+                <Metric label="爆款分" value={String(activeNote.analysis.score)} />
+                <Metric label="收藏/赞" value={percentLabel(activeNote.analysis.collectLikeRatio)} />
+                <Metric label="评论/赞" value={percentLabel(activeNote.analysis.commentLikeRatio)} />
+                <Metric label="作者倍数" value={`${activeNote.analysis.viralMultiplier}x`} />
+              </div>
+            ) : (
+              <div className="analysis-grid">
+                <Metric label="爆款分" value={String(activeTemplate?.score ?? 0)} />
+                <Metric label="收藏/赞" value="待读取" />
+                <Metric label="评论/赞" value="待读取" />
+                <Metric label="作者倍数" value="待读取" />
+              </div>
+            )}
             <div className="score-explain">
               <strong>爆款分怎么算</strong>
               <p>本地规则会综合标题钩子、收藏/点赞比、评论/点赞比、相对作者过往表现、评论主题数量和正文完整度，压缩成 0-100 分。它用于筛选“值得进一步拆解”的样本，不等同于平台官方推荐分。</p>
             </div>
             <div className="insight-panel">
               <strong>结构判断</strong>
-              <p>内容类型：{contentTypeLabel(selected.analysis.contentType)}；讨论类型：{discussionTypeLabel(selected.analysis.discussionType)}</p>
-              <p>标题钩子：{selected.analysis.hookPatterns.join("、") || "暂无明显钩子"}</p>
+              <p>内容类型：{contentTypeLabel(activeNote?.analysis?.contentType ?? activeTemplate?.contentType)}；讨论类型：{discussionTypeLabel(activeNote?.analysis?.discussionType)}</p>
+              <p>标题钩子：{(activeNote?.analysis?.hookPatterns ?? activeTemplate?.hookPatterns ?? []).join("、") || "暂无明显钩子"}</p>
               <p>复刻方向：保留用户能立即理解的冲突点，正文补足清单、步骤或真实案例，再用评论区高频问题做续篇。</p>
             </div>
             <div className="theme-cloud labeled">
-              {selected.analysis.commentThemes.map((theme) => (
+              {activeNote?.analysis?.commentThemes.map((theme) => (
                 <span key={theme.keyword}>{theme.keyword} · {theme.count}</span>
               ))}
-              {!selected.analysis.commentThemes.length && <span>评论主题不足，建议继续抓取评论后再判断。</span>}
+              {!activeNote?.analysis?.commentThemes.length && <span>评论主题不足，建议继续抓取评论后再判断。</span>}
             </div>
           </div>
         ) : (
-          <EmptyState text="先在笔记库选择一篇已抓取正文和评论的笔记，这里会显示它的爆款结构" />
+          <EmptyState text="从左侧爆款样本库选择一篇笔记，这里会显示它的爆款结构" />
         )}
       </section>
       <section className="surface viral-ai-panel">
-        <SectionTitle icon={<Bot size={18} />} title="AI 深度拆解与大模板" />
+        <SectionTitle icon={<Bot size={18} />} title="AI 深度拆解与对比结果" />
         {latestDeepDive ? (
           <MarkdownView content={latestDeepDive.markdown} compact />
+        ) : latestBatchDive ? (
+          <MarkdownView content={latestBatchDive.markdown} compact />
         ) : latestTemplate ? (
           <MarkdownView content={latestTemplate.markdown} compact />
-        ) : selected?.analysis ? (
+        ) : activeSampleId ? (
           <div className="viral-ai-empty">
             <InsightPanel
               title="建议下一步"
               lines={[
-                "点击“AI 深度拆解”会围绕当前选中笔记生成爆点、标题钩子、正文结构、评论心理和可复刻 brief。",
-                "点击“生成模板库”会从多篇高分样本里提炼标题公式、正文框架和选题复用方式。",
+                "点击“AI 深度拆解”会围绕当前页内选中的样本生成爆点、标题钩子、正文结构、评论心理和可复刻 brief。",
+                "在左侧勾选 2 篇以上样本后，点击“对比已选”会生成多篇对比拆解。",
                 "AI 产物会进入 AI 工作台，并标记它使用的提示词，后续可以继续编辑提示词再生成。"
               ]}
             />
           </div>
         ) : (
-          <EmptyState text="选择一篇笔记后，可以生成单篇深拆或整组爆款模板" />
+          <EmptyState text="选择一篇样本后，可以生成单篇深拆；选择多篇后，可以生成对比拆解" />
         )}
       </section>
     </div>
@@ -4339,6 +4421,7 @@ function AiWorkbenchPage(props: {
           markdown: selectedArtifact.markdown,
           meta: [
             selectedArtifact.source === "ai" ? "AI 生成" : "本地规则",
+            selectedArtifact.noteIds?.length ? `样本：${selectedArtifact.noteIds.length} 篇` : selectedArtifact.noteId ? "样本：单篇笔记" : "",
             selectedArtifact.promptTitle ? `提示词：${selectedArtifact.promptTitle}` : "",
             selectedArtifact.promptSource === "custom" ? "我的提示词" : selectedArtifact.promptSource === "default" ? "内置提示词" : "",
             selectedArtifact.promptVersion ? promptVersionLabel(selectedArtifact.promptVersion) : "",
@@ -4518,7 +4601,11 @@ function ArtifactReader({
               </button>
             )}
             {selectedArtifactWorkflow && (
-              <button className="ghost-button compact" onClick={() => void runWorkflow(selectedArtifactWorkflow)} disabled={busy === `workflow-${selectedArtifactWorkflow}`}>
+              <button
+                className="ghost-button compact"
+                onClick={() => void runWorkflow(selectedArtifactWorkflow, undefined, { noteId: selectedArtifact?.noteId, noteIds: selectedArtifact?.noteIds })}
+                disabled={busy === `workflow-${selectedArtifactWorkflow}`}
+              >
                 {busy === `workflow-${selectedArtifactWorkflow}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
                 重新生成
               </button>

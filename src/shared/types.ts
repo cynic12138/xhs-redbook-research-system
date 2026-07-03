@@ -29,6 +29,7 @@ export type AiWorkflowKey =
   | "audience-insight"
   | "competitor-analysis"
   | "viral-deep-dive"
+  | "viral-batch-deep-dive"
   | "viral-template"
   | "note-analysis"
   | "draft-review"
@@ -499,6 +500,7 @@ export interface AiWorkflowRunInput {
   workflowKey: AiWorkflowKey;
   jobId?: string;
   noteId?: string;
+  noteIds?: string[];
   modelId?: string;
   focus?: string;
 }
@@ -508,6 +510,7 @@ export interface AiArtifact {
   workflowKey: AiWorkflowKey | "assistant";
   jobId?: string;
   noteId?: string;
+  noteIds?: string[];
   title: string;
   markdown: string;
   source: AiArtifactSource;

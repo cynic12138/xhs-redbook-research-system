@@ -176,7 +176,7 @@ export const api = {
     apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/reset`, scope ? { scope } : undefined),
   activateAiPrompt: (key: AiWorkflowKey, source: AiPromptSource) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/activate`, { source }),
   activateAiPromptMode: (key: AiWorkflowKey, mode: AiPromptMode) => apiPost<AiPromptDetail>(`/api/ai/prompts/${key}/activate`, { mode }),
-  previewAiPrompt: (key: AiWorkflowKey, input: { mode?: AiPromptMode; guidedConfig?: AiPromptGuidedConfig; advancedTemplate?: string; jobId?: string; noteId?: string; focus?: string }) =>
+  previewAiPrompt: (key: AiWorkflowKey, input: { mode?: AiPromptMode; guidedConfig?: AiPromptGuidedConfig; advancedTemplate?: string; jobId?: string; noteId?: string; noteIds?: string[]; focus?: string }) =>
     apiPost<AiPromptPreview>(`/api/ai/prompts/${key}/preview`, input),
   runAiWorkflow: (input: AiWorkflowRunInput) => apiPost<AiArtifact>("/api/ai/workflows/run", input),
   assistantChat: (input: AiAssistantChatInput) => apiPost<AiAssistantChatResponse>("/api/ai/assistant/chat", input),

@@ -73,6 +73,7 @@ const workflowKeys: AiWorkflowKey[] = [
   "audience-insight",
   "competitor-analysis",
   "viral-deep-dive",
+  "viral-batch-deep-dive",
   "viral-template",
   "note-analysis",
   "draft-review",
@@ -83,7 +84,7 @@ const toolArgumentKeys: Record<AiToolName, string[]> = {
   create_search_job: ["keywords", "keyword", "sort", "noteType", "pages", "commentPages"],
   get_job_status: ["jobId"],
   list_job_notes: ["jobId", "limit", "sort"],
-  run_ai_workflow: ["workflowKey", "jobId", "noteId", "focus"],
+  run_ai_workflow: ["workflowKey", "jobId", "noteId", "noteIds", "focus"],
   create_summary_artifact: ["jobId", "artifactIds", "title", "summaryMarkdown"]
 };
 
@@ -152,6 +153,7 @@ const toolDefinitions = [
           workflowKey: { type: "string", enum: workflowKeys },
           jobId: { type: "string" },
           noteId: { type: "string" },
+          noteIds: { type: "array", items: { type: "string" }, maxItems: 12 },
           focus: { type: "string", maxLength: 1000 }
         }
       }
