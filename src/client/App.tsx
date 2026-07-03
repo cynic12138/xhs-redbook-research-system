@@ -2921,6 +2921,7 @@ function ViralPage({
   const noteById = useMemo(() => new Map(notes.map((note) => [note.id, note])), [notes]);
   const [activeSampleId, setActiveSampleId] = useState("");
   const [compareSampleIds, setCompareSampleIds] = useState<string[]>([]);
+  const currentSamplePanelRef = useRef<HTMLElement | null>(null);
   const fallbackSampleId = templates[0]?.noteId ?? selected?.id ?? "";
 
   useEffect(() => {
@@ -2948,6 +2949,10 @@ function ViralPage({
   const latestTemplate = artifacts.find((artifact) => artifact.workflowKey === "viral-template");
   const toggleCompareSample = (noteId: string) => {
     setCompareSampleIds((ids) => ids.includes(noteId) ? ids.filter((id) => id !== noteId) : Array.from(new Set([...ids, noteId])));
+  };
+  const openSample = (noteId: string) => {
+    setActiveSampleId(noteId);
+    requestAnimationFrame(() => currentSamplePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" }));
   };
   const runSingleDive = (noteId: string) => runWorkflow("viral-deep-dive", undefined, { noteId });
   const runBatchDive = () =>
@@ -2982,13 +2987,13 @@ function ViralPage({
             const isCompared = compareSampleIds.includes(item.noteId);
             return (
               <div key={item.noteId} className={isActive ? "template-item active" : "template-item"}>
-                <button className="template-item-main" onClick={() => setActiveSampleId(item.noteId)}>
+                <button className="template-item-main" type="button" onClick={() => openSample(item.noteId)} aria-current={isActive ? "true" : undefined}>
                   <strong>{item.title}</strong>
                   <span>爆款分 {item.score} · {contentTypeLabel(item.contentType)}</span>
                   <div>{item.hookPatterns.map((hook) => <em key={hook}>{hook}</em>)}</div>
                 </button>
                 <div className="template-item-actions">
-                  <button className="ghost-button compact" onClick={() => setActiveSampleId(item.noteId)}>
+                  <button className="ghost-button compact" type="button" onClick={() => openSample(item.noteId)}>
                     <Eye size={14} />
                     查看
                   </button>
@@ -3007,7 +3012,7 @@ function ViralPage({
           {!templates.length && <EmptyState text="抓取完成后，这里会列出高潜爆款样本" />}
         </div>
       </section>
-      <section className="surface viral-current-panel">
+      <section className="surface viral-current-panel" ref={currentSamplePanelRef}>
         <SectionTitle
           icon={<Sparkles size={18} />}
           title="当前样本拆解"

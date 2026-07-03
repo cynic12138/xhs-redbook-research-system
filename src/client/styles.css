@@ -6178,13 +6178,17 @@ label {
 
 .prompt-card {
   gap: 7px;
-  padding: 12px 14px;
+  align-content: start;
+  padding: 13px 14px 16px;
+  overflow: visible;
 }
 
 .prompt-card > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, auto);
   align-items: start;
+  column-gap: 10px;
+  row-gap: 4px;
 }
 
 .prompt-card strong {
@@ -6194,12 +6198,16 @@ label {
 }
 
 .prompt-card span {
-  max-width: 112px;
+  max-width: 128px;
   text-align: right;
   white-space: normal;
+  line-height: 1.45;
 }
 
 .prompt-card small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
   line-height: 1.5;
 }
 
