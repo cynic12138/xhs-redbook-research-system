@@ -6132,6 +6132,11 @@ label {
   width: 100%;
 }
 
+.template-item .template-item-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+
 .template-item-actions .ghost-button {
   justify-content: center;
   min-width: 0;
@@ -6139,6 +6144,11 @@ label {
   min-height: 36px;
   padding-inline: 8px;
   white-space: normal;
+}
+
+.template-item .template-item-actions > .ghost-button.compact {
+  justify-self: stretch;
+  width: 100%;
 }
 
 .viral-ai-panel .markdown-view.compact {
