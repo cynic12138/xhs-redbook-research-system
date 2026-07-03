@@ -2996,11 +2996,11 @@ function ViralPage({
                 <div className="template-item-actions">
                   <button className="ghost-button compact" onClick={() => void runSingleDive(item.noteId)} disabled={busy === "workflow-viral-deep-dive"}>
                     {busy === "workflow-viral-deep-dive" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-                    深拆
+                    AI 深度拆解
                   </button>
                   <button className={isCompared ? "ghost-button compact danger" : "ghost-button compact"} onClick={() => toggleCompareSample(item.noteId)}>
                     {isCompared ? <X size={14} /> : <CheckCircle2 size={14} />}
-                    {isCompared ? "移出" : "对比"}
+                    {isCompared ? "移出对比" : "加入对比"}
                   </button>
                 </div>
               </div>
