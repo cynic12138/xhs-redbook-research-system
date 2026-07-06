@@ -6277,6 +6277,11 @@ label {
   grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(250px, 280px);
 }
 
+.prompt-list-panel {
+  gap: 11px;
+  padding-top: 13px;
+}
+
 .prompt-list-panel .section-title {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -6292,6 +6297,15 @@ label {
   justify-self: end;
   min-height: 32px;
   padding-inline: 10px;
+}
+
+.prompt-scope-tabs {
+  margin-bottom: 4px;
+}
+
+.prompt-card-list {
+  gap: 11px;
+  padding-top: 1px;
 }
 
 .prompt-card {
@@ -6338,6 +6352,7 @@ label {
 
 .prompt-card-meta {
   color: var(--foreground-muted) !important;
+  white-space: normal;
 }
 
 .prompt-card small {
@@ -6352,17 +6367,34 @@ label {
 }
 
 .custom-prompt-editor {
-  gap: 9px;
-  margin-top: -2px;
+  gap: 8px;
+  margin-top: -4px;
 }
 
 .custom-prompt-editor .prompt-control-panel {
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 7px;
+  padding: 8px 10px;
 }
 
 .custom-prompt-editor .prompt-control-head {
   align-items: center;
+  gap: 8px;
+}
+
+.custom-prompt-editor .prompt-control-head > div:first-child {
+  gap: 2px;
+}
+
+.custom-prompt-editor .prompt-control-head span {
+  line-height: 1.35;
+}
+
+.custom-prompt-editor .prompt-mode-tabs.custom-prompt-tabs {
+  gap: 7px;
+}
+
+.custom-prompt-editor .prompt-mode-tabs button {
+  min-height: 30px;
 }
 
 .custom-prompt-editor .prompt-guided-workspace {
@@ -6374,7 +6406,7 @@ label {
 }
 
 .prompt-editor-panel > .section-title {
-  min-height: 26px;
+  min-height: 22px;
   align-items: center;
 }
 

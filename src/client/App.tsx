@@ -234,8 +234,8 @@ const defaultCustomPromptGuidedConfig: AiPromptGuidedConfig = {
 };
 
 const defaultCustomPromptForm: AiCustomPromptInput = {
-  title: "我的运营提示词",
-  description: "自定义 AI 提示词，可选择资料后生成产物。",
+  title: "运营分析提示词",
+  description: "选择资料来源，让 AI 按团队方法输出分析、审稿或创作结果。",
   category: "general-ops",
   mode: "guided",
   guidedConfig: defaultCustomPromptGuidedConfig,
@@ -4308,7 +4308,7 @@ function PromptCenterPage({
                 <small className="prompt-card-meta">{prompt.lastUsedAt ? `最近使用 ${new Date(prompt.lastUsedAt).toLocaleString()}` : "尚未使用"}</small>
               </button>
             ))}
-            {!customPrompts.length && <EmptyState text="还没有我的提示词，点击新建或从系统提示词复制。" />}
+            {!customPrompts.length && <EmptyState text="还没有自定义提示词，点击新建或从系统提示词复制。" />}
           </div>
         )}
       </section>
@@ -4316,7 +4316,7 @@ function PromptCenterPage({
       <section className="surface prompt-editor-panel">
         <SectionTitle
           icon={<FileText size={18} />}
-          title={selectedScope === "custom" ? `${customPromptForm.title || "我的提示词"} · 我的提示词` : selectedPrompt ? `${selectedPrompt.title} · 提示词` : "提示词详情"}
+          title={selectedScope === "custom" ? (selectedCustomPrompt ? "编辑自定义提示词" : "新建自定义提示词") : selectedPrompt ? `${selectedPrompt.title} · 提示词` : "提示词详情"}
         />
         {selectedScope === "custom" ? (
           <CustomPromptEditor
@@ -4620,8 +4620,8 @@ function CustomPromptEditor({
       <div className="prompt-control-panel">
         <div className="prompt-control-head">
           <div>
-            <strong>{form.title || "我的提示词"}</strong>
-            <span>{form.description || "用于沉淀团队自己的运营分析、审稿或创作方法。"}</span>
+            <strong>{form.title || "自定义提示词"}</strong>
+            <span>{form.description || "选择资料来源，让 AI 按团队方法输出可复用结果。"}</span>
             <span>
               {prompt ? `已保存 · ${new Date(prompt.updatedAt).toLocaleString()}` : "新建中 · 保存后可预览、运行和记录版本"}
               {prompt?.sourcePromptTitle ? ` · 来源：${prompt.sourcePromptTitle}` : ""}
