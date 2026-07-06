@@ -1021,6 +1021,9 @@ export function App() {
       setDatasetClearPreview(null);
       setDeleteDatasetAiArtifacts(false);
       setSelectedId("");
+      setActiveJobId("");
+      setActiveKeywordScopeId("");
+      setShowHistoryData(false);
       await refreshCore();
       await loadNotes();
       await loadAnalytics();
@@ -2663,7 +2666,7 @@ function NotesPage(props: {
   runWorkflow: RunWorkflow;
   busy: string;
 }) {
-  const clearDisabled = !props.activeJobId || props.busy === "clear-notes" || props.total === 0;
+  const clearDisabled = !props.activeJobId || props.busy === "clear-notes";
   const clearLabel = props.activeJobId ? "清空当前任务" : props.showHistoryData || props.activeKeywordScopeId ? "先选择单个任务" : "请选择任务";
   const visibleNoteIds = props.notes.map((note) => note.id);
   const selectedNoteIdSet = new Set(props.selectedNoteIds);
@@ -2703,11 +2706,11 @@ function NotesPage(props: {
               <button
                 className="ghost-button compact danger"
                 onClick={() => void props.openDatasetManager()}
-                title={props.activeJobId ? "只清空当前选中任务关联的笔记" : "全部历史视图不能直接清空，请先选择单个任务"}
+                title={props.activeJobId ? "删除当前选中任务的数据集，空任务和失败任务也可以清理" : "全部历史视图不能直接清理，请先选择单个任务"}
                 disabled={clearDisabled}
               >
                 {props.busy === "clear-notes" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-                {props.activeJobId ? "管理当前数据集" : clearLabel}
+                {props.activeJobId ? "删除当前数据集" : clearLabel}
               </button>
             </div>
           }
@@ -5710,11 +5713,11 @@ function DatasetManagerDialog(props: {
 }) {
   const deleting = props.busy === "clear-notes";
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="管理当前数据集">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="删除当前数据集">
       <section className="dataset-dialog">
         <SectionTitle
           icon={<Trash2 size={18} />}
-          title="管理当前数据集"
+          title="删除当前数据集"
           action={
             <button className="ghost-button compact" onClick={props.onClose} disabled={deleting}>
               <X size={14} />
@@ -5725,7 +5728,7 @@ function DatasetManagerDialog(props: {
         <div className="dataset-dialog-summary">
           <span>当前任务</span>
           <strong>{props.preview.label}</strong>
-          <small>该操作会移除当前任务与笔记的关联；只有不再属于任何任务的笔记才会被真正删除。</small>
+          <small>该操作会删除当前任务数据集，并移除它与笔记、队列和本地报告的关联；只有不再属于任何任务的笔记才会被真正删除。</small>
         </div>
         <div className="dataset-impact-grid">
           <Metric label="影响笔记" value={formatNumber(props.preview.affectedNotes)} />
@@ -5750,7 +5753,7 @@ function DatasetManagerDialog(props: {
         </label>
         <div className="dataset-warning">
           <AlertTriangle size={16} />
-          <span>这是数据清理操作，不只是隐藏列表。确认前请检查上方影响范围。</span>
+          <span>这是数据删除操作，不只是隐藏列表。确认后该任务会从数据范围中移除。</span>
         </div>
         <div className="dialog-actions">
           <button className="ghost-button" onClick={props.onClose} disabled={deleting}>
@@ -5758,7 +5761,7 @@ function DatasetManagerDialog(props: {
           </button>
           <button className="primary-button danger" onClick={() => void props.onConfirm()} disabled={deleting}>
             {deleting ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
-            确认清理当前数据集
+            确认删除当前数据集
           </button>
         </div>
       </section>

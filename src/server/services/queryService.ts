@@ -252,13 +252,12 @@ export async function clearNotes(
     deletedIds = new Set([...affectedIds].filter((id) => !remainingIds.has(id)));
     await localStore.update("queueItems", (items) => items.filter((item) => item.jobId !== jobId));
     await localStore.update("analysisReports", (reports) => reports.filter((report) => report.jobId !== jobId));
+    await localStore.update("healthReports", (reports) => reports.filter((report) => report.jobId !== jobId));
     if (options.deleteAiArtifacts) {
       await localStore.update("aiArtifacts", (artifacts) => artifacts.filter((artifact) => artifact.jobId !== jobId));
       await localStore.update("aiReports", (reports) => reports.filter((report) => report.jobId !== jobId));
     }
-    if (localStore === store) {
-      await jobs.refreshProgress(jobId);
-    }
+    await localStore.update("searchJobs", (jobs) => jobs.filter((job) => job.id !== jobId));
   } else {
     deletedIds = affectedIds;
     await localStore.write("notes", []);

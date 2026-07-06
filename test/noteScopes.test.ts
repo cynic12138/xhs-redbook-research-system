@@ -82,6 +82,23 @@ describe("note scope summaries", () => {
     expect(await store.read("aiArtifacts")).toHaveLength(0);
     expect(await store.read("aiReports")).toHaveLength(0);
   });
+
+  it("deletes empty failed datasets and removes them from note scopes", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    await store.write("searchJobs", [searchJob("empty-failed", ["empty keyword"], "failed", "2026-06-20T10:00:00.000Z")]);
+    await store.write("notes", []);
+    await store.write("queueItems", [queueItem("queue-error", "empty-failed", "error")]);
+
+    const preview = await getNoteScopeClearPreview("empty-failed", store);
+    expect(preview?.affectedNotes).toBe(0);
+    expect(preview?.queueItemsToDelete).toBe(1);
+
+    await clearNotes("empty-failed", {}, store);
+
+    expect(await store.read("searchJobs")).toHaveLength(0);
+    expect(await store.read("queueItems")).toHaveLength(0);
+    expect((await listNoteScopes(store)).some((scope) => scope.jobId === "empty-failed")).toBe(false);
+  });
 });
 
 function createTempDataDir(): Promise<string> {
