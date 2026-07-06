@@ -4048,11 +4048,11 @@ function PromptCenterPage({
             >
               <div>
                 <strong>{prompt.title}</strong>
-                <span>当前运行：{promptModeLabel(prompt.activeMode ?? promptSourceToMode(prompt.promptSource))}</span>
+                <span className="prompt-card-mode">当前运行：{promptModeLabel(prompt.activeMode ?? promptSourceToMode(prompt.promptSource))}</span>
               </div>
-              <small>{prompt.description}</small>
-              <small>{promptVersionLabel(prompt.version)} · 已生成 {prompt.artifactCount ?? 0} 个产物</small>
-              <small>{prompt.lastUsedAt ? `最近使用 ${new Date(prompt.lastUsedAt).toLocaleString()}` : "尚未使用"}</small>
+              <small className="prompt-card-description">{prompt.description}</small>
+              <small className="prompt-card-meta">{promptVersionLabel(prompt.version)} · 已生成 {prompt.artifactCount ?? 0} 个产物</small>
+              <small className="prompt-card-meta">{prompt.lastUsedAt ? `最近使用 ${new Date(prompt.lastUsedAt).toLocaleString()}` : "尚未使用"}</small>
             </button>
           ))}
         </div>
