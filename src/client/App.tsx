@@ -72,6 +72,7 @@ import type {
   ContentProjectStatus,
   ContentReviewRun,
   HealthReportRecord,
+  NoteBulkDeletePreview,
   NoteScopeClearPreview,
   NoteScopeSummary,
   NoteRecord,
@@ -370,6 +371,7 @@ export function App() {
   const [datasetManagerOpen, setDatasetManagerOpen] = useState(false);
   const [datasetClearPreview, setDatasetClearPreview] = useState<NoteScopeClearPreview | null>(null);
   const [deleteDatasetAiArtifacts, setDeleteDatasetAiArtifacts] = useState(false);
+  const [bulkDeletePreview, setBulkDeletePreview] = useState<NoteBulkDeletePreview | null>(null);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [notePage, setNotePage] = useState(1);
   const [notePageSize] = useState(20);
@@ -990,8 +992,10 @@ export function App() {
 
   async function deleteSelectedNote() {
     if (!selected) return;
+    if (!window.confirm(`确定删除这篇笔记？\n\n${selected.title}`)) return;
     await run("delete-note", async () => {
       await api.deleteNote(selected.id);
+      setSelectedNoteIds(selectedNoteIds.filter((id) => id !== selected.id));
       await loadNotes();
       await loadAnalytics();
     });
@@ -1005,25 +1009,65 @@ export function App() {
   }
 
   async function openDatasetManager() {
-    if (!activeJobId) return;
+    setDatasetClearPreview(null);
+    setDeleteDatasetAiArtifacts(false);
+    setDatasetManagerOpen(true);
+  }
+
+  async function previewDatasetDelete(jobId: string) {
     await run("clear-preview", async () => {
-      setDatasetClearPreview(await api.getNoteScopeClearPreview(activeJobId));
+      setDatasetClearPreview(await api.getNoteScopeClearPreview(jobId));
       setDeleteDatasetAiArtifacts(false);
-      setDatasetManagerOpen(true);
     });
   }
 
+  function openDatasetScope(jobId: string) {
+    setNotePage(1);
+    setActiveKeywordScopeId("");
+    setShowHistoryData(false);
+    setActiveJobId(jobId);
+    setDatasetManagerOpen(false);
+    setDatasetClearPreview(null);
+  }
+
   async function clearCurrentNotes() {
-    if (!activeJobId) return;
+    const jobId = datasetClearPreview?.jobId ?? activeJobId;
+    if (!jobId) return;
     await run("clear-notes", async () => {
-      await api.clearNotes(activeJobId, deleteDatasetAiArtifacts);
-      setDatasetManagerOpen(false);
+      await api.clearNotes(jobId, deleteDatasetAiArtifacts);
       setDatasetClearPreview(null);
       setDeleteDatasetAiArtifacts(false);
       setSelectedId("");
-      setActiveJobId("");
-      setActiveKeywordScopeId("");
-      setShowHistoryData(false);
+      setSelectedNoteIds([]);
+      if (activeJobId === jobId) {
+        setActiveJobId("");
+        setActiveKeywordScopeId("");
+        setShowHistoryData(false);
+      }
+      await refreshCore();
+      await loadNotes();
+      await loadAnalytics();
+    });
+  }
+
+  async function previewSelectedNotesDelete() {
+    const noteIds = selectedNoteIds.filter(Boolean);
+    if (!noteIds.length) return;
+    await run("bulk-delete-preview", async () => {
+      setBulkDeletePreview(await api.previewDeleteNotes({ noteIds, jobId: activeJobId || undefined }));
+    });
+  }
+
+  async function deleteSelectedNotesBulk() {
+    if (!bulkDeletePreview?.noteIds.length) return;
+    await run("bulk-delete", async () => {
+      await api.deleteNotesBulk({ noteIds: bulkDeletePreview.noteIds, jobId: bulkDeletePreview.jobId });
+      const removed = new Set(bulkDeletePreview.noteIds);
+      setSelectedNoteIds(selectedNoteIds.filter((id) => !removed.has(id)));
+      if (selectedId && removed.has(selectedId)) {
+        setSelectedId("");
+      }
+      setBulkDeletePreview(null);
       await refreshCore();
       await loadNotes();
       await loadAnalytics();
@@ -1936,6 +1980,7 @@ export function App() {
             noteScopePanelOpen={noteScopePanelOpen}
             setNoteScopePanelOpen={setNoteScopePanelOpen}
             openDatasetManager={openDatasetManager}
+            previewSelectedNotesDelete={previewSelectedNotesDelete}
             deleteSelectedNote={deleteSelectedNote}
             refreshNoteMedia={refreshSelectedNoteMedia}
             openOriginalUrl={openOriginalUrl}
@@ -2126,18 +2171,33 @@ export function App() {
           onClose={() => setModelSettingsOpen(false)}
         />
       )}
-      {datasetManagerOpen && datasetClearPreview && (
+      {datasetManagerOpen && (
         <DatasetManagerDialog
+          scopes={noteScopes}
           preview={datasetClearPreview}
           deleteAiArtifacts={deleteDatasetAiArtifacts}
           setDeleteAiArtifacts={setDeleteDatasetAiArtifacts}
           busy={busy}
+          onOpenScope={openDatasetScope}
+          onPreviewDelete={previewDatasetDelete}
           onConfirm={clearCurrentNotes}
+          onBack={() => {
+            setDatasetClearPreview(null);
+            setDeleteDatasetAiArtifacts(false);
+          }}
           onClose={() => {
             setDatasetManagerOpen(false);
             setDatasetClearPreview(null);
             setDeleteDatasetAiArtifacts(false);
           }}
+        />
+      )}
+      {bulkDeletePreview && (
+        <BulkDeleteNotesDialog
+          preview={bulkDeletePreview}
+          busy={busy}
+          onConfirm={deleteSelectedNotesBulk}
+          onClose={() => setBulkDeletePreview(null)}
         />
       )}
       {!assistantOpen && (
@@ -2660,18 +2720,19 @@ function NotesPage(props: {
   noteScopePanelOpen: boolean;
   setNoteScopePanelOpen: (value: boolean) => void;
   openDatasetManager: () => Promise<void>;
+  previewSelectedNotesDelete: () => Promise<void>;
   deleteSelectedNote: () => Promise<void>;
   refreshNoteMedia: (noteId: string) => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   runWorkflow: RunWorkflow;
   busy: string;
 }) {
-  const clearDisabled = !props.activeJobId || props.busy === "clear-notes";
-  const clearLabel = props.activeJobId ? "清空当前任务" : props.showHistoryData || props.activeKeywordScopeId ? "先选择单个任务" : "请选择任务";
+  const datasetManagerBusy = props.busy === "clear-preview" || props.busy === "clear-notes";
   const visibleNoteIds = props.notes.map((note) => note.id);
   const selectedNoteIdSet = new Set(props.selectedNoteIds);
   const allVisibleSelected = visibleNoteIds.length > 0 && visibleNoteIds.every((id) => selectedNoteIdSet.has(id));
   const selectedReviewableCount = props.notes.filter((note) => selectedNoteIdSet.has(note.id) && note.desc.trim()).length;
+  const selectedCount = props.selectedNoteIds.length;
   const toggleNoteSelection = (noteId: string, selected: boolean) => {
     props.setSelectedNoteIds(selected ? Array.from(new Set([...props.selectedNoteIds, noteId])) : props.selectedNoteIds.filter((id) => id !== noteId));
   };
@@ -2706,15 +2767,33 @@ function NotesPage(props: {
               <button
                 className="ghost-button compact danger"
                 onClick={() => void props.openDatasetManager()}
-                title={props.activeJobId ? "删除当前选中任务的数据集，空任务和失败任务也可以清理" : "全部历史视图不能直接清理，请先选择单个任务"}
-                disabled={clearDisabled}
+                title="集中管理空数据集、失败数据集和历史任务"
+                disabled={datasetManagerBusy}
               >
-                {props.busy === "clear-notes" ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-                {props.activeJobId ? "删除当前数据集" : clearLabel}
+                {datasetManagerBusy ? <Loader2 className="spin" size={15} /> : <Database size={15} />}
+                数据集管理
               </button>
             </div>
           }
         />
+        {!!selectedCount && (
+          <div className="notes-bulk-bar">
+            <div>
+              <strong>已选 {formatNumber(selectedCount)} 条笔记</strong>
+              <small>{props.activeJobId ? "将在当前数据集内处理，共用笔记只解除关联。" : "未选单个数据集时，删除会按全局笔记处理。"}</small>
+            </div>
+            <div className="button-row">
+              <button className="ghost-button compact" onClick={() => props.setSelectedNoteIds([])}>
+                <X size={14} />
+                清空选择
+              </button>
+              <button className="ghost-button compact danger" onClick={() => void props.previewSelectedNotesDelete()} disabled={props.busy === "bulk-delete-preview"}>
+                {props.busy === "bulk-delete-preview" ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                删除已选
+              </button>
+            </div>
+          </div>
+        )}
         <div className="filter-row">
           <label className="field-stack compact-field">
             <span>搜索</span>
@@ -3007,6 +3086,14 @@ function noteScopeMeta(scope: NoteScopeSummary): string {
   if (aiCount) parts.push(`${formatNumber(aiCount)} 个 AI 产物`);
   if (scope.updatedAt) parts.push(formatDateTime(scope.updatedAt));
   return parts.join(" · ");
+}
+
+function datasetStateLabel(scope: NoteScopeSummary): string {
+  if (scope.noteCount === 0 && scope.queueErrors > 0) return "失败/空数据集";
+  if (scope.noteCount === 0) return "空数据集";
+  if (scope.queueErrors > 0) return "有错误";
+  if (scope.isDuplicate) return `重复关键词 ${scope.duplicateCount}`;
+  return "正常";
 }
 
 function jobStatusLabel(status: SearchJob["status"]): string {
@@ -5704,14 +5791,70 @@ function AiAssistantEntry({ onOpen, context }: { onOpen: () => void; context: st
 }
 
 function DatasetManagerDialog(props: {
-  preview: NoteScopeClearPreview;
+  scopes: NoteScopeSummary[];
+  preview: NoteScopeClearPreview | null;
   deleteAiArtifacts: boolean;
   setDeleteAiArtifacts: (value: boolean) => void;
   busy: string;
+  onOpenScope: (jobId: string) => void;
+  onPreviewDelete: (jobId: string) => Promise<void>;
   onConfirm: () => Promise<void>;
+  onBack: () => void;
   onClose: () => void;
 }) {
   const deleting = props.busy === "clear-notes";
+  const previewing = props.busy === "clear-preview";
+  const jobScopes = props.scopes.filter((scope) => scope.type === "job");
+  const emptyCount = jobScopes.filter((scope) => scope.noteCount === 0).length;
+  const errorCount = jobScopes.filter((scope) => scope.queueErrors > 0).length;
+  const totalNotes = jobScopes.reduce((sum, scope) => sum + scope.noteCount, 0);
+  if (!props.preview) {
+    return (
+      <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="数据集管理">
+        <section className="dataset-dialog dataset-manager-dialog">
+          <SectionTitle
+            icon={<Database size={18} />}
+            title="数据集管理"
+            action={
+              <button className="ghost-button compact" onClick={props.onClose} disabled={previewing}>
+                <X size={14} />
+                关闭
+              </button>
+            }
+          />
+          <div className="dataset-impact-grid">
+            <Metric label="数据集" value={formatNumber(jobScopes.length)} />
+            <Metric label="笔记" value={formatNumber(totalNotes)} />
+            <Metric label="空数据集" value={formatNumber(emptyCount)} />
+            <Metric label="有错误" value={formatNumber(errorCount)} />
+          </div>
+          <div className="dataset-manager-list">
+            {jobScopes.map((scope) => (
+              <div key={scope.id} className="dataset-manager-row">
+                <div>
+                  <strong>{scope.label}</strong>
+                  <small>{noteScopeMeta(scope)}</small>
+                  <span className="dataset-state">{datasetStateLabel(scope)}</span>
+                </div>
+                <div className="button-row">
+                  <button className="ghost-button compact" onClick={() => scope.jobId && props.onOpenScope(scope.jobId)} disabled={!scope.jobId || previewing}>
+                    <Eye size={14} />
+                    打开
+                  </button>
+                  <button className="ghost-button compact danger" onClick={() => scope.jobId && void props.onPreviewDelete(scope.jobId)} disabled={!scope.jobId || previewing}>
+                    {previewing ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                    删除
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!jobScopes.length && <EmptyState text="暂无可管理的数据集" />}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="删除当前数据集">
       <section className="dataset-dialog">
@@ -5719,10 +5862,16 @@ function DatasetManagerDialog(props: {
           icon={<Trash2 size={18} />}
           title="删除当前数据集"
           action={
-            <button className="ghost-button compact" onClick={props.onClose} disabled={deleting}>
-              <X size={14} />
-              关闭
-            </button>
+            <div className="button-row">
+              <button className="ghost-button compact" onClick={props.onBack} disabled={deleting}>
+                <ChevronLeft size={14} />
+                返回列表
+              </button>
+              <button className="ghost-button compact" onClick={props.onClose} disabled={deleting}>
+                <X size={14} />
+                关闭
+              </button>
+            </div>
           }
         />
         <div className="dataset-dialog-summary">
@@ -5762,6 +5911,60 @@ function DatasetManagerDialog(props: {
           <button className="primary-button danger" onClick={() => void props.onConfirm()} disabled={deleting}>
             {deleting ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
             确认删除当前数据集
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BulkDeleteNotesDialog(props: {
+  preview: NoteBulkDeletePreview;
+  busy: string;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const deleting = props.busy === "bulk-delete";
+  const scoped = props.preview.mode === "scope-detach";
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="删除已选笔记">
+      <section className="dataset-dialog">
+        <SectionTitle
+          icon={<Trash2 size={18} />}
+          title="删除已选笔记"
+          action={
+            <button className="ghost-button compact" onClick={props.onClose} disabled={deleting}>
+              <X size={14} />
+              关闭
+            </button>
+          }
+        />
+        <div className="dataset-dialog-summary">
+          <span>{scoped ? "当前数据集内删除" : "全局删除"}</span>
+          <strong>{formatNumber(props.preview.affectedNotes)} 条笔记</strong>
+          <small>{scoped ? "共用笔记只会从当前数据集中移除，孤立笔记才会被真正删除。" : "未限定单个数据集，本次会从本地笔记库中删除这些笔记。"}</small>
+        </div>
+        <div className="dataset-impact-grid">
+          <Metric label="影响笔记" value={formatNumber(props.preview.affectedNotes)} />
+          <Metric label="仅解除关联" value={formatNumber(props.preview.detachedNotes)} />
+          <Metric label="真正删除笔记" value={formatNumber(props.preview.orphanNotes)} />
+          <Metric label="删除评论" value={formatNumber(props.preview.commentsToDelete)} />
+        </div>
+        <div className="dataset-impact-list">
+          <span>将删除本地分析报告：{formatNumber(props.preview.analysisReportsToDelete)} 个</span>
+          <span>{scoped ? "建议：确认这是当前数据集内不需要的样本后再删除。" : "建议：如需更安全，请先切换到单个数据集后再批量删除。"}</span>
+        </div>
+        <div className="dataset-warning">
+          <AlertTriangle size={16} />
+          <span>这是批量删除操作。确认前请检查上方影响范围。</span>
+        </div>
+        <div className="dialog-actions">
+          <button className="ghost-button" onClick={props.onClose} disabled={deleting}>
+            取消
+          </button>
+          <button className="primary-button danger" onClick={() => void props.onConfirm()} disabled={deleting || !props.preview.affectedNotes}>
+            {deleting ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
+            确认删除已选笔记
           </button>
         </div>
       </section>

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AiArtifact, AiReport, NoteRecord, QueueItem, SearchJob } from "../src/shared/types.js";
 import { LocalStore } from "../src/server/storage/localStore.js";
-import { clearNotes, getNoteScopeClearPreview, listNoteScopes, listNotes } from "../src/server/services/queryService.js";
+import { clearNotes, deleteNotesBulk, getBulkNotesDeletePreview, getNoteScopeClearPreview, listNoteScopes, listNotes } from "../src/server/services/queryService.js";
 
 describe("note scope summaries", () => {
   it("summarizes all notes, duplicate keyword jobs, empty jobs, and AI artifact counts", async () => {
@@ -98,6 +98,34 @@ describe("note scope summaries", () => {
     expect(await store.read("searchJobs")).toHaveLength(0);
     expect(await store.read("queueItems")).toHaveLength(0);
     expect((await listNoteScopes(store)).some((scope) => scope.jobId === "empty-failed")).toBe(false);
+  });
+
+  it("bulk deletes selected notes safely within the active dataset", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    await store.write("searchJobs", [
+      searchJob("job1", ["keyword"], "completed", "2026-06-20T10:00:00.000Z"),
+      searchJob("job2", ["other"], "completed", "2026-06-20T10:00:00.000Z")
+    ]);
+    await store.write("notes", [note("orphan-note", ["job1"]), note("shared-note", ["job1", "job2"])]);
+    await store.write("comments", [
+      { id: "comment1", noteId: "orphan-note", content: "comment", likedCount: 1, createdAt: "2026-06-20T10:00:00.000Z" },
+      { id: "comment2", noteId: "shared-note", content: "comment", likedCount: 1, createdAt: "2026-06-20T10:00:00.000Z" }
+    ]);
+
+    const preview = await getBulkNotesDeletePreview({ noteIds: ["orphan-note", "shared-note"], jobId: "job1" }, store);
+    expect(preview.mode).toBe("scope-detach");
+    expect(preview.affectedNotes).toBe(2);
+    expect(preview.detachedNotes).toBe(1);
+    expect(preview.orphanNotes).toBe(1);
+    expect(preview.commentsToDelete).toBe(1);
+
+    const result = await deleteNotesBulk({ noteIds: ["orphan-note", "shared-note"], jobId: "job1" }, store);
+    const notes = await store.read("notes");
+
+    expect(result).toEqual({ deleted: 1, detached: 1 });
+    expect(notes.map((item) => item.id)).toEqual(["shared-note"]);
+    expect(notes[0]?.jobIds).toEqual(["job2"]);
+    expect(await store.read("comments")).toEqual([{ id: "comment2", noteId: "shared-note", content: "comment", likedCount: 1, createdAt: "2026-06-20T10:00:00.000Z" }]);
   });
 });
 

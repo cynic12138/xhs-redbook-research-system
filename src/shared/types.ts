@@ -334,6 +334,27 @@ export interface NoteScopeClearPreview {
   aiReportsLinked: number;
 }
 
+export interface NoteBulkDeleteInput {
+  noteIds: string[];
+  jobId?: string;
+}
+
+export interface NoteBulkDeletePreview {
+  noteIds: string[];
+  jobId?: string;
+  mode: "scope-detach" | "global-delete";
+  affectedNotes: number;
+  detachedNotes: number;
+  orphanNotes: number;
+  commentsToDelete: number;
+  analysisReportsToDelete: number;
+}
+
+export interface NoteBulkDeleteResult {
+  deleted: number;
+  detached: number;
+}
+
 export interface NoteMediaRefreshResult {
   note: NoteRecord;
   refreshed: boolean;

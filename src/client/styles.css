@@ -1209,6 +1209,34 @@ label {
   font-size: 13px;
 }
 
+.notes-bulk-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  background: #fff7f9;
+}
+
+.notes-bulk-bar > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.notes-bulk-bar strong {
+  color: #be123c;
+  font-size: 13px;
+}
+
+.notes-bulk-bar small {
+  color: #687386;
+  line-height: 1.4;
+}
+
 .detail-panel {
   position: sticky;
   top: 18px;
@@ -1915,6 +1943,64 @@ label {
   border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.dataset-manager-dialog {
+  width: min(920px, calc(100vw - 48px));
+}
+
+.dataset-manager-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  max-height: min(520px, calc(100vh - 260px));
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.dataset-manager-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid #e5ebf2;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.dataset-manager-row > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dataset-manager-row strong,
+.dataset-manager-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-manager-row strong {
+  color: #101828;
+  font-size: 14px;
+}
+
+.dataset-manager-row small {
+  color: #687386;
+  font-size: 12px;
+}
+
+.dataset-state {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #be123c;
+  background: #fff0f4;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .dataset-dialog-summary {
@@ -6555,6 +6641,23 @@ label {
 
   .prompt-center-grid > .prompt-artifacts-panel {
     min-height: 320px;
+  }
+}
+
+@media (max-width: 760px) {
+  .notes-bulk-bar,
+  .dataset-manager-row {
+    grid-template-columns: 1fr;
+  }
+
+  .notes-bulk-bar .button-row,
+  .dataset-manager-row .button-row {
+    justify-content: flex-start;
+  }
+
+  .notes-bulk-bar .button-row button,
+  .dataset-manager-row .button-row button {
+    flex: 1;
   }
 }
 

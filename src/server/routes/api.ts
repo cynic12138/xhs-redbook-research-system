@@ -10,7 +10,9 @@ import {
   buildExport,
   clearNotes,
   deleteNote,
+  deleteNotesBulk,
   getAnalytics,
+  getBulkNotesDeletePreview,
   getNoteDetail,
   getNoteScopeClearPreview,
   listNoteScopes,
@@ -102,6 +104,11 @@ const jobInput = z.object({
   pages: z.number().int().min(1).max(10).default(1),
   commentPages: z.number().int().min(1).max(2).default(1),
   concurrency: z.number().int().min(1).max(2).default(2)
+});
+
+const noteBulkDeleteInput = z.object({
+  noteIds: z.array(z.string().min(1)).min(1).max(500),
+  jobId: z.string().optional()
 });
 
 const aiModelInput = z.object({
@@ -572,6 +579,18 @@ api.get("/note-scopes/:jobId/clear-preview", async (req, res) => {
     return;
   }
   res.json(preview);
+});
+
+api.post("/notes/bulk-delete-preview", async (req, res) => {
+  res.json(await getBulkNotesDeletePreview(noteBulkDeleteInput.parse(req.body)));
+});
+
+api.post("/notes/bulk-delete", async (req, res, next) => {
+  try {
+    res.json(await deleteNotesBulk(noteBulkDeleteInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
 });
 
 api.get("/notes/:id", async (req, res) => {

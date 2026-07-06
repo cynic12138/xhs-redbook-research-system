@@ -50,6 +50,9 @@ import type {
   ContentReviewResult,
   ContentReviewRun,
   HealthReportRecord,
+  NoteBulkDeleteInput,
+  NoteBulkDeletePreview,
+  NoteBulkDeleteResult,
   NoteMediaRefreshResult,
   NoteScopeClearPreview,
   NoteScopeSummary,
@@ -116,6 +119,8 @@ export const api = {
   listNoteScopes: () => apiGet<NoteScopeSummary[]>("/api/note-scopes"),
   getNoteScopeClearPreview: (jobId: string) => apiGet<NoteScopeClearPreview>(`/api/note-scopes/${encodeURIComponent(jobId)}/clear-preview`),
   deleteNote: (noteId: string) => apiDelete<{ deleted: number }>(`/api/notes/${encodeURIComponent(noteId)}`),
+  previewDeleteNotes: (input: NoteBulkDeleteInput) => apiPost<NoteBulkDeletePreview>("/api/notes/bulk-delete-preview", input),
+  deleteNotesBulk: (input: NoteBulkDeleteInput) => apiPost<NoteBulkDeleteResult>("/api/notes/bulk-delete", input),
   refreshNoteMedia: (noteId: string) => apiPost<NoteMediaRefreshResult>(`/api/notes/${encodeURIComponent(noteId)}/media-refresh`),
   clearNotes: (jobId?: string, deleteAiArtifacts = false) =>
     apiDelete<{ deleted: number }>(

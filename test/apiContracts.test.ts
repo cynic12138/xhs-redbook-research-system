@@ -56,6 +56,38 @@ describe("API route contracts", () => {
     expect(response.body).toEqual({ error: "Note not found" });
   });
 
+  it("keeps the bulk note delete preview contract stable", async () => {
+    const getBulkNotesDeletePreview = vi.fn(async () => ({
+      noteIds: ["note_a", "note_b"],
+      jobId: "job_1",
+      mode: "scope-detach",
+      affectedNotes: 2,
+      detachedNotes: 1,
+      orphanNotes: 1,
+      commentsToDelete: 3,
+      analysisReportsToDelete: 1
+    }));
+    mockRouteDependencies({ queryService: { getBulkNotesDeletePreview } });
+    const app = await createApp();
+    const response = await requestJson(app, "/api/notes/bulk-delete-preview", {
+      method: "POST",
+      body: { noteIds: ["note_a", "note_b"], jobId: "job_1" }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      noteIds: ["note_a", "note_b"],
+      jobId: "job_1",
+      mode: "scope-detach",
+      affectedNotes: 2,
+      detachedNotes: 1,
+      orphanNotes: 1,
+      commentsToDelete: 3,
+      analysisReportsToDelete: 1
+    });
+    expect(getBulkNotesDeletePreview).toHaveBeenCalledWith({ noteIds: ["note_a", "note_b"], jobId: "job_1" });
+  });
+
   it("keeps content playbook CRUD status codes and bodies stable", async () => {
     const playbook = {
       id: "playbook_contract",
@@ -452,7 +484,17 @@ function mockRouteDependencies(overrides: {
     buildExport: vi.fn(),
     clearNotes: vi.fn(async () => ({ deleted: 0 })),
     deleteNote: vi.fn(async () => ({ deleted: 0 })),
+    deleteNotesBulk: vi.fn(async () => ({ deleted: 0, detached: 0 })),
     getAnalytics: vi.fn(),
+    getBulkNotesDeletePreview: vi.fn(async () => ({
+      noteIds: [],
+      mode: "global-delete",
+      affectedNotes: 0,
+      detachedNotes: 0,
+      orphanNotes: 0,
+      commentsToDelete: 0,
+      analysisReportsToDelete: 0
+    })),
     getNoteDetail: vi.fn(),
     getNoteScopeClearPreview: vi.fn(),
     listNoteScopes: vi.fn(async () => []),

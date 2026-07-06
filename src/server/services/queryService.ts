@@ -1,4 +1,14 @@
-import type { AnalyticsReport, NoteScopeClearPreview, NoteScopeSummary, NotesPageResult, NotesQuery, NoteRecord } from "../../shared/types.js";
+import type {
+  AnalyticsReport,
+  NoteBulkDeleteInput,
+  NoteBulkDeletePreview,
+  NoteBulkDeleteResult,
+  NoteScopeClearPreview,
+  NoteScopeSummary,
+  NotesPageResult,
+  NotesQuery,
+  NoteRecord
+} from "../../shared/types.js";
 import { clamp, nowIso } from "../../shared/utils.js";
 import { buildAnalytics } from "./analysis.js";
 import { jobs } from "./jobService.js";
@@ -223,6 +233,91 @@ export async function deleteNote(noteId: string): Promise<{ deleted: number }> {
   return { deleted: 1 };
 }
 
+export async function getBulkNotesDeletePreview(input: NoteBulkDeleteInput, localStore = store): Promise<NoteBulkDeletePreview> {
+  const noteIds = uniqueNoteIds(input.noteIds);
+  const [notes, comments, analysisReports] = await Promise.all([
+    localStore.read("notes"),
+    localStore.read("comments"),
+    localStore.read("analysisReports")
+  ]);
+  const noteIdSet = new Set(noteIds);
+  const affected = notes.filter((note) => noteIdSet.has(note.id) && (!input.jobId || note.jobIds.includes(input.jobId)));
+  const orphanIds = new Set(
+    affected
+      .filter((note) => !input.jobId || note.jobIds.length === 1)
+      .map((note) => note.id)
+  );
+  const reportJobIds = input.jobId
+    ? new Set([input.jobId])
+    : new Set(affected.flatMap((note) => note.jobIds));
+
+  return {
+    noteIds: affected.map((note) => note.id),
+    jobId: input.jobId,
+    mode: input.jobId ? "scope-detach" : "global-delete",
+    affectedNotes: affected.length,
+    detachedNotes: input.jobId ? affected.length - orphanIds.size : 0,
+    orphanNotes: orphanIds.size,
+    commentsToDelete: comments.filter((comment) => orphanIds.has(comment.noteId)).length,
+    analysisReportsToDelete: analysisReports.filter((report) => reportJobIds.has(report.jobId)).length
+  };
+}
+
+export async function deleteNotesBulk(input: NoteBulkDeleteInput, localStore = store): Promise<NoteBulkDeleteResult> {
+  const preview = await getBulkNotesDeletePreview(input, localStore);
+  const noteIds = new Set(preview.noteIds);
+  if (!noteIds.size) {
+    return { deleted: 0, detached: 0 };
+  }
+
+  let deletedIds = new Set<string>();
+  let affectedJobIds = new Set<string>();
+  if (input.jobId) {
+    await localStore.update("notes", (items) =>
+      items
+        .map((note) =>
+          noteIds.has(note.id) && note.jobIds.includes(input.jobId!)
+            ? {
+                ...note,
+                jobIds: note.jobIds.filter((id) => id !== input.jobId),
+                updatedAt: nowIso()
+              }
+            : note
+        )
+        .filter((note) => note.jobIds.length)
+    );
+    const remaining = await localStore.read("notes");
+    const remainingIds = new Set(remaining.map((note) => note.id));
+    deletedIds = new Set([...noteIds].filter((id) => !remainingIds.has(id)));
+    affectedJobIds = new Set([input.jobId]);
+    await localStore.update("queueItems", (items) =>
+      items.filter((item) => {
+        const belongsToCurrentScope = item.jobId === input.jobId && item.noteId && noteIds.has(item.noteId);
+        const belongsToDeletedNote = item.noteId && deletedIds.has(item.noteId);
+        return !belongsToCurrentScope && !belongsToDeletedNote;
+      })
+    );
+    await localStore.update("analysisReports", (reports) => reports.filter((report) => report.jobId !== input.jobId));
+  } else {
+    const notes = await localStore.read("notes");
+    const affected = notes.filter((note) => noteIds.has(note.id));
+    affectedJobIds = new Set(affected.flatMap((note) => note.jobIds));
+    deletedIds = noteIds;
+    await localStore.update("notes", (items) => items.filter((note) => !noteIds.has(note.id)));
+    await localStore.update("queueItems", (items) => items.filter((item) => !item.noteId || !noteIds.has(item.noteId)));
+    await localStore.update("analysisReports", (reports) => reports.filter((report) => !affectedJobIds.has(report.jobId)));
+  }
+
+  if (deletedIds.size) {
+    await localStore.update("comments", (comments) => comments.filter((comment) => !deletedIds.has(comment.noteId)));
+  }
+  if (localStore === store) {
+    await Promise.all([...affectedJobIds].map((jobId) => jobs.refreshProgress(jobId)));
+  }
+
+  return { deleted: deletedIds.size, detached: preview.detachedNotes };
+}
+
 export async function clearNotes(
   jobId?: string,
   options: { deleteAiArtifacts?: boolean } = {},
@@ -424,6 +519,10 @@ function renderHtmlReport(title: string, analytics: AnalyticsReport, notes: Note
   </main>
 </body>
 </html>`;
+}
+
+function uniqueNoteIds(noteIds: string[]): string[] {
+  return [...new Set(noteIds.map((id) => id.trim()).filter(Boolean))];
 }
 
 function escapeHtml(value: string): string {
