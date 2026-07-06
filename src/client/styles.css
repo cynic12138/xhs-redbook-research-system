@@ -2787,6 +2787,27 @@ body {
   font-size: 12px;
 }
 
+.prompt-scope-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prompt-scope-tabs button {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: #354154;
+  background: #ffffff;
+  font-weight: 800;
+}
+
+.prompt-scope-tabs button.active {
+  border-color: #ff335f;
+  color: #de214d;
+  background: #fff0f4;
+}
+
 .prompt-mode-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2806,6 +2827,37 @@ body {
   border-color: #ff335f;
   color: #de214d;
   background: #fff0f4;
+}
+
+.prompt-mode-tabs.custom-prompt-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.custom-prompt-basic-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(160px, 0.8fr) minmax(130px, 0.6fr);
+  gap: 10px;
+}
+
+.custom-prompt-basic-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.custom-prompt-basic-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.custom-prompt-basic-grid span {
+  color: #354154;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.custom-prompt-basic-grid input,
+.custom-prompt-basic-grid select {
+  width: 100%;
 }
 
 .prompt-guided-workspace,
@@ -3065,6 +3117,17 @@ body {
   background: #101827;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+.custom-prompt-version-workspace {
+  display: grid;
+  align-content: start;
+  min-height: 0;
+}
+
+.custom-version-row {
+  justify-items: start;
+  text-align: left;
 }
 
 .prompt-check-stack {
@@ -3360,6 +3423,7 @@ body {
   .guide-steps,
   .prompt-instruction-grid,
   .prompt-data-card-grid,
+  .custom-prompt-basic-grid,
   .audience-signal-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -5214,6 +5278,18 @@ label {
 
 .assistant-next-actions.compact-actions .assistant-suggestion-row {
   padding-bottom: 2px;
+}
+
+.assistant-custom-action-stack {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.assistant-custom-action-stack > strong {
+  color: var(--foreground);
+  font-size: 12px;
 }
 
 .assistant-drawer .context-badges {

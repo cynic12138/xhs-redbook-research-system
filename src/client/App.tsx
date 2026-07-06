@@ -38,6 +38,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import type {
   AiArtifact,
   AiAssistantMessage,
+  AiCustomPrompt,
+  AiCustomPromptCategory,
+  AiCustomPromptInput,
+  AiCustomPromptMode,
+  AiCustomPromptPreview,
+  AiCustomPromptRevision,
   AiModelConfig,
   AiOrchestration,
   AiPromptDetail,
@@ -100,6 +106,8 @@ type ContentBriefForm = {
 type ContentReviewForm = { title: string; body: string; tags: string };
 type ContentStudioTab = "projects" | "review" | "batch" | "write" | "rules" | "results";
 type PromptEditorTab = "guided" | "advanced" | "preview";
+type PromptScope = "system" | "custom";
+type CustomPromptTab = "guided" | "advanced" | "preview" | "versions";
 type BatchReviewItem = { id: string; title: string; body: string; tags: string; selected: boolean };
 type ContentProjectForm = {
   name: string;
@@ -215,6 +223,25 @@ const defaultContentReviewForm: ContentReviewForm = {
 };
 
 const defaultBatchReviewItems: BatchReviewItem[] = [createBatchReviewItem()];
+
+const defaultCustomPromptGuidedConfig: AiPromptGuidedConfig = {
+  role: "小红书运营助手",
+  objective: "结合当前任务资料，输出运营用户可直接使用的分析或内容建议。",
+  focusRules: ["只基于已读取资料输出结论。", "把数据依据、用户洞察和行动建议分开。", "资料不足时明确说明缺口。"],
+  forbiddenRules: ["不编造数据、作者、评论或平台规则。", "不建议自动发布、自动评论、自动点赞、自动收藏。", "不输出夸大功效、医疗疗效或保证承诺。"],
+  outputSections: ["核心结论", "依据", "行动建议", "风险与缺口"],
+  enabledVariables: ["job", "overview", "topNotes", "topComments", "focus"]
+};
+
+const defaultCustomPromptForm: AiCustomPromptInput = {
+  title: "我的运营提示词",
+  description: "自定义 AI 提示词，可选择资料后生成产物。",
+  category: "general-ops",
+  mode: "guided",
+  guidedConfig: defaultCustomPromptGuidedConfig,
+  advancedTemplate: "",
+  status: "active"
+};
 
 const defaultContentProjectForm: ContentProjectForm = {
   name: "蜂蜜露种草项目",
@@ -357,12 +384,19 @@ export function App() {
   const [aiReports, setAiReports] = useState<AiReport[]>([]);
   const [aiWorkflows, setAiWorkflows] = useState<AiWorkflowDefinition[]>([]);
   const [aiPrompts, setAiPrompts] = useState<AiPromptInfo[]>([]);
+  const [aiCustomPrompts, setAiCustomPrompts] = useState<AiCustomPrompt[]>([]);
+  const [selectedPromptScope, setSelectedPromptScope] = useState<PromptScope>("system");
   const [selectedPromptKey, setSelectedPromptKey] = useState<AiWorkflowKey>("content-planning");
   const [selectedPrompt, setSelectedPrompt] = useState<AiPromptDetail | null>(null);
   const [promptTab, setPromptTab] = useState<PromptEditorTab>("guided");
   const [guidedPromptDraft, setGuidedPromptDraft] = useState<AiPromptGuidedConfig | null>(null);
   const [advancedPromptDraft, setAdvancedPromptDraft] = useState("");
   const [promptPreview, setPromptPreview] = useState<AiPromptPreview | null>(null);
+  const [selectedCustomPromptId, setSelectedCustomPromptId] = useState("");
+  const [customPromptTab, setCustomPromptTab] = useState<CustomPromptTab>("guided");
+  const [customPromptForm, setCustomPromptForm] = useState<AiCustomPromptInput>(defaultCustomPromptForm);
+  const [customPromptPreview, setCustomPromptPreview] = useState<AiCustomPromptPreview | null>(null);
+  const [customPromptRevisions, setCustomPromptRevisions] = useState<AiCustomPromptRevision[]>([]);
   const [aiArtifacts, setAiArtifacts] = useState<AiArtifact[]>([]);
   const [contentProjects, setContentProjects] = useState<ContentProject[]>([]);
   const [selectedContentProjectId, setSelectedContentProjectId] = useState("");
@@ -447,13 +481,14 @@ export function App() {
   const selectedContentPlaybook = selectedContentPlaybookId ? contentPlaybooks.find((playbook) => playbook.id === selectedContentPlaybookId) : undefined;
 
   const refreshCore = useCallback(async () => {
-    const [authStatus, allJobs, caps, models, workflows, prompts, scopes, bridgeStatus, projects, playbooks, drafts, reviews] = await Promise.all([
+    const [authStatus, allJobs, caps, models, workflows, prompts, customPrompts, scopes, bridgeStatus, projects, playbooks, drafts, reviews] = await Promise.all([
       api.authStatus(),
       api.listJobs(),
       api.capabilities(),
       api.listAiModels(),
       api.listAiWorkflows(),
       api.listAiPrompts(),
+      api.listAiCustomPrompts(),
       api.listNoteScopes(),
       api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus),
       api.listContentProjects(),
@@ -468,6 +503,7 @@ export function App() {
     setAiModels(models);
     setAiWorkflows(workflows);
     setAiPrompts(prompts);
+    setAiCustomPrompts(customPrompts);
     setNoteScopes(scopes);
     setContentProjects(projects);
     setContentPlaybooks(playbooks);
@@ -551,11 +587,12 @@ export function App() {
   }, [activeJobId]);
 
   const loadOperations = useCallback(async () => {
-    const [plans, actions, reports, artifacts, projects, drafts, reviews] = await Promise.all([
+    const [plans, actions, reports, artifacts, customPrompts, projects, drafts, reviews] = await Promise.all([
       api.listReplyPlans(),
       api.listReplyActions(),
       api.listAiReports(activeJobId || undefined),
       api.listAiArtifacts(activeJobId || undefined),
+      api.listAiCustomPrompts(),
       api.listContentProjects(),
       api.listContentDrafts(),
       api.listContentReviews()
@@ -564,6 +601,7 @@ export function App() {
     setReplyActions(actions);
     setAiReports(reports);
     setAiArtifacts(artifacts);
+    setAiCustomPrompts(customPrompts);
     setContentProjects(projects);
     setContentDrafts(drafts);
     setContentReviews(reviews);
@@ -579,6 +617,10 @@ export function App() {
     setGuidedPromptDraft(detail.guidedConfig);
     setAdvancedPromptDraft(detail.advancedConfig.template || detail.defaultTemplate);
     setPromptPreview(null);
+  }, []);
+
+  const loadCustomPromptRevisions = useCallback(async (promptId: string) => {
+    setCustomPromptRevisions(promptId ? await api.listAiCustomPromptRevisions(promptId) : []);
   }, []);
 
   const loadContentPlaybookRevisions = useCallback(async (playbookId: string) => {
@@ -638,6 +680,10 @@ export function App() {
   useEffect(() => {
     void loadPromptDetail(selectedPromptKey).catch((err) => setError(err.message));
   }, [loadPromptDetail, selectedPromptKey]);
+
+  useEffect(() => {
+    void loadCustomPromptRevisions(selectedCustomPromptId).catch(() => setCustomPromptRevisions([]));
+  }, [loadCustomPromptRevisions, selectedCustomPromptId]);
 
   const promptDirty = useMemo(() => {
     if (!selectedPrompt || !guidedPromptDraft) return false;
@@ -1566,6 +1612,7 @@ export function App() {
   }
 
   function openPromptCenter(key: AiWorkflowKey) {
+    setSelectedPromptScope("system");
     selectPromptKey(key);
     setActiveModule("prompts");
   }
@@ -1635,6 +1682,120 @@ export function App() {
       const detail = await api.resetAiPrompt(selectedPromptKey, scope);
       applyPromptDetail(detail);
       setAiPrompts(await api.listAiPrompts());
+    });
+  }
+
+  function selectCustomPrompt(promptId: string) {
+    const prompt = aiCustomPrompts.find((item) => item.id === promptId);
+    setSelectedPromptScope("custom");
+    setSelectedCustomPromptId(promptId);
+    if (prompt) {
+      setCustomPromptForm(customPromptToForm(prompt));
+      setCustomPromptTab(prompt.mode);
+    }
+    setCustomPromptPreview(null);
+  }
+
+  function createCustomPromptDraft() {
+    setSelectedPromptScope("custom");
+    setSelectedCustomPromptId("");
+    setCustomPromptForm(defaultCustomPromptForm);
+    setCustomPromptTab("guided");
+    setCustomPromptPreview(null);
+    setCustomPromptRevisions([]);
+  }
+
+  async function persistCustomPrompt(): Promise<AiCustomPrompt> {
+    const saved = await api.saveAiCustomPrompt(customPromptForm, selectedCustomPromptId || undefined);
+    setSelectedCustomPromptId(saved.id);
+    setCustomPromptForm(customPromptToForm(saved));
+    setCustomPromptTab(saved.mode);
+    setAiCustomPrompts(await api.listAiCustomPrompts());
+    setCustomPromptRevisions(await api.listAiCustomPromptRevisions(saved.id));
+    setCustomPromptPreview(null);
+    return saved;
+  }
+
+  async function saveCustomPrompt(): Promise<AiCustomPrompt | undefined> {
+    return await run(`custom-prompt-save-${selectedCustomPromptId || "new"}`, persistCustomPrompt);
+  }
+
+  async function ensureSavedCustomPrompt(): Promise<AiCustomPrompt | undefined> {
+    return await persistCustomPrompt();
+  }
+
+  async function deleteCustomPrompt(promptId: string) {
+    if (!window.confirm("确定删除这套我的提示词？相关 AI 产物会保留，但无法再从提示词中心编辑它。")) return;
+    await run(`custom-prompt-delete-${promptId}`, async () => {
+      await api.deleteAiCustomPrompt(promptId);
+      const prompts = await api.listAiCustomPrompts();
+      setAiCustomPrompts(prompts);
+      const next = prompts[0];
+      setSelectedCustomPromptId(next?.id ?? "");
+      setCustomPromptForm(next ? customPromptToForm(next) : defaultCustomPromptForm);
+      setCustomPromptRevisions([]);
+      setCustomPromptPreview(null);
+    });
+  }
+
+  async function copySystemPromptToCustom() {
+    await run(`custom-prompt-copy-${selectedPromptKey}`, async () => {
+      const prompt = await api.copyAiPromptToCustom({ workflowKey: selectedPromptKey });
+      setAiCustomPrompts(await api.listAiCustomPrompts());
+      setSelectedPromptScope("custom");
+      setSelectedCustomPromptId(prompt.id);
+      setCustomPromptForm(customPromptToForm(prompt));
+      setCustomPromptTab(prompt.mode);
+      setCustomPromptRevisions(await api.listAiCustomPromptRevisions(prompt.id));
+      setCustomPromptPreview(null);
+    });
+  }
+
+  async function previewCustomPrompt() {
+    await run(`custom-prompt-preview-${selectedCustomPromptId || "new"}`, async () => {
+      const prompt = await ensureSavedCustomPrompt();
+      if (!prompt) return;
+      const preview = await api.previewAiCustomPrompt(prompt.id, {
+        jobId: activeJobId || undefined,
+        noteId: selected?.id,
+        focus: customPromptForm.description
+      });
+      setCustomPromptPreview(preview);
+    });
+  }
+
+  async function runCustomPrompt(promptId = selectedCustomPromptId, focus?: string, options: RunWorkflowOptions = {}): Promise<AiArtifact | undefined> {
+    return await run(`custom-prompt-run-${promptId || "new"}`, async () => {
+      const prompt = promptId ? aiCustomPrompts.find((item) => item.id === promptId) : await ensureSavedCustomPrompt();
+      if (!prompt) {
+        setError("请先保存我的提示词后再运行。");
+        return undefined;
+      }
+      const artifact = await api.runAiCustomPrompt(prompt.id, {
+        jobId: contextJobId || undefined,
+        noteId: options.noteId ?? selected?.id,
+        noteIds: options.noteIds,
+        modelId: selectedModel?.id,
+        focus
+      });
+      setAiArtifacts((items) => upsertById(items, artifact));
+      setSelectedArtifactId(artifact.id);
+      setSelectedReportId("");
+      setActiveModule("ai");
+      await loadOperations();
+      return artifact;
+    });
+  }
+
+  async function restoreCustomPromptRevision(revisionId: string) {
+    if (!selectedCustomPromptId) return;
+    await run(`custom-prompt-restore-${selectedCustomPromptId}-${revisionId}`, async () => {
+      const restored = await api.restoreAiCustomPromptRevision(selectedCustomPromptId, revisionId);
+      setCustomPromptForm(customPromptToForm(restored));
+      setCustomPromptTab(restored.mode);
+      setAiCustomPrompts(await api.listAiCustomPrompts());
+      setCustomPromptRevisions(await api.listAiCustomPromptRevisions(restored.id));
+      setCustomPromptPreview(null);
     });
   }
 
@@ -1891,6 +2052,24 @@ export function App() {
               setSelectedReportId("");
               setActiveModule("ai");
             }}
+            customPrompts={aiCustomPrompts}
+            selectedScope={selectedPromptScope}
+            setSelectedScope={setSelectedPromptScope}
+            selectedCustomPromptId={selectedCustomPromptId}
+            customPromptForm={customPromptForm}
+            setCustomPromptForm={setCustomPromptForm}
+            customPromptTab={customPromptTab}
+            setCustomPromptTab={setCustomPromptTab}
+            customPromptPreview={customPromptPreview}
+            customPromptRevisions={customPromptRevisions}
+            selectCustomPrompt={selectCustomPrompt}
+            createCustomPromptDraft={createCustomPromptDraft}
+            saveCustomPrompt={saveCustomPrompt}
+            deleteCustomPrompt={deleteCustomPrompt}
+            copySystemPromptToCustom={copySystemPromptToCustom}
+            previewCustomPrompt={previewCustomPrompt}
+            runCustomPrompt={runCustomPrompt}
+            restoreCustomPromptRevision={restoreCustomPromptRevision}
           />
         )}
         {activeModule === "ai" && (
@@ -1910,6 +2089,12 @@ export function App() {
             prompts={aiPrompts}
             openPrompt={openPromptCenter}
             runWorkflow={runWorkflow}
+            customPrompts={aiCustomPrompts}
+            openCustomPrompt={(promptId) => {
+              selectCustomPrompt(promptId);
+              setActiveModule("prompts");
+            }}
+            runCustomPrompt={runCustomPrompt}
             busy={busy}
           />
         )}
@@ -1996,6 +2181,8 @@ export function App() {
         onRefresh={refreshCore}
         workflows={visibleWorkflows.length ? visibleWorkflows : aiWorkflows.slice(0, 4)}
         runWorkflow={runAssistantWorkflow}
+        customPrompts={aiCustomPrompts}
+        runCustomPrompt={runCustomPrompt}
         contextItems={[
           contextJob ? `任务：${jobKeywordLabel(contextJob)}` : "无有效任务",
           contextJob && selected ? `笔记：${selected.title}` : "未选择笔记",
@@ -3984,7 +4171,25 @@ function PromptCenterPage({
   saveAdvancedPrompt,
   resetPrompt,
   loadPromptPreview,
-  openArtifact
+  openArtifact,
+  customPrompts,
+  selectedScope,
+  setSelectedScope,
+  selectedCustomPromptId,
+  customPromptForm,
+  setCustomPromptForm,
+  customPromptTab,
+  setCustomPromptTab,
+  customPromptPreview,
+  customPromptRevisions,
+  selectCustomPrompt,
+  createCustomPromptDraft,
+  saveCustomPrompt,
+  deleteCustomPrompt,
+  copySystemPromptToCustom,
+  previewCustomPrompt,
+  runCustomPrompt,
+  restoreCustomPromptRevision
 }: {
   prompts: AiPromptInfo[];
   selectedKey: AiWorkflowKey;
@@ -4005,8 +4210,28 @@ function PromptCenterPage({
   resetPrompt: (scope?: AiPromptResetScope) => Promise<void>;
   loadPromptPreview: (mode: AiPromptMode) => Promise<void>;
   openArtifact: (artifactId: string) => void;
+  customPrompts: AiCustomPrompt[];
+  selectedScope: PromptScope;
+  setSelectedScope: (value: PromptScope) => void;
+  selectedCustomPromptId: string;
+  customPromptForm: AiCustomPromptInput;
+  setCustomPromptForm: (value: AiCustomPromptInput) => void;
+  customPromptTab: CustomPromptTab;
+  setCustomPromptTab: (value: CustomPromptTab) => void;
+  customPromptPreview: AiCustomPromptPreview | null;
+  customPromptRevisions: AiCustomPromptRevision[];
+  selectCustomPrompt: (promptId: string) => void;
+  createCustomPromptDraft: () => void;
+  saveCustomPrompt: () => Promise<AiCustomPrompt | undefined>;
+  deleteCustomPrompt: (promptId: string) => Promise<void>;
+  copySystemPromptToCustom: () => Promise<void>;
+  previewCustomPrompt: () => Promise<void>;
+  runCustomPrompt: (promptId?: string, focus?: string, options?: RunWorkflowOptions) => Promise<AiArtifact | undefined>;
+  restoreCustomPromptRevision: (revisionId: string) => Promise<void>;
 }) {
   const relatedArtifacts = artifacts.filter((artifact) => artifact.promptKey === selectedKey);
+  const selectedCustomPrompt = customPrompts.find((prompt) => prompt.id === selectedCustomPromptId);
+  const relatedCustomArtifacts = artifacts.filter((artifact) => artifact.customPromptId === selectedCustomPromptId);
   const activeMode = selectedPrompt?.activeMode ?? "builtin";
   const previewMode: AiPromptMode = promptTab === "guided" || promptTab === "advanced" ? promptTab : activeMode;
   const advancedValidation = selectedPrompt ? validatePromptDraft(selectedPrompt, advancedDraft) : [];
@@ -4014,6 +4239,7 @@ function PromptCenterPage({
   const saveBusy = busy.includes(`prompt-${promptTab}-save-${selectedKey}`) || busy.includes(`prompt-${previewMode}-save-${selectedKey}`);
   const resetScope = promptTab === "advanced" ? "advanced" : promptTab === "guided" ? "guided" : "active";
   const resetBusy = busy === `prompt-reset-${selectedKey}-${resetScope}`;
+  const promptVariables = selectedPrompt?.variables ?? [];
 
   function updateGuidedDraft(patch: Partial<AiPromptGuidedConfig>) {
     if (!guidedDraft) return;
@@ -4038,32 +4264,79 @@ function PromptCenterPage({
   return (
     <div className="prompt-center-grid">
       <section className="surface prompt-list-panel">
-        <SectionTitle icon={<KeyRound size={18} />} title="提示词" />
-        <div className="prompt-card-list">
-          {prompts.map((prompt) => (
-            <button
-              key={prompt.key}
-              className={prompt.key === selectedKey ? "prompt-card active" : "prompt-card"}
-              onClick={() => setSelectedKey(prompt.key)}
-            >
-              <div>
-                <strong>{prompt.title}</strong>
-                <span className="prompt-card-mode">当前运行：{promptModeLabel(prompt.activeMode ?? promptSourceToMode(prompt.promptSource))}</span>
-              </div>
-              <small className="prompt-card-description">{prompt.description}</small>
-              <small className="prompt-card-meta">{promptVersionLabel(prompt.version)} · 已生成 {prompt.artifactCount ?? 0} 个产物</small>
-              <small className="prompt-card-meta">{prompt.lastUsedAt ? `最近使用 ${new Date(prompt.lastUsedAt).toLocaleString()}` : "尚未使用"}</small>
-            </button>
-          ))}
+        <SectionTitle
+          icon={<KeyRound size={18} />}
+          title="提示词"
+          action={<button className="ghost-button compact" onClick={createCustomPromptDraft}><FileText size={14} />新建</button>}
+        />
+        <div className="prompt-scope-tabs">
+          <button className={selectedScope === "system" ? "active" : ""} onClick={() => setSelectedScope("system")}>系统提示词</button>
+          <button className={selectedScope === "custom" ? "active" : ""} onClick={() => setSelectedScope("custom")}>我的提示词</button>
         </div>
+        {selectedScope === "system" ? (
+          <div className="prompt-card-list">
+            {prompts.map((prompt) => (
+              <button
+                key={prompt.key}
+                className={prompt.key === selectedKey ? "prompt-card active" : "prompt-card"}
+                onClick={() => setSelectedKey(prompt.key)}
+              >
+                <div>
+                  <strong>{prompt.title}</strong>
+                  <span className="prompt-card-mode">当前运行：{promptModeLabel(prompt.activeMode ?? promptSourceToMode(prompt.promptSource))}</span>
+                </div>
+                <small className="prompt-card-description">{prompt.description}</small>
+                <small className="prompt-card-meta">{promptVersionLabel(prompt.version)} · 已生成 {prompt.artifactCount ?? 0} 个产物</small>
+                <small className="prompt-card-meta">{prompt.lastUsedAt ? `最近使用 ${new Date(prompt.lastUsedAt).toLocaleString()}` : "尚未使用"}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="prompt-card-list">
+            {customPrompts.map((prompt) => (
+              <button
+                key={prompt.id}
+                className={prompt.id === selectedCustomPromptId ? "prompt-card active" : "prompt-card"}
+                onClick={() => selectCustomPrompt(prompt.id)}
+              >
+                <div>
+                  <strong>{prompt.title}</strong>
+                  <span className="prompt-card-mode">{customPromptModeLabel(prompt.mode)}</span>
+                </div>
+                <small className="prompt-card-description">{prompt.description}</small>
+                <small className="prompt-card-meta">{customPromptCategoryLabel(prompt.category)} · 已生成 {prompt.runCount} 个产物</small>
+                <small className="prompt-card-meta">{prompt.lastUsedAt ? `最近使用 ${new Date(prompt.lastUsedAt).toLocaleString()}` : "尚未使用"}</small>
+              </button>
+            ))}
+            {!customPrompts.length && <EmptyState text="还没有我的提示词，点击新建或从系统提示词复制。" />}
+          </div>
+        )}
       </section>
 
       <section className="surface prompt-editor-panel">
         <SectionTitle
           icon={<FileText size={18} />}
-          title={selectedPrompt ? `${selectedPrompt.title} · 提示词` : "提示词详情"}
+          title={selectedScope === "custom" ? `${customPromptForm.title || "我的提示词"} · 我的提示词` : selectedPrompt ? `${selectedPrompt.title} · 提示词` : "提示词详情"}
         />
-        {selectedPrompt && guidedDraft ? (
+        {selectedScope === "custom" ? (
+          <CustomPromptEditor
+            prompt={selectedCustomPrompt}
+            form={customPromptForm}
+            setForm={setCustomPromptForm}
+            tab={customPromptTab}
+            setTab={setCustomPromptTab}
+            preview={customPromptPreview}
+            revisions={customPromptRevisions}
+            variables={promptVariables}
+            busy={busy}
+            savePrompt={saveCustomPrompt}
+            deletePrompt={deleteCustomPrompt}
+            copySystemPromptToCustom={copySystemPromptToCustom}
+            previewPrompt={previewCustomPrompt}
+            runPrompt={runCustomPrompt}
+            restoreRevision={restoreCustomPromptRevision}
+          />
+        ) : selectedPrompt && guidedDraft ? (
           <div className="prompt-editor-layout">
             <div className="prompt-control-panel">
               <div className="prompt-control-head">
@@ -4221,7 +4494,25 @@ function PromptCenterPage({
 
       <section className="surface prompt-artifacts-panel">
         <SectionTitle icon={<ShieldCheck size={18} />} title="运行检查" />
-        {selectedPrompt && guidedDraft ? (
+        {selectedScope === "custom" ? (
+          <div className="prompt-check-stack">
+            <div className="prompt-status-card">
+              <strong>当前实际运行</strong>
+              <span>{selectedCustomPrompt ? customPromptModeLabel(selectedCustomPrompt.mode) : "未保存"}</span>
+              <small>{selectedCustomPrompt ? "运行会使用已保存版本；编辑后请先保存再运行。" : "新建提示词需要先保存，才能预览和生成产物。"}</small>
+            </div>
+            <div className="prompt-status-card">
+              <strong>资料读取</strong>
+              <span>{(customPromptForm.guidedConfig?.enabledVariables ?? []).length} 项资料启用</span>
+              <small>必需资料由后端锁定；高级模板运行前会校验未知变量。</small>
+            </div>
+            <div className="prompt-status-card">
+              <strong>分类与状态</strong>
+              <span>{customPromptCategoryLabel(customPromptForm.category)} · {customPromptStatusLabel(customPromptForm.status)}</span>
+              <small>归档后不会删除历史产物，但不能继续运行。</small>
+            </div>
+          </div>
+        ) : selectedPrompt && guidedDraft ? (
           <div className="prompt-check-stack">
             <div className="prompt-status-card">
               <strong>当前实际运行</strong>
@@ -4240,15 +4531,298 @@ function PromptCenterPage({
         )}
         <SectionTitle icon={<Bot size={18} />} title="使用记录" />
         <div className="compact-list">
-          {relatedArtifacts.slice(0, 10).map((artifact) => (
+          {(selectedScope === "custom" ? relatedCustomArtifacts : relatedArtifacts).slice(0, 10).map((artifact) => (
             <button key={artifact.id} className="compact-list-row" onClick={() => openArtifact(artifact.id)}>
               <strong>{artifact.title}</strong>
               <small>{promptSourceLabel(artifact.promptSource)} · {new Date(artifact.createdAt).toLocaleString()}</small>
             </button>
           ))}
-          {!relatedArtifacts.length && <EmptyState text="这套提示词还没有生成过产物" />}
+          {!(selectedScope === "custom" ? relatedCustomArtifacts : relatedArtifacts).length && <EmptyState text="这套提示词还没有生成过产物" />}
         </div>
       </section>
+    </div>
+  );
+}
+
+function CustomPromptEditor({
+  prompt,
+  form,
+  setForm,
+  tab,
+  setTab,
+  preview,
+  revisions,
+  variables,
+  busy,
+  savePrompt,
+  deletePrompt,
+  copySystemPromptToCustom,
+  previewPrompt,
+  runPrompt,
+  restoreRevision
+}: {
+  prompt?: AiCustomPrompt;
+  form: AiCustomPromptInput;
+  setForm: (value: AiCustomPromptInput) => void;
+  tab: CustomPromptTab;
+  setTab: (value: CustomPromptTab) => void;
+  preview: AiCustomPromptPreview | null;
+  revisions: AiCustomPromptRevision[];
+  variables: AiPromptVariableInfo[];
+  busy: string;
+  savePrompt: () => Promise<AiCustomPrompt | undefined>;
+  deletePrompt: (promptId: string) => Promise<void>;
+  copySystemPromptToCustom: () => Promise<void>;
+  previewPrompt: () => Promise<void>;
+  runPrompt: (promptId?: string, focus?: string, options?: RunWorkflowOptions) => Promise<AiArtifact | undefined>;
+  restoreRevision: (revisionId: string) => Promise<void>;
+}) {
+  const guidedConfig = form.guidedConfig ?? defaultCustomPromptGuidedConfig;
+  const promptId = prompt?.id ?? "";
+  const saveBusy = busy === `custom-prompt-save-${promptId || "new"}`;
+  const previewBusy = busy === `custom-prompt-preview-${promptId || "new"}`;
+  const runBusy = busy === `custom-prompt-run-${promptId || "new"}`;
+  const canRun = form.status !== "archived" && Boolean(form.title.trim());
+  const previewValidation = preview?.validation ?? [];
+
+  const updateForm = (patch: Partial<AiCustomPromptInput>) => {
+    setForm({ ...form, ...patch });
+  };
+  const updateGuided = (patch: Partial<AiPromptGuidedConfig>) => {
+    setForm({ ...form, mode: "guided", guidedConfig: { ...guidedConfig, ...patch } });
+  };
+  const switchTab = (nextTab: CustomPromptTab) => {
+    setTab(nextTab);
+    if (nextTab === "guided" || nextTab === "advanced") {
+      setForm({ ...form, mode: nextTab });
+    }
+  };
+  const toggleVariable = (variable: AiPromptVariableInfo, enabled: boolean) => {
+    if (variable.tier === "required") return;
+    const next = new Set(guidedConfig.enabledVariables);
+    if (enabled) {
+      next.add(variable.key);
+    } else {
+      next.delete(variable.key);
+    }
+    updateGuided({ enabledVariables: [...next] });
+  };
+  const insertAdvancedVariable = (variable: AiPromptVariableInfo) => {
+    const template = form.advancedTemplate ?? "";
+    updateForm({
+      mode: "advanced",
+      advancedTemplate: `${template}${template.endsWith("\n") || !template ? "" : "\n"}{${variable.key}}`
+    });
+  };
+
+  return (
+    <div className="prompt-editor-layout custom-prompt-editor">
+      <div className="prompt-control-panel">
+        <div className="prompt-control-head">
+          <div>
+            <strong>{form.title || "我的提示词"}</strong>
+            <span>{form.description || "用于沉淀团队自己的运营分析、审稿或创作方法。"}</span>
+            <span>
+              {prompt ? `已保存 · ${new Date(prompt.updatedAt).toLocaleString()}` : "新建中 · 保存后可预览、运行和记录版本"}
+              {prompt?.sourcePromptTitle ? ` · 来源：${prompt.sourcePromptTitle}` : ""}
+            </span>
+          </div>
+          <div className="button-row">
+            <button className="ghost-button compact" onClick={() => void copySystemPromptToCustom()} disabled={busy.startsWith("custom-prompt-copy")}>
+              <FileText size={14} />
+              复制当前系统提示词
+            </button>
+            {prompt && (
+              <button className="ghost-button compact danger" onClick={() => void deletePrompt(prompt.id)} disabled={busy === `custom-prompt-delete-${prompt.id}`}>
+                {busy === `custom-prompt-delete-${prompt.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
+                删除
+              </button>
+            )}
+            <button className="ghost-button compact" onClick={() => void savePrompt()} disabled={!form.title.trim() || saveBusy}>
+              {saveBusy ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+              保存
+            </button>
+            <button className="primary-button compact" onClick={() => void runPrompt(promptId || undefined, form.description)} disabled={!canRun || runBusy}>
+              {runBusy ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+              运行并归档
+            </button>
+          </div>
+        </div>
+        <div className="prompt-mode-tabs custom-prompt-tabs">
+          {(["guided", "advanced", "preview", "versions"] as CustomPromptTab[]).map((item) => (
+            <button key={item} className={tab === item ? "active" : ""} onClick={() => switchTab(item)}>
+              {customPromptTabLabel(item)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "guided" && (
+        <div className="prompt-guided-workspace">
+          <section className="prompt-config-block">
+            <div className="section-mini-head">
+              <strong>基础信息</strong>
+              <span>名称用于列表和产物标题；分类帮助后续复盘。</span>
+            </div>
+            <div className="custom-prompt-basic-grid">
+              <label>
+                <span>提示词名称</span>
+                <input value={form.title} onChange={(event) => updateForm({ title: event.target.value })} />
+              </label>
+              <label>
+                <span>适用场景</span>
+                <select value={form.category ?? "general-ops"} onChange={(event) => updateForm({ category: event.target.value as AiCustomPromptCategory })}>
+                  {(["content-analysis", "viral-breakdown", "comment-insight", "note-writing", "draft-review", "general-ops"] as AiCustomPromptCategory[]).map((category) => (
+                    <option key={category} value={category}>{customPromptCategoryLabel(category)}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>状态</span>
+                <select value={form.status ?? "active"} onChange={(event) => updateForm({ status: event.target.value as AiCustomPromptInput["status"] })}>
+                  <option value="active">启用</option>
+                  <option value="archived">归档</option>
+                </select>
+              </label>
+              <label className="wide">
+                <span>给团队看的说明</span>
+                <input value={form.description ?? ""} onChange={(event) => updateForm({ description: event.target.value })} />
+              </label>
+            </div>
+          </section>
+
+          <section className="prompt-config-block">
+            <div className="section-mini-head">
+              <strong>工作说明</strong>
+              <span>普通用户只填业务目标；系统资料会在运行时自动带入。</span>
+            </div>
+            <div className="prompt-instruction-grid">
+              <label className="prompt-instruction-field">
+                <span>AI 角色</span>
+                <textarea value={guidedConfig.role} onChange={(event) => updateGuided({ role: event.target.value })} />
+              </label>
+              <label className="prompt-instruction-field">
+                <span>工作目标</span>
+                <textarea value={guidedConfig.objective} onChange={(event) => updateGuided({ objective: event.target.value })} />
+              </label>
+              <label className="prompt-instruction-field">
+                <span>重点关注</span>
+                <textarea value={guidedConfig.focusRules.join("\n")} onChange={(event) => updateGuided({ focusRules: splitLines(event.target.value) })} />
+              </label>
+              <label className="prompt-instruction-field">
+                <span>安全规则</span>
+                <textarea value={guidedConfig.forbiddenRules.join("\n")} onChange={(event) => updateGuided({ forbiddenRules: splitLines(event.target.value) })} />
+              </label>
+            </div>
+          </section>
+
+          <section className="prompt-config-block">
+            <div className="section-mini-head">
+              <strong>AI 会读取的资料</strong>
+              <span>必需资料已锁定；推荐资料按任务开关。</span>
+            </div>
+            <div className="prompt-data-card-grid">
+              {variables.map((variable) => {
+                const checked = guidedConfig.enabledVariables.includes(variable.key) || variable.tier === "required";
+                return (
+                  <label key={variable.key} className={checked ? "prompt-data-card active" : "prompt-data-card"}>
+                    <input type="checkbox" checked={checked} disabled={variable.tier === "required"} onChange={(event) => toggleVariable(variable, event.target.checked)} />
+                    <span><strong>{variable.label}</strong><small>{variable.description}</small></span>
+                    <em>{variableTierLabel(variable.tier)}</em>
+                  </label>
+                );
+              })}
+              {!variables.length && <EmptyState text="系统变量加载中，请稍后再编辑资料读取范围。" />}
+            </div>
+          </section>
+
+          <section className="prompt-config-block">
+            <div className="section-mini-head">
+              <strong>输出栏目</strong>
+              <span>每行一个栏目，运行后按这个结构输出。</span>
+            </div>
+            <textarea className="prompt-lines-editor" value={guidedConfig.outputSections.join("\n")} onChange={(event) => updateGuided({ outputSections: splitLines(event.target.value) })} />
+          </section>
+        </div>
+      )}
+
+      {tab === "advanced" && (
+        <div className="prompt-advanced-workspace">
+          <section className="prompt-text-panel">
+            <div className="panel-subhead">
+              <strong>高级模板</strong>
+              <span>适合熟悉变量的用户；保存/运行前后端会校验变量。</span>
+            </div>
+            <textarea className="prompt-editor" value={form.advancedTemplate ?? ""} onChange={(event) => updateForm({ mode: "advanced", advancedTemplate: event.target.value })} />
+          </section>
+          <aside className="prompt-variable-panel">
+            <div className="section-mini-head">
+              <strong>可插入变量</strong>
+              <span>点击插入到模板末尾</span>
+            </div>
+            <div className="prompt-variable-card-list">
+              {variables.map((variable) => (
+                <button key={variable.key} className="prompt-variable-card" onClick={() => insertAdvancedVariable(variable)}>
+                  <span>
+                    <strong>{variable.label}</strong>
+                    <code>{`{${variable.key}}`}</code>
+                  </span>
+                  <small>{variable.description}</small>
+                  <em>{variableTierLabel(variable.tier)}</em>
+                </button>
+              ))}
+            </div>
+            <PromptValidationList messages={previewValidation} />
+          </aside>
+        </div>
+      )}
+
+      {tab === "preview" && (
+        <div className="prompt-preview-workspace">
+          <div className="prompt-preview-toolbar">
+            <div><strong>最终预览</strong><span>预览会先保存当前表单，再展示最终发送给 AI 的内容。</span></div>
+            <div className="button-row">
+              <button className="ghost-button compact" onClick={() => void previewPrompt()} disabled={!form.title.trim() || previewBusy}>
+                {previewBusy ? <Loader2 className="spin" size={14} /> : <Eye size={14} />}
+                生成预览
+              </button>
+              <button className="primary-button compact" onClick={() => void runPrompt(promptId || undefined, form.description)} disabled={!canRun || runBusy}>
+                {runBusy ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                运行并归档
+              </button>
+            </div>
+          </div>
+          {preview ? (
+            <>
+              <div className="prompt-preview-meta"><span>模式：{customPromptModeLabel(preview.mode)}</span><span>{preview.contextSummary}</span></div>
+              <pre className="prompt-preview-body">{preview.prompt}</pre>
+            </>
+          ) : (
+            <EmptyState text="点击生成预览，确认 AI 会读取哪些资料、输出什么结构。" />
+          )}
+        </div>
+      )}
+
+      {tab === "versions" && (
+        <div className="custom-prompt-version-workspace">
+          <section className="prompt-config-block">
+            <div className="section-mini-head">
+              <strong>版本记录</strong>
+              <span>每次保存都会生成记录，可恢复到旧版本。</span>
+            </div>
+            <div className="compact-list">
+              {revisions.map((revision) => (
+                <button key={revision.id} className="compact-list-row custom-version-row" onClick={() => void restoreRevision(revision.id)} disabled={busy === `custom-prompt-restore-${promptId}-${revision.id}`}>
+                  <strong>{revision.snapshot.title}</strong>
+                  <small>{customPromptModeLabel(revision.snapshot.mode)} · {new Date(revision.createdAt).toLocaleString()}</small>
+                  <small>{revision.snapshot.description || "无说明"}</small>
+                </button>
+              ))}
+              {!revisions.length && <EmptyState text="保存后会在这里记录历史版本。" />}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -4282,9 +4856,52 @@ function promptResetLabel(tab: PromptEditorTab): string {
 }
 
 function promptSourceLabel(source?: AiArtifact["promptSource"]): string {
+  if (source === "customPrompt") return "我的提示词";
   if (source === "guided") return "工作说明";
   if (source === "advanced" || source === "custom") return "高级模板";
   return "系统内置";
+}
+
+function customPromptToForm(prompt: AiCustomPrompt): AiCustomPromptInput {
+  return {
+    title: prompt.title,
+    description: prompt.description,
+    category: prompt.category,
+    mode: prompt.mode,
+    guidedConfig: {
+      ...prompt.guidedConfig,
+      focusRules: [...prompt.guidedConfig.focusRules],
+      forbiddenRules: [...prompt.guidedConfig.forbiddenRules],
+      outputSections: [...prompt.guidedConfig.outputSections],
+      enabledVariables: [...prompt.guidedConfig.enabledVariables]
+    },
+    advancedTemplate: prompt.advancedTemplate,
+    status: prompt.status
+  };
+}
+
+function customPromptCategoryLabel(category?: AiCustomPromptCategory): string {
+  if (category === "content-analysis") return "内容分析";
+  if (category === "viral-breakdown") return "爆款拆解";
+  if (category === "comment-insight") return "评论洞察";
+  if (category === "note-writing") return "笔记撰写";
+  if (category === "draft-review") return "审稿质检";
+  return "通用运营";
+}
+
+function customPromptModeLabel(mode?: AiCustomPromptMode): string {
+  return mode === "advanced" ? "高级模板" : "工作说明";
+}
+
+function customPromptStatusLabel(status?: AiCustomPromptInput["status"]): string {
+  return status === "archived" ? "已归档" : "启用中";
+}
+
+function customPromptTabLabel(tab: CustomPromptTab): string {
+  if (tab === "advanced") return "高级模板";
+  if (tab === "preview") return "最终预览";
+  if (tab === "versions") return "版本记录";
+  return "工作说明";
 }
 
 function variableTierLabel(tier?: AiPromptVariableInfo["tier"]): string {
@@ -4411,6 +5028,9 @@ function AiWorkbenchPage(props: {
   prompts: AiPromptInfo[];
   openPrompt: (key: AiWorkflowKey) => void;
   runWorkflow: RunWorkflow;
+  customPrompts: AiCustomPrompt[];
+  openCustomPrompt: (promptId: string) => void;
+  runCustomPrompt: (promptId: string, focus?: string, options?: RunWorkflowOptions) => Promise<AiArtifact | undefined>;
   busy: string;
 }) {
   const selectedArtifact = props.artifacts.find((artifact) => artifact.id === props.selectedArtifactId);
@@ -4424,9 +5044,9 @@ function AiWorkbenchPage(props: {
           meta: [
             selectedArtifact.source === "ai" ? "AI 生成" : "本地规则",
             selectedArtifact.noteIds?.length ? `样本：${selectedArtifact.noteIds.length} 篇` : selectedArtifact.noteId ? "样本：单篇笔记" : "",
-            selectedArtifact.promptTitle ? `提示词：${selectedArtifact.promptTitle}` : "",
-            selectedArtifact.promptSource === "custom" ? "我的提示词" : selectedArtifact.promptSource === "default" ? "内置提示词" : "",
-            selectedArtifact.promptVersion ? promptVersionLabel(selectedArtifact.promptVersion) : "",
+            selectedArtifact.customPromptTitle ? `我的提示词：${selectedArtifact.customPromptTitle}` : selectedArtifact.promptTitle ? `提示词：${selectedArtifact.promptTitle}` : "",
+            promptSourceLabel(selectedArtifact.promptSource),
+            selectedArtifact.customPromptVersion ?? (selectedArtifact.promptVersion ? promptVersionLabel(selectedArtifact.promptVersion) : ""),
             selectedArtifact.contextSummary ?? ""
           ].filter(Boolean),
           exportUrl: `/api/ai/artifacts/${selectedArtifact.id}/export`
@@ -4512,6 +5132,12 @@ function AiWorkbenchPage(props: {
                   <small>{promptVersionLabel(prompt.version)} · {prompt.promptSource === "custom" ? "我的提示词" : "内置提示词"}</small>
                 </button>
               ))}
+              {props.customPrompts.map((prompt) => (
+                <button key={prompt.id} className="prompt-version-row" onClick={() => props.openCustomPrompt(prompt.id)}>
+                  <span>{prompt.title}</span>
+                  <small>{customPromptCategoryLabel(prompt.category)} · {customPromptModeLabel(prompt.mode)} · 已生成 {prompt.runCount}</small>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -4523,6 +5149,8 @@ function AiWorkbenchPage(props: {
         selectedArtifactWorkflow={selectedArtifactWorkflow}
         openPrompt={props.openPrompt}
         runWorkflow={props.runWorkflow}
+        openCustomPrompt={props.openCustomPrompt}
+        runCustomPrompt={props.runCustomPrompt}
         busy={props.busy}
         close={() => {
           props.setSelectedArtifactId("");
@@ -4535,9 +5163,9 @@ function AiWorkbenchPage(props: {
         <div className="side-panel-stack">
           {selectedArtifact ? (
             <div className="artifact-context">
-              <StatusRow label="提示词" value={selectedArtifact.promptTitle ?? "未记录"} ok={Boolean(selectedArtifact.promptTitle)} />
-              <StatusRow label="来源" value={selectedArtifact.promptSource === "custom" ? "我的提示词" : "内置/未记录"} ok={selectedArtifact.promptSource === "custom"} />
-              <StatusRow label="模板" value={selectedArtifact.promptVersion ? promptVersionLabel(selectedArtifact.promptVersion) : "未记录"} ok={Boolean(selectedArtifact.promptVersion)} />
+              <StatusRow label="提示词" value={selectedArtifact.customPromptTitle ?? selectedArtifact.promptTitle ?? "未记录"} ok={Boolean(selectedArtifact.customPromptTitle ?? selectedArtifact.promptTitle)} />
+              <StatusRow label="来源" value={promptSourceLabel(selectedArtifact.promptSource)} ok={selectedArtifact.promptSource === "customPrompt"} />
+              <StatusRow label="模板" value={selectedArtifact.customPromptVersion ?? (selectedArtifact.promptVersion ? promptVersionLabel(selectedArtifact.promptVersion) : "未记录")} ok={Boolean(selectedArtifact.customPromptVersion ?? selectedArtifact.promptVersion)} />
               <StatusRow label="状态" value={selectedArtifact.status} ok={selectedArtifact.status === "completed"} />
             </div>
           ) : selectedReport ? (
@@ -4565,6 +5193,12 @@ function AiWorkbenchPage(props: {
                 {prompt.title}
               </button>
             ))}
+            {props.customPrompts.slice(0, 3).map((prompt) => (
+              <button key={prompt.id} className="ghost-button compact" onClick={() => void props.runCustomPrompt(prompt.id)} disabled={props.busy === `custom-prompt-run-${prompt.id}`}>
+                {props.busy === `custom-prompt-run-${prompt.id}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                {prompt.title}
+              </button>
+            ))}
           </div>
         </div>
       </section>
@@ -4578,6 +5212,8 @@ function ArtifactReader({
   selectedArtifactWorkflow,
   openPrompt,
   runWorkflow,
+  openCustomPrompt,
+  runCustomPrompt,
   busy,
   close
 }: {
@@ -4586,6 +5222,8 @@ function ArtifactReader({
   selectedArtifactWorkflow?: AiWorkflowKey;
   openPrompt: (key: AiWorkflowKey) => void;
   runWorkflow: RunWorkflow;
+  openCustomPrompt: (promptId: string) => void;
+  runCustomPrompt: (promptId: string, focus?: string, options?: RunWorkflowOptions) => Promise<AiArtifact | undefined>;
   busy: string;
   close: () => void;
 }) {
@@ -4596,13 +5234,27 @@ function ArtifactReader({
         title={preview?.title ?? "AI 阅读区"}
         action={preview ? (
           <div className="button-row">
-            {selectedArtifact?.promptKey && selectedArtifact.promptKey !== "assistant" && selectedArtifact.promptKey !== "report" && (
-              <button className="ghost-button compact" onClick={() => openPrompt(selectedArtifact.promptKey as AiWorkflowKey)}>
+            {selectedArtifact?.customPromptId ? (
+              <button className="ghost-button compact" onClick={() => openCustomPrompt(selectedArtifact.customPromptId!)}>
+                <KeyRound size={14} />
+                查看我的提示词
+              </button>
+            ) : selectedArtifactWorkflow ? (
+              <button className="ghost-button compact" onClick={() => openPrompt(selectedArtifactWorkflow)}>
                 <KeyRound size={14} />
                 查看提示词
               </button>
-            )}
-            {selectedArtifactWorkflow && (
+            ) : null}
+            {selectedArtifact?.customPromptId ? (
+              <button
+                className="ghost-button compact"
+                onClick={() => void runCustomPrompt(selectedArtifact.customPromptId!, undefined, { noteId: selectedArtifact.noteId, noteIds: selectedArtifact.noteIds })}
+                disabled={busy === `custom-prompt-run-${selectedArtifact.customPromptId}`}
+              >
+                {busy === `custom-prompt-run-${selectedArtifact.customPromptId}` ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                重新生成
+              </button>
+            ) : selectedArtifactWorkflow && (
               <button
                 className="ghost-button compact"
                 onClick={() => void runWorkflow(selectedArtifactWorkflow, undefined, { noteId: selectedArtifact?.noteId, noteIds: selectedArtifact?.noteIds })}
@@ -4669,6 +5321,8 @@ function AiAssistantDrawer({
   onRefresh,
   workflows,
   runWorkflow,
+  customPrompts,
+  runCustomPrompt,
   contextItems,
   busy
 }: {
@@ -4701,6 +5355,8 @@ function AiAssistantDrawer({
   onRefresh: () => Promise<void>;
   workflows: AiWorkflowDefinition[];
   runWorkflow: RunWorkflow;
+  customPrompts: AiCustomPrompt[];
+  runCustomPrompt: (promptId: string, focus?: string, options?: RunWorkflowOptions) => Promise<AiArtifact | undefined>;
   contextItems: string[];
   busy: string;
 }) {
@@ -4869,6 +5525,26 @@ function AiAssistantDrawer({
               </button>
             ))}
           </div>
+          {customPrompts.length > 0 && (
+            <div className="assistant-custom-action-stack">
+              <strong>我的提示词</strong>
+              <div className="assistant-suggestion-row">
+                {customPrompts.slice(0, 4).map((prompt) => (
+                  <button
+                    key={prompt.id}
+                    className="assistant-suggestion-card"
+                    onClick={() => void runCustomPrompt(prompt.id)}
+                    disabled={busy === `custom-prompt-run-${prompt.id}` || prompt.status === "archived"}
+                    title={prompt.description}
+                  >
+                    {busy === `custom-prompt-run-${prompt.id}` ? <Loader2 className="spin" size={14} /> : <KeyRound size={14} />}
+                    <span>{prompt.title}</span>
+                    <small>{customPromptCategoryLabel(prompt.category)}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
       <div className="assistant-body-scroll">

@@ -18,6 +18,8 @@ describe("LocalStore", () => {
     await writeFile(path.join(dataDir, "searchJobs.json"), "", "utf8");
 
     expect(await store.read("searchJobs")).toEqual([]);
+    expect(await store.read("aiCustomPrompts")).toEqual([]);
+    expect(await store.read("aiCustomPromptRevisions")).toEqual([]);
   });
 
   it("writes JSON files with trailing newlines", async () => {

@@ -11,10 +11,13 @@ export type ReplyActionStatus = "draft" | "queued" | "sending" | "sent" | "faile
 export type AiReportStatus = "completed" | "failed";
 export type AiArtifactStatus = "completed" | "failed";
 export type AiArtifactSource = "ai" | "local";
-export type AiPromptSource = "default" | "custom" | "guided" | "advanced";
+export type AiPromptSource = "default" | "custom" | "guided" | "advanced" | "customPrompt";
 export type AiPromptMode = "builtin" | "guided" | "advanced";
 export type AiPromptResetScope = "active" | "guided" | "advanced" | "all";
 export type AiPromptValidationLevel = "error" | "warning";
+export type AiCustomPromptCategory = "content-analysis" | "viral-breakdown" | "comment-insight" | "note-writing" | "draft-review" | "general-ops";
+export type AiCustomPromptMode = "guided" | "advanced";
+export type AiCustomPromptStatus = "active" | "archived";
 export type AiOrchestrationStatus = "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled";
 export type AiOrchestrationStepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
 export type AiOrchestrationStepKey =
@@ -496,6 +499,61 @@ export interface AiPromptPreview {
   validation: AiPromptValidationMessage[];
 }
 
+export interface AiCustomPromptInput {
+  title: string;
+  description?: string;
+  category?: AiCustomPromptCategory;
+  mode?: AiCustomPromptMode;
+  guidedConfig?: AiPromptGuidedConfig;
+  advancedTemplate?: string;
+  status?: AiCustomPromptStatus;
+}
+
+export interface AiCustomPrompt {
+  id: string;
+  title: string;
+  description: string;
+  category: AiCustomPromptCategory;
+  mode: AiCustomPromptMode;
+  guidedConfig: AiPromptGuidedConfig;
+  advancedTemplate: string;
+  status: AiCustomPromptStatus;
+  runCount: number;
+  sourcePromptKey?: AiWorkflowKey;
+  sourcePromptTitle?: string;
+  lastUsedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiCustomPromptRevision {
+  id: string;
+  promptId: string;
+  snapshot: AiCustomPrompt;
+  createdAt: string;
+}
+
+export interface AiCustomPromptPreview {
+  mode: AiCustomPromptMode;
+  prompt: string;
+  contextSummary: string;
+  validation: AiPromptValidationMessage[];
+}
+
+export interface AiCustomPromptRunInput {
+  promptId: string;
+  jobId?: string;
+  noteId?: string;
+  noteIds?: string[];
+  modelId?: string;
+  focus?: string;
+}
+
+export interface AiCustomPromptCopyInput {
+  workflowKey: AiWorkflowKey;
+  title?: string;
+}
+
 export interface AiWorkflowRunInput {
   workflowKey: AiWorkflowKey;
   jobId?: string;
@@ -507,7 +565,7 @@ export interface AiWorkflowRunInput {
 
 export interface AiArtifact {
   id: string;
-  workflowKey: AiWorkflowKey | "assistant";
+  workflowKey: AiWorkflowKey | "assistant" | "custom-prompt";
   jobId?: string;
   noteId?: string;
   noteIds?: string[];
@@ -516,10 +574,13 @@ export interface AiArtifact {
   source: AiArtifactSource;
   status: AiArtifactStatus;
   modelId?: string;
-  promptKey?: AiWorkflowKey | "assistant" | "report";
+  promptKey?: AiWorkflowKey | "assistant" | "report" | "custom-prompt";
   promptTitle?: string;
   promptSource?: AiPromptSource;
   promptVersion?: string;
+  customPromptId?: string;
+  customPromptTitle?: string;
+  customPromptVersion?: string;
   contextSummary?: string;
   error?: string;
   createdAt: string;

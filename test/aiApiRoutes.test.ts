@@ -1,6 +1,7 @@
 import http from "node:http";
 import express, { type Express } from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AiArtifact, AiCustomPrompt, AiCustomPromptInput, AiCustomPromptRunInput } from "../src/shared/types.js";
 
 describe("AI API routes", () => {
   afterEach(() => {
@@ -58,6 +59,83 @@ describe("AI API routes", () => {
       message: "tools ok for model1",
       checkedAt: "2026-06-24T00:00:00.000Z"
     });
+  });
+
+  it("creates, previews and runs custom prompts through API routes", async () => {
+    const customPrompt: AiCustomPrompt = {
+      id: "custom_prompt_route",
+      title: "我的选题提示词",
+      description: "按当前任务生成选题方向。",
+      category: "content-analysis",
+      mode: "guided",
+      guidedConfig: {
+        role: "选题助手",
+        objective: "输出选题方向。",
+        focusRules: [],
+        forbiddenRules: [],
+        outputSections: ["方向"],
+        enabledVariables: ["job", "focus"]
+      },
+      advancedTemplate: "任务：{job}",
+      status: "active",
+      runCount: 0,
+      createdAt: "2026-07-06T00:00:00.000Z",
+      updatedAt: "2026-07-06T00:00:00.000Z"
+    };
+    const artifact: AiArtifact = {
+      id: "artifact_custom_prompt_route",
+      workflowKey: "custom-prompt",
+      title: "我的选题提示词",
+      markdown: "# 我的选题提示词",
+      source: "local",
+      status: "completed",
+      promptKey: "custom-prompt",
+      promptTitle: "我的选题提示词",
+      promptSource: "customPrompt",
+      customPromptId: customPrompt.id,
+      customPromptTitle: customPrompt.title,
+      createdAt: "2026-07-06T00:00:00.000Z",
+      updatedAt: "2026-07-06T00:00:00.000Z"
+    };
+    const saveAiCustomPrompt = vi.fn(async (input: AiCustomPromptInput) => ({ ...customPrompt, ...input }));
+    const previewAiCustomPrompt = vi.fn(async (_promptId: string, input: Omit<AiCustomPromptRunInput, "promptId">) => ({
+      mode: "guided" as const,
+      prompt: `预览：${input.focus}`,
+      contextSummary: "无任务上下文",
+      validation: []
+    }));
+    const runAiCustomPrompt = vi.fn(async (input: AiCustomPromptRunInput) => ({ ...artifact, customPromptId: input.promptId }));
+    vi.doMock("../src/server/services/aiService.js", async () => {
+      const actual = await vi.importActual<typeof import("../src/server/services/aiService.js")>("../src/server/services/aiService.js");
+      return {
+        ...actual,
+        saveAiCustomPrompt,
+        previewAiCustomPrompt,
+        runAiCustomPrompt
+      };
+    });
+
+    const app = await createApp();
+    const created = await requestJson(app, "/api/ai/custom-prompts", {
+      method: "POST",
+      body: { title: "我的选题提示词", category: "content-analysis", mode: "guided" }
+    });
+    const preview = await requestJson(app, "/api/ai/custom-prompts/custom_prompt_route/preview", {
+      method: "POST",
+      body: { focus: "标题方向" }
+    });
+    const run = await requestJson(app, "/api/ai/custom-prompts/custom_prompt_route/run", {
+      method: "POST",
+      body: { focus: "标题方向" }
+    });
+
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ id: "custom_prompt_route", title: "我的选题提示词" });
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({ mode: "guided", prompt: "预览：标题方向" });
+    expect(run.status).toBe(201);
+    expect(run.body).toMatchObject({ workflowKey: "custom-prompt", customPromptId: "custom_prompt_route", promptSource: "customPrompt" });
+    expect(runAiCustomPrompt).toHaveBeenCalledWith(expect.objectContaining({ promptId: "custom_prompt_route", focus: "标题方向" }));
   });
 });
 

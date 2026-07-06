@@ -5,6 +5,8 @@ import type {
   AnalyticsReport,
   AiArtifact,
   AiAssistantMessage,
+  AiCustomPrompt,
+  AiCustomPromptRevision,
   AiModelConfig,
   AiOrchestration,
   AiPromptConfig,
@@ -44,6 +46,8 @@ type CollectionName =
   | "aiReports"
   | "aiArtifacts"
   | "aiPromptConfigs"
+  | "aiCustomPrompts"
+  | "aiCustomPromptRevisions"
   | "aiOrchestrations"
   | "aiMessages"
   | "replyPlans"
@@ -73,6 +77,8 @@ interface DataShape {
   aiReports: AiReport[];
   aiArtifacts: AiArtifact[];
   aiPromptConfigs: AiPromptConfig[];
+  aiCustomPrompts: AiCustomPrompt[];
+  aiCustomPromptRevisions: AiCustomPromptRevision[];
   aiOrchestrations: AiOrchestration[];
   aiMessages: AiAssistantMessage[];
   replyPlans: ReplyPlanRecord[];
@@ -106,6 +112,8 @@ const defaults: DataShape = {
   aiReports: [],
   aiArtifacts: [],
   aiPromptConfigs: [],
+  aiCustomPrompts: [],
+  aiCustomPromptRevisions: [],
   aiOrchestrations: [],
   aiMessages: [],
   replyPlans: [],

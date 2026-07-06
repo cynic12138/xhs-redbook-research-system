@@ -222,10 +222,28 @@ export function buildGuidedWorkflowPrompt(
 }
 
 export function validatePromptTemplate(key: AiWorkflowKey, template: string): AiPromptValidationMessage[] {
+  const messages: AiPromptValidationMessage[] = validateCustomPromptTemplate(template);
+  const usedKeys = templateVariableKeys(template);
+  const defaultKeys = templateVariableKeys(defaultPromptTemplates[key]);
+
+  for (const keyName of defaultKeys) {
+    if (!usedKeys.includes(keyName)) {
+      const variable = promptVariables.find((item) => item.key === keyName);
+      messages.push({
+        level: variable?.tier === "required" ? "error" : "warning",
+        message: `当前模板未使用「${variable?.label ?? keyName}」，AI 可能拿不到这类资料。`,
+        variable: keyName
+      });
+    }
+  }
+
+  return messages;
+}
+
+export function validateCustomPromptTemplate(template: string): AiPromptValidationMessage[] {
   const messages: AiPromptValidationMessage[] = [];
   const validKeys = new Set(promptVariables.map((variable) => variable.key));
   const usedKeys = templateVariableKeys(template);
-  const defaultKeys = templateVariableKeys(defaultPromptTemplates[key]);
 
   if (!template.trim()) {
     messages.push({ level: "error", message: "高级模板不能为空。" });
@@ -241,17 +259,6 @@ export function validatePromptTemplate(key: AiWorkflowKey, template: string): Ai
         message: `未知变量：{${keyName}}。`,
         variable: keyName,
         suggestion: closestPromptVariable(keyName)
-      });
-    }
-  }
-
-  for (const keyName of defaultKeys) {
-    if (!usedKeys.includes(keyName)) {
-      const variable = promptVariables.find((item) => item.key === keyName);
-      messages.push({
-        level: variable?.tier === "required" ? "error" : "warning",
-        message: `当前模板未使用「${variable?.label ?? keyName}」，AI 可能拿不到这类资料。`,
-        variable: keyName
       });
     }
   }
@@ -1196,7 +1203,7 @@ ${outputSections.map((section, index) => `## ${index + 1}. ${section}`).join("\n
 - 输出中文 Markdown。`;
 }
 
-function renderPromptTemplate(template: string, context: AiPromptContext, focus?: string): string {
+export function renderPromptTemplate(template: string, context: AiPromptContext, focus?: string): string {
   const values = promptTemplateValues(context, focus);
   return template.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (match, key: string) =>
     Object.prototype.hasOwnProperty.call(values, key) ? json(values[key]) : match

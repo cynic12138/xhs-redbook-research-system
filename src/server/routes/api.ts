@@ -34,20 +34,29 @@ import {
   activateAiPrompt,
   activateAiPromptMode,
   deleteAiArtifact,
+  deleteAiCustomPrompt,
   deleteAiModel,
   deleteAiReport,
   getAiArtifact,
+  getAiCustomPrompt,
   getAiPromptDetail,
   getAiReport,
   listAiArtifacts,
+  listAiCustomPromptRevisions,
+  listAiCustomPrompts,
   listAiModels,
   listAiPrompts,
   listAiReports,
   listAiWorkflows,
+  copyAiWorkflowPromptToCustom,
   runAiWorkflow,
+  runAiCustomPrompt,
   previewAiPrompt,
+  previewAiCustomPrompt,
   resetAiPromptConfig,
+  restoreAiCustomPromptRevision,
   saveAiModel,
+  saveAiCustomPrompt,
   saveAiPromptAdvancedConfig,
   saveAiPromptConfig,
   saveAiPromptGuidedConfig,
@@ -152,6 +161,25 @@ const aiPromptGuidedConfigInput = z.object({
   forbiddenRules: z.array(z.string()).default([]),
   outputSections: z.array(z.string()).default([]),
   enabledVariables: z.array(z.string()).default([])
+});
+const aiCustomPromptCategory = z.enum(["content-analysis", "viral-breakdown", "comment-insight", "note-writing", "draft-review", "general-ops"]);
+const aiCustomPromptMode = z.enum(["guided", "advanced"]);
+const aiCustomPromptStatus = z.enum(["active", "archived"]);
+const aiCustomPromptInput = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  category: aiCustomPromptCategory.optional(),
+  mode: aiCustomPromptMode.optional(),
+  guidedConfig: aiPromptGuidedConfigInput.optional(),
+  advancedTemplate: z.string().optional(),
+  status: aiCustomPromptStatus.optional()
+});
+const aiCustomPromptRunInput = z.object({
+  jobId: z.string().optional(),
+  noteId: z.string().optional(),
+  noteIds: z.array(z.string().min(1)).optional(),
+  modelId: z.string().optional(),
+  focus: z.string().optional()
 });
 
 const contentReplacementInput = z.object({
@@ -848,6 +876,93 @@ api.post("/ai/models/:id/tools-probe", async (req, res, next) => {
 
 api.get("/ai/workflows", (_req, res) => {
   res.json(listAiWorkflows());
+});
+
+api.get("/ai/custom-prompts", async (_req, res, next) => {
+  try {
+    res.json(await listAiCustomPrompts());
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/custom-prompts", async (req, res, next) => {
+  try {
+    res.status(201).json(await saveAiCustomPrompt(aiCustomPromptInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/custom-prompts/from-system", async (req, res, next) => {
+  try {
+    const body = z.object({ workflowKey: aiPromptKey, title: z.string().optional() }).parse(req.body);
+    res.status(201).json(await copyAiWorkflowPromptToCustom(body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/ai/custom-prompts/:id", async (req, res, next) => {
+  try {
+    const prompt = await getAiCustomPrompt(req.params.id);
+    if (!prompt) {
+      res.status(404).json({ error: "自定义提示词不存在。" });
+      return;
+    }
+    res.json(prompt);
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.put("/ai/custom-prompts/:id", async (req, res, next) => {
+  try {
+    res.json(await saveAiCustomPrompt(aiCustomPromptInput.parse(req.body), req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.delete("/ai/custom-prompts/:id", async (req, res, next) => {
+  try {
+    res.json(await deleteAiCustomPrompt(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/ai/custom-prompts/:id/revisions", async (req, res, next) => {
+  try {
+    res.json(await listAiCustomPromptRevisions(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/custom-prompts/:id/revisions/:revisionId/restore", async (req, res, next) => {
+  try {
+    res.json(await restoreAiCustomPromptRevision(req.params.id, req.params.revisionId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/custom-prompts/:id/preview", async (req, res, next) => {
+  try {
+    res.json(await previewAiCustomPrompt(req.params.id, aiCustomPromptRunInput.parse(req.body ?? {})));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/custom-prompts/:id/run", async (req, res, next) => {
+  try {
+    const body = aiCustomPromptRunInput.parse(req.body ?? {});
+    res.status(201).json(await runAiCustomPrompt({ promptId: req.params.id, ...body }));
+  } catch (error) {
+    next(error);
+  }
 });
 
 api.get("/ai/prompts", async (_req, res, next) => {

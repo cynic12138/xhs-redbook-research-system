@@ -7,6 +7,8 @@ import {
   buildGuidedWorkflowPrompt,
   getDefaultPromptTemplate,
   listAiPromptInfos,
+  renderPromptTemplate,
+  validateCustomPromptTemplate,
   validatePromptTemplate
 } from "../src/server/services/aiPrompts.js";
 
@@ -149,5 +151,16 @@ describe("AI prompt library", () => {
 
     expect(messages.some((message) => message.level === "error" && message.variable === "topNote")).toBe(true);
     expect(messages.some((message) => message.suggestion === "topNotes")).toBe(true);
+  });
+
+  it("validates and renders reusable custom prompt templates", () => {
+    const validation = validateCustomPromptTemplate("任务：{job}\n未知：{topNote}\n要求：{focus}");
+    const rendered = renderPromptTemplate("任务：{job}\n热门：{topNotes}\n要求：{focus}", context, "优先输出标题方向");
+
+    expect(validation.some((message) => message.level === "error" && message.variable === "topNote")).toBe(true);
+    expect(validation.some((message) => message.suggestion === "topNotes")).toBe(true);
+    expect(rendered).toContain("武汉相亲");
+    expect(rendered).toContain("武汉相亲避坑清单");
+    expect(rendered).toContain("优先输出标题方向");
   });
 });

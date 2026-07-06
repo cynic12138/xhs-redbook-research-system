@@ -2,6 +2,12 @@ import type {
   AiArtifact,
   AiAssistantChatInput,
   AiAssistantChatResponse,
+  AiCustomPrompt,
+  AiCustomPromptCopyInput,
+  AiCustomPromptInput,
+  AiCustomPromptPreview,
+  AiCustomPromptRevision,
+  AiCustomPromptRunInput,
   AiModelConfig,
   AiModelInput,
   AiModelToolsProbeResult,
@@ -165,6 +171,19 @@ export const api = {
   testAiModel: (modelId: string) => apiPost<{ ok: boolean; message: string }>("/api/ai/models/test", { modelId }),
   probeAiModelTools: (modelId: string) => apiPost<AiModelToolsProbeResult>(`/api/ai/models/${encodeURIComponent(modelId)}/tools-probe`),
   listAiWorkflows: () => apiGet<AiWorkflowDefinition[]>("/api/ai/workflows"),
+  listAiCustomPrompts: () => apiGet<AiCustomPrompt[]>("/api/ai/custom-prompts"),
+  saveAiCustomPrompt: (input: AiCustomPromptInput, id?: string) =>
+    id ? apiPut<AiCustomPrompt>(`/api/ai/custom-prompts/${encodeURIComponent(id)}`, input) : apiPost<AiCustomPrompt>("/api/ai/custom-prompts", input),
+  deleteAiCustomPrompt: (id: string) => apiDelete<{ deleted: number }>(`/api/ai/custom-prompts/${encodeURIComponent(id)}`),
+  copyAiPromptToCustom: (input: AiCustomPromptCopyInput) => apiPost<AiCustomPrompt>("/api/ai/custom-prompts/from-system", input),
+  listAiCustomPromptRevisions: (id: string) =>
+    apiGet<AiCustomPromptRevision[]>(`/api/ai/custom-prompts/${encodeURIComponent(id)}/revisions`),
+  restoreAiCustomPromptRevision: (id: string, revisionId: string) =>
+    apiPost<AiCustomPrompt>(`/api/ai/custom-prompts/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revisionId)}/restore`),
+  previewAiCustomPrompt: (id: string, input: Omit<AiCustomPromptRunInput, "promptId">) =>
+    apiPost<AiCustomPromptPreview>(`/api/ai/custom-prompts/${encodeURIComponent(id)}/preview`, input),
+  runAiCustomPrompt: (id: string, input: Omit<AiCustomPromptRunInput, "promptId">) =>
+    apiPost<AiArtifact>(`/api/ai/custom-prompts/${encodeURIComponent(id)}/run`, input),
   listAiPrompts: () => apiGet<AiPromptInfo[]>("/api/ai/prompts"),
   getAiPrompt: (key: AiWorkflowKey) => apiGet<AiPromptDetail>(`/api/ai/prompts/${key}`),
   saveAiPrompt: (key: AiWorkflowKey, customTemplate: string) => apiPut<AiPromptDetail>(`/api/ai/prompts/${key}`, { customTemplate }),

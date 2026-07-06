@@ -3,6 +3,15 @@ import type {
   AiAssistantChatInput,
   AiAssistantChatResponse,
   AiAssistantMessage,
+  AiCustomPrompt,
+  AiCustomPromptCategory,
+  AiCustomPromptCopyInput,
+  AiCustomPromptInput,
+  AiCustomPromptMode,
+  AiCustomPromptPreview,
+  AiCustomPromptRevision,
+  AiCustomPromptRunInput,
+  AiCustomPromptStatus,
   AiModelConfig,
   AiModelInput,
   AiPromptConfig,
@@ -37,7 +46,9 @@ import {
   getDefaultPromptTemplate,
   getPromptVariables,
   listAiPromptInfos,
+  renderPromptTemplate,
   templateVariableKeys,
+  validateCustomPromptTemplate,
   validatePromptTemplate
 } from "./aiPrompts.js";
 import { getAnalytics, listNotes } from "./queryService.js";
@@ -48,6 +59,17 @@ interface ReportInput {
   title?: string;
   focus?: string;
 }
+
+type RenderedPrompt = {
+  prompt: string;
+  promptKey: AiArtifact["promptKey"];
+  promptTitle: string;
+  promptSource: AiArtifact["promptSource"];
+  promptVersion: string;
+  contextSummary: string;
+};
+
+const maxCustomPromptRevisionsPerPrompt = 20;
 
 const workflowDefinitions: AiWorkflowDefinition[] = [
   {
@@ -334,6 +356,141 @@ export async function previewAiPrompt(
     contextSummary: prompt.contextSummary,
     validation: mode === "advanced" ? validatePromptTemplate(key, config.advancedConfig?.template ?? "") : []
   };
+}
+
+export async function listAiCustomPrompts(): Promise<AiCustomPrompt[]> {
+  const prompts = await store.read("aiCustomPrompts");
+  return prompts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function getAiCustomPrompt(promptId: string): Promise<AiCustomPrompt | undefined> {
+  return (await store.read("aiCustomPrompts")).find((prompt) => prompt.id === promptId);
+}
+
+export async function saveAiCustomPrompt(input: AiCustomPromptInput, id?: string): Promise<AiCustomPrompt> {
+  const prompts = await store.read("aiCustomPrompts");
+  const current = id ? prompts.find((prompt) => prompt.id === id) : undefined;
+  if (id && !current) {
+    throw new Error("自定义提示词不存在。");
+  }
+  const prompt = normalizeCustomPromptInput(input, current);
+  await store.update("aiCustomPrompts", (items) => {
+    const exists = items.some((item) => item.id === prompt.id);
+    return exists ? items.map((item) => (item.id === prompt.id ? prompt : item)) : [prompt, ...items];
+  });
+  await appendAiCustomPromptRevision(prompt);
+  return prompt;
+}
+
+export async function deleteAiCustomPrompt(promptId: string): Promise<{ deleted: number }> {
+  let deleted = 0;
+  await store.update("aiCustomPrompts", (items) => {
+    const next = items.filter((prompt) => prompt.id !== promptId);
+    deleted = items.length - next.length;
+    return next;
+  });
+  if (deleted) {
+    await store.update("aiCustomPromptRevisions", (items) => items.filter((revision) => revision.promptId !== promptId));
+  }
+  return { deleted };
+}
+
+export async function listAiCustomPromptRevisions(promptId: string): Promise<AiCustomPromptRevision[]> {
+  const revisions = await store.read("aiCustomPromptRevisions");
+  return revisions.filter((revision) => revision.promptId === promptId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function restoreAiCustomPromptRevision(promptId: string, revisionId: string): Promise<AiCustomPrompt> {
+  const revision = (await listAiCustomPromptRevisions(promptId)).find((item) => item.id === revisionId);
+  if (!revision) {
+    throw new Error("自定义提示词版本不存在。");
+  }
+  const current = await getAiCustomPrompt(promptId);
+  const restored: AiCustomPrompt = {
+    ...revision.snapshot,
+    id: promptId,
+    createdAt: current?.createdAt ?? revision.snapshot.createdAt,
+    updatedAt: nowIso()
+  };
+  await store.update("aiCustomPrompts", (items) => {
+    const exists = items.some((item) => item.id === promptId);
+    return exists ? items.map((item) => (item.id === promptId ? restored : item)) : [restored, ...items];
+  });
+  await appendAiCustomPromptRevision(restored);
+  return restored;
+}
+
+export async function copyAiWorkflowPromptToCustom(input: AiCustomPromptCopyInput): Promise<AiCustomPrompt> {
+  const detail = await getAiPromptDetail(input.workflowKey);
+  const prompt: AiCustomPrompt = {
+    ...normalizeCustomPromptInput({
+    title: input.title?.trim() || `${detail.title}副本`,
+    description: detail.description,
+    category: categoryForWorkflow(input.workflowKey),
+    mode: detail.activeMode === "advanced" ? "advanced" : "guided",
+    guidedConfig: detail.guidedConfig,
+    advancedTemplate: detail.activeTemplate
+    }),
+    sourcePromptKey: detail.key,
+    sourcePromptTitle: detail.title
+  };
+  await store.update("aiCustomPrompts", (items) => [prompt, ...items]);
+  await appendAiCustomPromptRevision(prompt);
+  return prompt;
+}
+
+export async function previewAiCustomPrompt(
+  promptId: string,
+  input: Omit<AiCustomPromptRunInput, "promptId"> = {}
+): Promise<AiCustomPromptPreview> {
+  const prompt = await requireAiCustomPrompt(promptId);
+  const normalizedNoteIds = Array.from(new Set((input.noteIds ?? []).map((id) => id.trim()).filter(Boolean)));
+  const context = await buildAiContext(input.jobId, input.noteId, normalizedNoteIds);
+  const rendered = renderAiCustomPrompt(prompt, context, input.focus);
+  return {
+    mode: prompt.mode,
+    prompt: rendered.prompt,
+    contextSummary: rendered.contextSummary,
+    validation: prompt.mode === "advanced" ? validateCustomPromptTemplate(prompt.advancedTemplate) : []
+  };
+}
+
+export async function runAiCustomPrompt(input: AiCustomPromptRunInput): Promise<AiArtifact> {
+  const prompt = await requireAiCustomPrompt(input.promptId);
+  if (prompt.status === "archived") {
+    throw new Error("已归档的提示词不能运行。");
+  }
+  const normalizedNoteIds = Array.from(new Set((input.noteIds ?? []).map((id) => id.trim()).filter(Boolean)));
+  const context = await buildAiContext(input.jobId, input.noteId, normalizedNoteIds);
+  const rendered = renderAiCustomPrompt(prompt, context, input.focus);
+  const validation = prompt.mode === "advanced" ? validateCustomPromptTemplate(prompt.advancedTemplate) : [];
+  if (validation.some((item) => item.level === "error")) {
+    throw new Error("自定义提示词存在变量错误，请先修复后再运行。");
+  }
+  const title = `${prompt.title}${context.job ? ` - ${context.job.keywords.join(" / ")}` : ""}`;
+  const artifact = await createArtifact({
+    workflowKey: "custom-prompt",
+    jobId: input.jobId,
+    noteId: input.noteId,
+    noteIds: normalizedNoteIds.length ? normalizedNoteIds : undefined,
+    title,
+    prompt: rendered.prompt,
+    modelId: input.modelId,
+    promptKey: rendered.promptKey,
+    promptTitle: rendered.promptTitle,
+    promptSource: rendered.promptSource,
+    promptVersion: rendered.promptVersion,
+    customPromptId: prompt.id,
+    customPromptTitle: prompt.title,
+    customPromptVersion: customPromptVersion(prompt),
+    contextSummary: rendered.contextSummary,
+    fallback: buildLocalCustomPromptMarkdown(prompt, context, input.focus)
+  });
+  const now = nowIso();
+  await store.update("aiCustomPrompts", (items) =>
+    items.map((item) => (item.id === prompt.id ? { ...item, runCount: item.runCount + 1, lastUsedAt: now, updatedAt: now } : item))
+  );
+  return artifact;
 }
 
 export async function listAiArtifacts(jobId?: string): Promise<AiArtifact[]> {
@@ -683,6 +840,150 @@ function buildWorkflowPromptForConfig(
   return buildAiWorkflowPrompt(key, context, focus);
 }
 
+function normalizeCustomPromptInput(input: AiCustomPromptInput, current?: AiCustomPrompt): AiCustomPrompt {
+  const now = nowIso();
+  const category = normalizeCustomPromptCategory(input.category ?? current?.category);
+  const mode = normalizeCustomPromptMode(input.mode ?? current?.mode);
+  const guidedConfig = normalizeCustomGuidedConfig(input.guidedConfig ?? current?.guidedConfig, input.title || current?.title || "我的提示词");
+  const advancedTemplate = input.advancedTemplate ?? current?.advancedTemplate ?? customAdvancedTemplate(input.title || current?.title || "我的提示词", guidedConfig);
+  return {
+    id: current?.id ?? createId("custom_prompt"),
+    title: input.title.trim() || current?.title || "我的提示词",
+    description: input.description?.trim() ?? current?.description ?? "自定义 AI 提示词，可选择资料后生成产物。",
+    category,
+    mode,
+    guidedConfig,
+    advancedTemplate,
+    status: normalizeCustomPromptStatus(input.status ?? current?.status),
+    runCount: current?.runCount ?? 0,
+    sourcePromptKey: current?.sourcePromptKey,
+    sourcePromptTitle: current?.sourcePromptTitle,
+    lastUsedAt: current?.lastUsedAt,
+    createdAt: current?.createdAt ?? now,
+    updatedAt: now
+  };
+}
+
+function normalizeCustomGuidedConfig(config: AiPromptGuidedConfig | undefined, title: string): AiPromptGuidedConfig {
+  const defaults: AiPromptGuidedConfig = {
+    role: `${title.trim() || "小红书运营"}助手`,
+    objective: "结合当前任务资料，输出运营用户可直接使用的分析或内容建议。",
+    focusRules: ["只基于已读取资料输出结论。", "把数据依据、用户洞察和行动建议分开。", "资料不足时明确说明缺口。"],
+    forbiddenRules: ["不编造数据、作者、评论或平台规则。", "不建议自动发布、自动评论、自动点赞、自动收藏。", "不输出夸大功效、医疗疗效或保证承诺。"],
+    outputSections: ["核心结论", "依据", "行动建议", "风险与缺口"],
+    enabledVariables: ["job", "overview", "topNotes", "topComments", "focus"]
+  };
+  const validKeys = new Set(getPromptVariables().map((variable) => variable.key));
+  const requiredKeys = getPromptVariables().filter((variable) => variable.tier === "required").map((variable) => variable.key);
+  const enabledVariables = config?.enabledVariables?.length ? config.enabledVariables : defaults.enabledVariables;
+  return {
+    role: config?.role?.trim() || defaults.role,
+    objective: config?.objective?.trim() || defaults.objective,
+    focusRules: normalizeTextList(config?.focusRules, defaults.focusRules),
+    forbiddenRules: normalizeTextList(config?.forbiddenRules, defaults.forbiddenRules),
+    outputSections: normalizeTextList(config?.outputSections, defaults.outputSections),
+    enabledVariables: [...new Set([...enabledVariables, ...requiredKeys])].filter((key) => validKeys.has(key))
+  };
+}
+
+function normalizeCustomPromptCategory(category?: AiCustomPromptCategory): AiCustomPromptCategory {
+  const allowed: AiCustomPromptCategory[] = ["content-analysis", "viral-breakdown", "comment-insight", "note-writing", "draft-review", "general-ops"];
+  return category && allowed.includes(category) ? category : "general-ops";
+}
+
+function normalizeCustomPromptMode(mode?: AiCustomPromptMode): AiCustomPromptMode {
+  return mode === "advanced" ? "advanced" : "guided";
+}
+
+function normalizeCustomPromptStatus(status?: AiCustomPromptStatus): AiCustomPromptStatus {
+  return status === "archived" ? "archived" : "active";
+}
+
+function categoryForWorkflow(key: AiWorkflowRunInput["workflowKey"]): AiCustomPromptCategory {
+  if (key === "viral-deep-dive" || key === "viral-batch-deep-dive" || key === "viral-template") return "viral-breakdown";
+  if (key === "audience-insight") return "comment-insight";
+  if (key === "note-writing") return "note-writing";
+  if (key === "draft-review") return "draft-review";
+  if (key === "content-planning" || key === "note-analysis" || key === "competitor-analysis") return "content-analysis";
+  return "general-ops";
+}
+
+async function requireAiCustomPrompt(promptId: string): Promise<AiCustomPrompt> {
+  const prompt = await getAiCustomPrompt(promptId);
+  if (!prompt) {
+    throw new Error("自定义提示词不存在。");
+  }
+  return prompt;
+}
+
+function renderAiCustomPrompt(prompt: AiCustomPrompt, context: AiContext, focus?: string): RenderedPrompt {
+  const template = prompt.mode === "advanced" && prompt.advancedTemplate.trim()
+    ? prompt.advancedTemplate
+    : customAdvancedTemplate(prompt.title, prompt.guidedConfig);
+  return {
+    prompt: renderPromptTemplate(template, context, focus),
+    promptKey: "custom-prompt",
+    promptTitle: prompt.title,
+    promptSource: "customPrompt",
+    promptVersion: customPromptVersion(prompt),
+    contextSummary: summarizeContext(context)
+  };
+}
+
+function customAdvancedTemplate(title: string, config: AiPromptGuidedConfig): string {
+  const variableMap = new Map(getPromptVariables().map((variable) => [variable.key, variable]));
+  const enabledVariables = config.enabledVariables.length ? config.enabledVariables : ["job", "overview", "topNotes", "topComments", "focus"];
+  const dataLines = enabledVariables
+    .filter((key) => variableMap.has(key))
+    .map((key) => `### ${variableMap.get(key)?.label ?? key}\n{${key}}`)
+    .join("\n\n");
+  const focusRules = config.focusRules.filter((item) => item.trim());
+  const forbiddenRules = config.forbiddenRules.filter((item) => item.trim());
+  const outputSections = config.outputSections.filter((item) => item.trim());
+  return `你是一名小红书运营 AI 助手，当前任务是执行用户自定义提示词。
+
+AI 角色：
+${config.role}
+
+工作目标：
+${config.objective}
+
+重点关注：
+${focusRules.map((rule) => `- ${rule}`).join("\n") || "- 结合输入资料给出可执行建议。"}
+
+AI 会读取的资料：
+${dataLines || "暂无启用资料。"}
+
+安全规则：
+${forbiddenRules.map((rule) => `- ${rule}`).join("\n") || "- 不编造输入资料之外的信息。"}
+
+输出格式：
+# ${title}
+${outputSections.map((section, index) => `## ${index + 1}. ${section}`).join("\n") || "## 1. 核心结论\n## 2. 行动建议"}
+
+质量要求：
+- 输出中文 Markdown。
+- 每个结论尽量标注依据。
+- 如果资料不足，明确写出缺口。`;
+}
+
+function customPromptVersion(prompt: AiCustomPrompt): string {
+  return `我的提示词 ${prompt.updatedAt.slice(0, 10)}`;
+}
+
+async function appendAiCustomPromptRevision(prompt: AiCustomPrompt): Promise<void> {
+  const revision: AiCustomPromptRevision = {
+    id: createId("custom_prompt_rev"),
+    promptId: prompt.id,
+    snapshot: prompt,
+    createdAt: nowIso()
+  };
+  await store.update("aiCustomPromptRevisions", (items) => {
+    const samePrompt = [revision, ...items.filter((item) => item.promptId === prompt.id)].slice(0, maxCustomPromptRevisionsPerPrompt);
+    return [...samePrompt, ...items.filter((item) => item.promptId !== prompt.id)];
+  });
+}
+
 function normalizePromptConfig(key: AiWorkflowRunInput["workflowKey"], config?: AiPromptConfig): AiPromptConfig {
   const advancedTemplate = config?.advancedConfig?.template ?? config?.customTemplate ?? "";
   const activeMode = config?.activeMode ?? (config?.activeSource === "custom" && advancedTemplate.trim() ? "advanced" : "builtin");
@@ -754,6 +1055,9 @@ async function createArtifact(input: {
   promptTitle?: string;
   promptSource?: AiArtifact["promptSource"];
   promptVersion?: string;
+  customPromptId?: string;
+  customPromptTitle?: string;
+  customPromptVersion?: string;
   contextSummary?: string;
   modelId?: string;
   fallback: string;
@@ -799,6 +1103,9 @@ async function createArtifact(input: {
     promptTitle: input.promptTitle,
     promptSource: input.promptSource,
     promptVersion: input.promptVersion,
+    customPromptId: input.customPromptId,
+    customPromptTitle: input.customPromptTitle,
+    customPromptVersion: input.customPromptVersion,
     contextSummary: input.contextSummary,
     error,
     createdAt: now,
@@ -840,6 +1147,30 @@ ${topComments.map((comment) => `- ${comment.content}（赞 ${comment.likedCount}
 
 - 当前为本地规则版结果，配置默认模型后可生成更完整的 AI 分析。
 - 写入类动作必须人工确认，不建议自动评论、自动点赞或自动发布。`;
+}
+
+function buildLocalCustomPromptMarkdown(prompt: AiCustomPrompt, context: AiContext, focus?: string): string {
+  const topNotes = context.notes.slice(0, 5);
+  return `# ${prompt.title}
+
+> 当前为本地规则兜底结果。配置模型 API Key 后，将按这套“我的提示词”调用 AI 生成完整产物。
+
+生成时间：${nowIso()}
+${focus ? `\n补充要求：${focus}\n` : ""}
+## 已读取资料
+- 任务：${context.job ? context.job.keywords.join(" / ") : "无"}
+- 笔记：${context.notes.length}
+- 评论：${context.comments.length}
+- 选中笔记：${context.selectedNote?.title ?? "未选中"}
+- 选中样本组：${context.selectedNotes.length} 篇
+
+## 本地摘要
+${topNotes.length ? topNotes.map((note, index) => `${index + 1}. ${note.title}：点赞 ${note.likedCount}，收藏 ${note.collectedCount}，评论 ${note.commentCount}`).join("\n") : "当前没有可摘要的笔记样本。"}
+
+## 下一步
+- 检查“我的提示词”的资料选择是否覆盖任务信息、热门笔记和补充要求。
+- 配置默认模型 API Key 后重新运行，可获得完整 AI 产物。
+- 如果这套提示词用于审稿或撰写，建议同时读取规则库或项目素材。`;
 }
 
 function buildLocalAssistantMarkdown(message: string, context: AiContext): string {
