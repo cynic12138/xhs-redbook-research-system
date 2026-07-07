@@ -1,6 +1,6 @@
 # 小红书数据自动抓取系统
 
-本项目是一个本地运行的小红书数据研究与运营工作台。前端使用 React + Vite，后端使用 Express + TypeScript，底层通过 `@lucasygu/redbook` 接入小红书浏览器登录态，用于关键词搜索、笔记详情补全、评论读取、作者分析、内容拆解、AI 工作流和报告导出。
+本项目是一个本地运行的小红书数据研究与运营工作台。前端使用 React + Vite，后端使用 Express + TypeScript，底层通过 `@lucasygu/redbook` 接入小红书浏览器登录态，用于关键词搜索、笔记详情补全、评论读取、作者分析、内容拆解、AI 工作流、内容创作和报告导出。
 
 > 使用前请确认：只处理你有权访问的账号和数据，遵守小红书平台规则，控制请求频率，不要把 `.env.local`、Cookie、API Key、`data/` 运行数据或导出文件提交到 Git。
 
@@ -22,10 +22,11 @@
 | 话题研究 | 多关键词搜索、排序/类型/页数/评论页数/并发控制 |
 | 队列抓取 | 搜索笔记、补正文和媒体、抓评论、补作者资料和作者作品 |
 | 笔记库 | 按任务、重复关键词组或全部历史笔记查看；支持搜索、作者、类型、最低赞和排序筛选 |
-| 数据集管理 | 清理当前任务前先预览影响范围，可选择是否同时删除关联 AI 产物和报告 |
+| 数据集管理 | 数据集管理器、空/失败数据集删除、清理预览、已选笔记批量删除、关联 AI 产物可选清理 |
 | 媒体处理 | 图片缓存、视频代理、失效媒体手动刷新，可通过环境变量启用自动刷新 |
 | 分析面板 | 总览、爆款拆解、受众洞察、竞品作者、评论运营 |
-| AI 工作台 | 模型接入、AI 助手、AI 编排、提示词、AI 报告和 Markdown 产物 |
+| AI 工作台 | 模型接入、AI 助手、AI 编排、提示词中心、自定义提示词、AI 报告和 Markdown 产物 |
+| 内容创作台 | 内容项目、素材池、规则库 Playbook、AI 审稿、批量审稿、笔记撰写、批量生成和结果归档 |
 | 模型预设 | OpenAI、DeepSeek、Qwen、MiniMax、Doubao、Kimi、SiliconFlow、xAI、Custom |
 | 导出 | 任务数据导出为 JSON、CSV、HTML；AI 报告/产物导出为 Markdown |
 
@@ -42,6 +43,8 @@
 | 数据查询和清理 | `src/server/services/queryService.ts` |
 | 媒体代理和刷新 | `src/server/services/mediaService.ts` |
 | AI 模型供应商预设 | `src/shared/modelProviders.ts` |
+| 内容创作台服务 | `src/server/services/contentStudioService.ts` |
+| AI 提示词和自定义提示词 | `src/server/services/aiPrompts.ts`、`src/server/services/aiService.ts` |
 | 本地运行数据 | `data/`，已被 Git 忽略 |
 | 本地密钥配置 | `.env.local`，已被 Git 忽略 |
 
@@ -194,7 +197,8 @@ XHS_COOKIE_STRING="a1=你的值; web_session=你的值; webId=可选值"
 8. 等待任务队列完成：系统会搜索笔记、补正文和媒体、抓评论、补作者资料和作者作品。
 9. 进入“笔记库”，选择数据范围并筛选笔记。
 10. 在“爆款拆解”“受众洞察”“竞品分析”“评论运营”“AI 工作台”中查看分析结果。
-11. 需要留档时，使用导出接口或前端导出入口。
+11. 如果要把研究结果转成内容，进入“内容创作台”，建立项目、导入素材、配置规则库并生成或审稿。
+12. 需要留档时，使用导出接口或前端导出入口。
 
 ## 笔记库数据范围
 
@@ -212,7 +216,17 @@ XHS_COOKIE_STRING="a1=你的值; web_session=你的值; webId=可选值"
 
 ## 数据集管理
 
-在笔记库选择单个任务后，可以点击“管理当前数据集”。系统会先调用 `/api/note-scopes/:jobId/clear-preview` 预览影响范围：
+笔记库里提供两个层级的数据删除能力：数据集管理器和已选笔记批量删除。删除前都会先展示影响范围，避免误删共用笔记或关联产物。
+
+点击“数据集管理”可以集中查看全部数据范围，包括：
+
+- 全部历史笔记。
+- 有笔记的历史任务。
+- 重复关键词组。
+- 空任务、抓取失败任务和仍在运行的任务。
+- 每个数据集关联的笔记数、队列项、队列错误、AI 产物和 AI 报告数量。
+
+在笔记库选择单个任务后，可以点击“管理当前数据集”或在数据集管理器中删除指定数据集。系统会先调用 `/api/note-scopes/:jobId/clear-preview` 预览影响范围：
 
 - 影响笔记数量。
 - 仅解除任务关联的笔记数量。
@@ -221,6 +235,17 @@ XHS_COOKIE_STRING="a1=你的值; web_session=你的值; webId=可选值"
 - 关联的 AI 产物和 AI 报告数量。
 
 确认清理后，系统默认只移除当前任务与笔记的关联；只有不再属于任何任务的笔记才会被真正删除。勾选“同时删除该任务关联的 AI 产物和 AI 报告”后，才会清理关联 AI 输出。
+
+空数据集或失败数据集也可以删除。即使某个任务没有入库笔记，删除时也会清理它的任务记录、队列项和本地分析报告，使它从数据范围列表中移除。
+
+在笔记列表中勾选多篇笔记后，可以点击“删除已选”。系统会先调用 `/api/notes/bulk-delete-preview` 展示：
+
+- 本次命中的笔记数量。
+- 当前数据集内只解除关联的笔记数量。
+- 会被真正删除的孤立笔记数量。
+- 会被清理的评论和本地分析报告数量。
+
+如果当前限定在单个数据集内，共用笔记只会从该数据集中解除关联；如果未限定单个数据集，则按全局笔记删除处理。确认后调用 `/api/notes/bulk-delete` 执行。
 
 ## 媒体刷新
 
@@ -308,7 +333,8 @@ AI 工作台包含：
 
 - AI 助手：基于当前任务、当前笔记和当前模块上下文对话。
 - AI 编排：把自然语言指令转成可审计步骤，自动创建只读搜索任务、等待笔记入库并生成分析产物。
-- 提示词：查看、编辑、启用和重置各工作流的 AI 提示词。
+- 提示词中心：查看、编辑、预览、启用和重置各工作流的 AI 提示词，支持引导式配置和高级模板。
+- 自定义提示词：从系统提示词复制，也可以新建个人提示词；支持版本记录、恢复、预览、运行和归档。
 - AI 报告：按任务生成 Markdown 报告。
 - 工作流产物：生成内容规划、受众洞察、竞品分析、爆款拆解、爆款模板、单篇笔记分析。
 
@@ -321,6 +347,34 @@ GET /api/ai/orchestrations/:id/events
 模型 tools 调用只允许项目内定义的只读工具。服务端会校验工具名和参数，不接受删除数据、读取密钥、读取 Cookie、发送评论或修改配置等危险请求。
 
 前端内置 Markdown 阅读器支持标题、列表、引用、代码块、表格、链接、行内代码、粗体、斜体和删除线。导出接口返回原始 Markdown。
+
+## 内容创作台
+
+内容创作台用于把研究数据转成可复盘的文案生产流程。未配置 AI 模型时，会回退到本地规则版草稿或审稿结果；配置模型后，会通过 OpenAI-compatible chat completions 生成 JSON 结构化结果。
+
+主要能力：
+
+- 内容项目：维护产品名、目标人群、场景、目标、关联规则库和关联搜索任务。
+- 素材池：手动录入素材，或从已选笔记导入正文、标签、作者和互动数据。
+- 规则库 Playbook：配置禁用词、敏感功效词、允许卖点、必备结构、语气词、人群、场景、标签和替换规则。
+- 规则库版本：每次保存都会保留版本，可查看历史版本并恢复；规则库统计会汇总审稿次数、问题数、高风险数和高频问题类别。
+- AI 审稿：对标题、正文和标签做风险扫描，输出通过/低风险/中风险/高风险、分数、问题清单、修改建议和修改稿。
+- 批量审稿：可以批量审查手动输入的文案，也可以把笔记库中已补正文的选中笔记送入批量审稿。
+- 笔记撰写：按产品、身份、痛点、场景、了解渠道、卖点、口吻、篇幅和关键词生成小红书笔记草稿。
+- 批量生成：基于项目和素材池批量生成 1 到 8 篇草稿，每篇草稿会自动进入审稿流程。
+- 结果归档：草稿、审稿报告和内容助手输出都会保存为 AI 产物，可在前端查看和导出 Markdown。
+
+推荐使用流程：
+
+1. 在“内容创作台”建立内容项目。
+2. 从笔记库选择有正文的笔记，导入为项目素材，或手动添加素材。
+3. 配置或选择一个规则库 Playbook。
+4. 先用“审稿”检查现有文案的风险和表达问题。
+5. 再用“笔记撰写”或“批量生成”生成草稿。
+6. 查看自动审稿结果，必要时接受审稿修改稿。
+7. 在“结果归档”导出草稿和审稿报告。
+
+内容创作台不会自动发布笔记，也不会自动评论。发布前仍需要人工核对产品事实、体验真实性、素材授权和平台规则。
 
 ## Redbook 能力
 
@@ -368,8 +422,18 @@ GET /api/ai/orchestrations/:id/events
 | `data/authorPosts.json` | 作者作品 |
 | `data/analysisReports.json` | 本地分析结果 |
 | `data/aiModels.json` | AI 模型配置，不含明文 Key |
+| `data/aiPromptConfigs.json` | 系统提示词的引导式/高级模板配置 |
+| `data/aiCustomPrompts.json` | 用户自定义提示词 |
+| `data/aiCustomPromptRevisions.json` | 自定义提示词版本记录 |
 | `data/aiReports.json` | AI 或本地 Markdown 报告 |
 | `data/aiArtifacts.json` | AI 工作流产物 |
+| `data/aiOrchestrations.json` | AI 编排任务和步骤状态 |
+| `data/contentPlaybooks.json` | 内容创作台规则库 |
+| `data/contentPlaybookRevisions.json` | 规则库历史版本 |
+| `data/contentProjects.json` | 内容项目 |
+| `data/contentProjectMaterials.json` | 项目素材池 |
+| `data/contentDrafts.json` | 内容草稿 |
+| `data/contentReviews.json` | 审稿记录 |
 | `data/browserBridgeStatus.json` | 浏览器助手最近检测和同步状态 |
 | `data/media-cache/` | 媒体代理缓存 |
 | `data/xhs-login-edge-profile/` | 专用 Edge 登录窗口 profile |
@@ -406,6 +470,8 @@ GET    /api/notes/:id
 DELETE /api/notes/:id
 GET    /api/note-scopes
 GET    /api/note-scopes/:jobId/clear-preview
+POST   /api/notes/bulk-delete-preview
+POST   /api/notes/bulk-delete
 DELETE /api/notes?jobId=:jobId
 DELETE /api/notes?jobId=:jobId&deleteAiArtifacts=true
 POST   /api/notes/:id/media-refresh
@@ -425,13 +491,57 @@ POST /api/ai/models/test
 POST /api/ai/models/:id/tools-probe
 GET  /api/ai/workflows
 GET  /api/ai/prompts
+GET  /api/ai/prompts/:key
+PUT  /api/ai/prompts/:key/guided
+PUT  /api/ai/prompts/:key/advanced
 PUT  /api/ai/prompts/:key
+POST /api/ai/prompts/:key/reset
+POST /api/ai/prompts/:key/activate
+POST /api/ai/prompts/:key/preview
+GET  /api/ai/custom-prompts
+POST /api/ai/custom-prompts
+POST /api/ai/custom-prompts/from-system
+GET  /api/ai/custom-prompts/:id
+PUT  /api/ai/custom-prompts/:id
+DELETE /api/ai/custom-prompts/:id
+GET  /api/ai/custom-prompts/:id/revisions
+POST /api/ai/custom-prompts/:id/revisions/:revisionId/restore
+POST /api/ai/custom-prompts/:id/preview
+POST /api/ai/custom-prompts/:id/run
 POST /api/ai/workflows/run
 POST /api/ai/assistant/chat
 POST /api/ai/orchestrations
 GET  /api/ai/orchestrations/:id/events
 GET  /api/ai/reports/:id/export
 GET  /api/ai/artifacts/:id/export
+```
+
+内容创作台：
+
+```text
+GET    /api/content/playbooks
+POST   /api/content/playbooks
+PUT    /api/content/playbooks/:id
+DELETE /api/content/playbooks/:id
+GET    /api/content/playbooks/:id/revisions
+GET    /api/content/playbooks/:id/stats
+POST   /api/content/playbooks/:id/revisions/:revisionId/restore
+GET    /api/content/projects
+POST   /api/content/projects
+PUT    /api/content/projects/:id
+DELETE /api/content/projects/:id
+GET    /api/content/projects/:id/materials
+POST   /api/content/projects/:id/materials
+POST   /api/content/projects/:id/materials/from-notes
+DELETE /api/content/projects/:id/materials/:materialId
+GET    /api/content/drafts
+POST   /api/content/drafts
+POST   /api/content/drafts/batch
+POST   /api/content/drafts/:id/accept-review
+GET    /api/content/reviews
+POST   /api/content/reviews
+POST   /api/content/reviews/batch
+POST   /api/content/assistant/run
 ```
 
 ## 导出
