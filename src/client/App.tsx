@@ -5881,7 +5881,7 @@ function GoalRunTimeline({
       )}
       <div className="goal-source-row">
         <input value={sourceInput} onChange={(event) => setSourceInput(event.target.value)} placeholder="补充官网、媒体或视频资料链接" />
-        <button className="ghost-button compact" onClick={() => void submitSources()} disabled={!sourceInput.trim() || busy === "assistant-chat"}>添加资料</button>
+        <button className="ghost-button compact" onClick={() => void submitSources()} disabled={!sourceInput.trim() || busy === "assistant-chat" || goalRun.status === "running" || goalRun.status === "waiting"}>添加资料</button>
       </div>
       {goalRun.status === "completed" && goalRun.artifactIds[0] && (
         <button className="ghost-button full" onClick={() => onOpenArtifacts(goalRun.artifactIds[0]!)}>

@@ -22,6 +22,7 @@ type StoreLike = Pick<typeof store, "read" | "write" | "update">;
 interface GoalRuntime {
   createJob: (input: SearchJobInput) => Promise<SearchJob>;
   getJob: (jobId: string) => Promise<SearchJob | undefined>;
+  resumeJob: (jobId: string) => Promise<SearchJob | undefined>;
   generateBatch: typeof generateContentDraftBatch;
   fetchImpl: typeof fetch;
   sleep: (ms: number) => Promise<void>;
@@ -124,7 +125,27 @@ export async function retryAiGoalRun(id: string, localStore: StoreLike = store, 
 export async function addAiGoalRunSources(id: string, input: AiGoalRunSourceInput, localStore: StoreLike = store): Promise<AiGoalRun> {
   const urls = unique(input.urls.map((url) => normalizePublicUrl(url)).filter((url): url is string => Boolean(url)));
   if (!urls.length) throw new Error("请提供可公开访问的 HTTPS 资料链接。");
-  return patchRun(id, localStore, (item) => ({ ...item, userSourceUrls: unique([...item.userSourceUrls, ...urls]) }));
+  return patchRun(id, localStore, (item) => {
+    if (item.status === "running" || item.status === "waiting") {
+      throw new Error("目标任务执行中，请等待当前步骤结束后再补充资料。");
+    }
+    const shouldRebuild = item.steps.find((step) => step.key === "collect-public-sources")?.status === "completed";
+    return {
+      ...item,
+      userSourceUrls: unique([...item.userSourceUrls, ...urls]),
+      status: shouldRebuild ? "waiting_confirmation" : item.status,
+      evidence: shouldRebuild ? item.evidence.filter((evidence) => evidence.sourceType === "xiaohongshu") : item.evidence,
+      dossier: shouldRebuild ? undefined : item.dossier,
+      contentBatch: shouldRebuild ? undefined : item.contentBatch,
+      warning: shouldRebuild ? undefined : item.warning,
+      error: shouldRebuild ? undefined : item.error,
+      steps: shouldRebuild
+        ? item.steps.map((step) => isPublicSourceDependentStep(step.key)
+          ? { ...step, status: "pending", startedAt: undefined, completedAt: undefined, error: undefined }
+          : step)
+        : item.steps
+    };
+  });
 }
 
 export function startAiGoalRun(id: string, localStore: StoreLike = store, options: GoalOptions = {}): void {
@@ -149,6 +170,7 @@ export async function runAiGoalRun(id: string, localStore: StoreLike = store, op
     run = await executeStep(id, "collect-xhs", localStore, async () => {
       const current = await requireRun(id, localStore);
       let jobId = current.jobId;
+      const reusedJob = Boolean(jobId);
       if (!jobId) {
         const job = await runtime.createJob({
           keywords: current.plan.keywords,
@@ -160,6 +182,12 @@ export async function runAiGoalRun(id: string, localStore: StoreLike = store, op
         });
         jobId = job.id;
         await patchRun(id, localStore, (item) => ({ ...item, jobId, status: "waiting" }));
+      }
+      if (reusedJob) {
+        const job = await runtime.getJob(jobId);
+        if (job?.status === "paused" || job?.status === "failed") {
+          await runtime.resumeJob(jobId);
+        }
       }
       await waitForDataset(jobId, runtime, localStore);
       const evidence = await readXhsEvidence(id, jobId, localStore);
@@ -377,17 +405,16 @@ function buildContentBrief(run: AiGoalRun): ContentBrief {
 
 async function saveDossierArtifact(run: AiGoalRun, localStore: StoreLike): Promise<AiArtifact> {
   const existing = (await localStore.read("aiArtifacts")).find((item) => item.contextSummary === `goal-run:${run.id}` && item.title.startsWith("目标研究档案"));
-  if (existing) return existing;
   const now = nowIso();
   const dossier = run.dossier ?? buildDossier(run);
   const artifact: AiArtifact = {
-    id: createId("artifact"), workflowKey: "assistant", jobId: run.jobId,
+    id: existing?.id ?? createId("artifact"), workflowKey: "assistant", jobId: run.jobId,
     title: `目标研究档案 - ${run.plan.subject}`,
     markdown: `# 目标研究档案\n\n${dossier.summary}\n\n## 已核验资料\n${dossier.verifiedClaims.map((item) => `- ${item}`).join("\n") || "- 暂无"}\n\n## 小红书平台观察\n${dossier.platformObservations.map((item) => `- ${item}`).join("\n") || "- 暂无"}\n\n## 数据缺口\n${dossier.gaps.map((item) => `- ${item}`).join("\n") || "- 暂无"}\n\n## 来源\n${run.evidence.map((item) => `- [${item.sourceTitle}](${item.sourceUrl ?? "#"}) · ${item.kind} · ${item.metricScope ?? "以原始来源为准"}`).join("\n") || "- 暂无"}`,
     source: "local", status: "completed", modelId: run.modelId, promptKey: "assistant", promptTitle: "目标研究档案",
-    promptSource: "default", promptVersion: "xhs-goal-run-v1", contextSummary: `goal-run:${run.id}`, createdAt: now, updatedAt: now
+    promptSource: "default", promptVersion: "xhs-goal-run-v1", contextSummary: `goal-run:${run.id}`, createdAt: existing?.createdAt ?? now, updatedAt: now
   };
-  await localStore.update("aiArtifacts", (items) => [artifact, ...items]);
+  await localStore.update("aiArtifacts", (items) => [artifact, ...items.filter((item) => item.id !== artifact.id)]);
   return artifact;
 }
 
@@ -395,12 +422,17 @@ function createRuntime(options: GoalOptions): GoalRuntime {
   return {
     createJob: options.createJob ?? ((input) => jobs.createJob(input)),
     getJob: options.getJob ?? ((jobId) => jobs.getJob(jobId)),
+    resumeJob: options.resumeJob ?? ((jobId) => jobs.resume(jobId)),
     generateBatch: options.generateBatch ?? generateContentDraftBatch,
     fetchImpl: options.fetchImpl ?? fetch,
     sleep: options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
     pollMs: Math.max(0, options.pollMs ?? 3000),
     waitTimeoutMs: Math.max(1, options.waitTimeoutMs ?? 5 * 60 * 1000)
   };
+}
+
+function isPublicSourceDependentStep(key: GoalRunStepKey): boolean {
+  return ["collect-public-sources", "build-dossier", "plan-content", "generate-drafts", "review-drafts", "archive-results"].includes(key);
 }
 
 async function patchRun(id: string, localStore: StoreLike, updater: (run: AiGoalRun) => AiGoalRun): Promise<AiGoalRun> {

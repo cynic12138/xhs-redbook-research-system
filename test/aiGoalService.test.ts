@@ -77,6 +77,65 @@ describe("AI goal content workflow", () => {
     expect(retried.status).toBe("running");
     expect((await getAiGoalRun(run.id, store))?.jobId).toBe("job_failed");
   });
+
+  it("resumes an existing paused search job when retrying the failed collection step", async () => {
+    const store = await createStore();
+    const run = await createAiGoalRun({ instruction: "研究品牌活动并生成2篇小红书笔记" }, store);
+    await confirmAiGoalRun(run.id, store, { autoStart: false });
+    const paused = searchJob("job_paused", "paused");
+    const first = await runAiGoalRun(run.id, store, {
+      createJob: async () => paused,
+      getJob: async () => paused,
+      pollMs: 0,
+      waitTimeoutMs: 20
+    });
+    expect(first.status).toBe("failed");
+    let resumed = 0;
+    await store.write("notes", [noteRecord("note_retry", paused.id)]);
+    await retryAiGoalRun(run.id, store, { autoStart: false });
+    const completed = await runAiGoalRun(run.id, store, {
+      getJob: async () => paused,
+      resumeJob: async () => {
+        resumed += 1;
+        return searchJob(paused.id, "running");
+      },
+      generateBatch: async () => batchResult(2),
+      pollMs: 0,
+      waitTimeoutMs: 20
+    });
+    expect(resumed).toBe(1);
+    expect(completed.status).toBe("completed");
+  });
+
+  it("invalidates public-source dependent results when sources are added after completion", async () => {
+    const store = await createStore();
+    const run = await createAiGoalRun({ instruction: "研究品牌活动并生成2篇小红书笔记" }, store);
+    await store.update("aiGoalRuns", (items) => items.map((item) => item.id === run.id ? {
+      ...item,
+      status: "completed",
+      dossier: { summary: "old", verifiedClaims: [], platformObservations: [], gaps: [], evidenceIds: [] },
+      contentBatch: { createdAt: item.createdAt, items: [] },
+      evidence: [{
+        id: "old_public", goalRunId: item.id, claim: "old", sourceTitle: "old", sourceType: "media",
+        collectedAt: item.createdAt, excerpt: "old", confidence: "medium", kind: "verified-fact"
+      }],
+      steps: item.steps.map((step) => ({ ...step, status: "completed" }))
+    } : item));
+    const updated = await addAiGoalRunSources(run.id, { urls: ["https://example.com/new"] }, store);
+    expect(updated.status).toBe("waiting_confirmation");
+    expect(updated.evidence).toEqual([]);
+    expect(updated.dossier).toBeUndefined();
+    expect(updated.contentBatch).toBeUndefined();
+    expect(updated.steps.find((step) => step.key === "collect-xhs")?.status).toBe("completed");
+    expect(updated.steps.find((step) => step.key === "collect-public-sources")?.status).toBe("pending");
+  });
+
+  it("rejects source mutation while a goal run is active", async () => {
+    const store = await createStore();
+    const run = await createAiGoalRun({ instruction: "研究品牌活动并生成2篇小红书笔记" }, store);
+    await confirmAiGoalRun(run.id, store, { autoStart: false });
+    await expect(addAiGoalRunSources(run.id, { urls: ["https://example.com/source"] }, store)).rejects.toThrow("执行中");
+  });
 });
 
 async function createStore(): Promise<LocalStore> {
