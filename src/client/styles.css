@@ -2290,8 +2290,31 @@ body {
 
 .notes-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   min-height: 0;
+}
+
+.notes-panel > .section-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  width: 100%;
+  min-height: 68px;
+}
+
+.notes-panel > .section-title .button-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.notes-panel > .section-title .button-row button {
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  white-space: normal;
 }
 
 .note-list {
@@ -4785,6 +4808,8 @@ label {
   color: var(--foreground);
   font-size: 15px;
   font-weight: 800;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .assistant-heading svg {
@@ -6777,6 +6802,37 @@ label {
 }
 
 @media (max-width: 760px) {
+  .notes-panel > .section-title {
+    min-height: 112px;
+  }
+
+  .notes-panel > .section-title .button-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .note-scope-current {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .note-scope-trigger {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .note-scope-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .note-scope-actions button {
+    justify-content: center;
+    min-width: 0;
+    width: 100%;
+    white-space: normal;
+  }
+
+
   .notes-bulk-bar,
   .dataset-manager-row {
     grid-template-columns: 1fr;
