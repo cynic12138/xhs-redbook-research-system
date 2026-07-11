@@ -1440,6 +1440,10 @@ api.get("/redbook/following", async (req, res, next) => {
   }
 });
 
+api.use((_req, res) => {
+  res.status(404).json({ error: "API route not found" });
+});
+
 function stringQuery(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

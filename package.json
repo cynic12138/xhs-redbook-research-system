@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.server.json && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
-    "start": "node dist/server/index.js"
+    "start": "node dist/server/server/index.js"
   },
   "dependencies": {
     "@lucasygu/redbook": "^0.8.0",

@@ -1,7 +1,7 @@
 import http from "node:http";
 import express, { type Express } from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AiArtifact, AiCustomPrompt, AiCustomPromptInput, AiCustomPromptRunInput } from "../src/shared/types.js";
+import type { AiArtifact, AiCustomPrompt, AiCustomPromptInput, AiCustomPromptRunInput, AiGoalRun } from "../src/shared/types.js";
 
 describe("AI API routes", () => {
   afterEach(() => {
@@ -136,6 +136,62 @@ describe("AI API routes", () => {
     expect(run.status).toBe(201);
     expect(run.body).toMatchObject({ workflowKey: "custom-prompt", customPromptId: "custom_prompt_route", promptSource: "customPrompt" });
     expect(runAiCustomPrompt).toHaveBeenCalledWith(expect.objectContaining({ promptId: "custom_prompt_route", focus: "标题方向" }));
+  });
+});
+
+describe("AI goal run API routes", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  it("plans, confirms and reads traceable goal-run results", async () => {
+    const goalRun = goalRunFixture();
+    const artifact = { id: "artifact_goal", title: "目标研究档案" };
+    vi.doMock("../src/server/services/aiGoalService.js", () => ({
+      addAiGoalRunSources: vi.fn(async () => goalRun),
+      confirmAiGoalRun: vi.fn(async () => ({ ...goalRun, status: "running" })),
+      createAiGoalRun: vi.fn(async () => goalRun),
+      getAiGoalRun: vi.fn(async (id: string) => id === goalRun.id ? { ...goalRun, status: "completed" } : undefined),
+      listAiGoalRuns: vi.fn(async () => [goalRun]),
+      planAiGoalRun: vi.fn(async () => ({ goalRun })),
+      retryAiGoalRun: vi.fn(async () => ({ ...goalRun, status: "running" }))
+    }));
+    vi.doMock("../src/server/storage/localStore.js", () => ({
+      store: {
+        read: vi.fn(async (name: string) => name === "aiArtifacts" ? [artifact] : []),
+        write: vi.fn(async () => undefined),
+        update: vi.fn(async (_name: string, updater: (value: unknown[]) => unknown[]) => updater([]))
+      }
+    }));
+    const app = await createApp();
+    const planned = await requestJson(app, "/api/ai/goal-runs/plan", {
+      method: "POST",
+      body: { instruction: goalRun.instruction }
+    });
+    expect(planned.status).toBe(200);
+    expect(planned.body).toMatchObject({ goalRun: { id: goalRun.id, status: "waiting_confirmation" } });
+
+    const confirmed = await requestJson(app, `/api/ai/goal-runs/${goalRun.id}/confirm`, { method: "POST" });
+    expect(confirmed.body).toMatchObject({ id: goalRun.id, status: "running" });
+
+    const evidence = await requestJson(app, `/api/ai/goal-runs/${goalRun.id}/evidence`, { method: "GET" });
+    expect(evidence.body).toEqual(goalRun.evidence);
+
+    const artifacts = await requestJson(app, `/api/ai/goal-runs/${goalRun.id}/artifacts`, { method: "GET" });
+    expect(artifacts.body).toEqual([artifact]);
+
+    const events = await requestText(app, `/api/ai/goal-runs/${goalRun.id}/events`);
+    expect(events.status).toBe(200);
+    expect(events.body).toContain("event: goal-run");
+    expect(events.body).toContain(goalRun.id);
+  });
+
+  it("returns JSON for unknown API routes", async () => {
+    const app = await createApp();
+    const response = await requestJson(app, "/api/not-a-real-route", { method: "GET" });
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "API route not found" });
   });
 });
 
@@ -647,4 +703,50 @@ async function requestJson(
       });
     });
   }
+}
+
+async function requestText(app: Express, path: string): Promise<{ status: number; body: string }> {
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Test server did not expose a port.");
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}${path}`);
+    return { status: response.status, body: await response.text() };
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+}
+
+function goalRunFixture(): AiGoalRun {
+  const now = "2026-07-11T00:00:00.000Z";
+  return {
+    id: "goal_route",
+    instruction: "研究品牌活动并生成3篇小红书笔记",
+    plan: {
+      subject: "品牌活动",
+      questions: ["背景故事"],
+      keywords: ["品牌活动"],
+      sourceTypes: ["xiaohongshu", "media"],
+      outputCount: 3,
+      angles: ["品牌故事"]
+    },
+    status: "waiting_confirmation",
+    steps: [],
+    userSourceUrls: [],
+    evidence: [{
+      id: "evidence_route",
+      goalRunId: "goal_route",
+      claim: "平台样本",
+      sourceTitle: "小红书笔记",
+      sourceType: "xiaohongshu",
+      collectedAt: now,
+      excerpt: "公开样本",
+      confidence: "medium",
+      kind: "platform-observation"
+    }],
+    artifactIds: ["artifact_goal"],
+    createdAt: now,
+    updatedAt: now
+  };
 }
