@@ -5435,6 +5435,138 @@ label {
   gap: 8px;
 }
 
+.goal-run-card {
+  display: grid;
+  gap: 10px;
+  margin: 0 14px 10px;
+  padding: 12px;
+  border: 1px solid #f3a6b8;
+  border-radius: 8px;
+  background: #fff8fa;
+}
+
+.goal-run-head,
+.goal-source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goal-run-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.goal-run-head span,
+.goal-plan-summary span {
+  color: #e91e4d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.goal-run-head strong,
+.goal-run-head small,
+.goal-plan-summary p,
+.goal-dossier-summary p,
+.goal-dossier-summary small {
+  overflow-wrap: anywhere;
+}
+
+.goal-run-head small,
+.goal-step small,
+.goal-dossier-summary small {
+  color: #667085;
+}
+
+.goal-plan-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+}
+
+.goal-plan-summary p,
+.goal-dossier-summary p,
+.goal-run-warning {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.goal-step-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.goal-step {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #e4eaf2;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 11px;
+}
+
+.goal-step > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goal-step-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 3px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.goal-step.running .goal-step-dot,
+.goal-step.completed .goal-step-dot {
+  background: #16a36a;
+}
+
+.goal-step.failed .goal-step-dot {
+  background: #e91e4d;
+}
+
+.goal-run-warning,
+.goal-dossier-summary {
+  padding: 8px;
+  border-radius: 6px;
+  background: #fff3d9;
+  color: #7a4d00;
+}
+
+.goal-dossier-summary {
+  display: grid;
+  gap: 4px;
+  background: #eef8f3;
+  color: #165c43;
+}
+
+.goal-source-row input {
+  min-width: 0;
+  flex: 1;
+}
+
+@media (max-width: 560px) {
+  .goal-step-list {
+    grid-template-columns: 1fr;
+  }
+
+  .goal-run-head,
+  .goal-source-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .assistant-suggestion-card {
   align-self: start;
   min-height: 56px;

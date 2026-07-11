@@ -44,6 +44,7 @@ import type {
   AiCustomPromptMode,
   AiCustomPromptPreview,
   AiCustomPromptRevision,
+  AiGoalRun,
   AiModelConfig,
   AiOrchestration,
   AiPromptDetail,
@@ -424,6 +425,8 @@ export function App() {
   const contentProjectDirtyRef = useRef(false);
   const [aiOrchestrations, setAiOrchestrations] = useState<AiOrchestration[]>([]);
   const [activeOrchestrationId, setActiveOrchestrationId] = useState("");
+  const [aiGoalRuns, setAiGoalRuns] = useState<AiGoalRun[]>([]);
+  const [activeGoalRunId, setActiveGoalRunId] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantWidth, setAssistantWidth] = useState(() => readStoredNumber("xhs.aiDrawerWidth", 420));
   const [assistantMessages, setAssistantMessages] = useState<AiAssistantMessage[]>([]);
@@ -613,6 +616,10 @@ export function App() {
     setAiOrchestrations(await api.listAiOrchestrations());
   }, []);
 
+  const loadGoalRuns = useCallback(async () => {
+    setAiGoalRuns(await api.listAiGoalRuns());
+  }, []);
+
   const loadPromptDetail = useCallback(async (key: AiWorkflowKey) => {
     const detail = await api.getAiPrompt(key);
     setSelectedPrompt(detail);
@@ -677,7 +684,8 @@ export function App() {
     void loadAnalytics().catch(() => setAnalytics(null));
     void loadOperations().catch(() => undefined);
     void loadOrchestrations().catch(() => undefined);
-  }, [loadAnalytics, loadNotes, loadOperations, loadOrchestrations]);
+    void loadGoalRuns().catch(() => undefined);
+  }, [loadAnalytics, loadGoalRuns, loadNotes, loadOperations, loadOrchestrations]);
 
   useEffect(() => {
     void loadPromptDetail(selectedPromptKey).catch((err) => setError(err.message));
@@ -711,9 +719,10 @@ export function App() {
       void loadAnalytics().catch(() => undefined);
       void loadOperations().catch(() => undefined);
       void loadOrchestrations().catch(() => undefined);
+      void loadGoalRuns().catch(() => undefined);
     }, 7000);
     return () => clearInterval(timer);
-  }, [loadAnalytics, loadNotes, loadOperations, loadOrchestrations, refreshCore]);
+  }, [loadAnalytics, loadGoalRuns, loadNotes, loadOperations, loadOrchestrations, refreshCore]);
 
   useEffect(() => {
     let alive = true;
@@ -797,6 +806,55 @@ export function App() {
       }
     };
   }, [activeOrchestrationId, loadOperations, refreshCore]);
+
+  useEffect(() => {
+    if (!activeGoalRunId) return;
+    let alive = true;
+    let timer: number | undefined;
+    let source: EventSource | undefined;
+    const applyGoalRun = async (goalRun: AiGoalRun) => {
+      if (!alive) return;
+      setAiGoalRuns((items) => upsertById(items, goalRun));
+      if (goalRun.jobId) {
+        setActiveJobId(goalRun.jobId);
+        setShowHistoryData(false);
+      }
+      if (goalRun.artifactIds.length) {
+        const artifactId = goalRun.artifactIds[0] ?? "";
+        setSelectedArtifactId(artifactId);
+        setSelectedReportId("");
+        await loadOperations();
+      }
+      await refreshCore();
+      if (goalRun.status === "completed") setActiveModule("ai");
+    };
+    const tick = async () => {
+      try {
+        const goalRun = await api.getAiGoalRun(activeGoalRunId);
+        await applyGoalRun(goalRun);
+        if (["completed", "failed", "cancelled"].includes(goalRun.status)) return;
+        timer = window.setTimeout(tick, 2500);
+      } catch (err) {
+        if (alive) setAssistantError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    source = new EventSource(`/api/ai/goal-runs/${activeGoalRunId}/events`);
+    source.addEventListener("goal-run", (event) => {
+      const goalRun = JSON.parse((event as MessageEvent<string>).data) as AiGoalRun;
+      void applyGoalRun(goalRun).then(() => {
+        if (["completed", "failed", "cancelled"].includes(goalRun.status)) source?.close();
+      });
+    });
+    source.addEventListener("error", () => {
+      source?.close();
+      if (alive && !timer) timer = window.setTimeout(tick, 1000);
+    });
+    return () => {
+      alive = false;
+      source?.close();
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [activeGoalRunId, loadOperations, refreshCore]);
 
   useEffect(() => {
     localStorage.setItem("xhs.aiDrawerWidth", String(assistantWidth));
@@ -1565,6 +1623,23 @@ export function App() {
     };
     setAssistantMessages((messages) => [...messages, userMessage]);
     setAssistantInput("");
+    const planned = await run("assistant-chat", () => api.planAiGoalRun({
+      instruction: content,
+      modelId: selectedModel?.id,
+      playbookId: selectedContentPlaybook?.id
+    }));
+    if (planned?.goalRun) {
+      const goalRun = planned.goalRun;
+      setAiGoalRuns((items) => upsertById(items, goalRun));
+      setActiveGoalRunId(goalRun.id);
+      setAssistantMessages((messages) => [...messages, {
+        id: `goal_plan_${goalRun.id}`,
+        role: "assistant",
+        content: `我已把目标整理为研究与创作任务：围绕「${goalRun.plan.subject}」研究 ${goalRun.plan.questions.join("、")}，结合小红书和公开资料，最终生成 ${goalRun.plan.outputCount} 篇笔记。请确认计划后开始。`,
+        createdAt: new Date().toISOString()
+      }]);
+      return;
+    }
     if (isContentStudioRequest(content)) {
       await run("assistant-chat", async () => {
         const response = await api.runContentAssistant({
@@ -1645,6 +1720,29 @@ export function App() {
         }
       ]);
       await loadOrchestrations();
+    });
+  }
+
+  async function confirmGoalRun(goalRunId: string) {
+    await run("assistant-chat", async () => {
+      const goalRun = await api.confirmAiGoalRun(goalRunId);
+      setAiGoalRuns((items) => upsertById(items, goalRun));
+      setActiveGoalRunId(goalRun.id);
+    });
+  }
+
+  async function retryGoalRun(goalRunId: string) {
+    await run("assistant-chat", async () => {
+      const goalRun = await api.retryAiGoalRun(goalRunId);
+      setAiGoalRuns((items) => upsertById(items, goalRun));
+      setActiveGoalRunId(goalRun.id);
+    });
+  }
+
+  async function addGoalRunSources(goalRunId: string, urls: string[]) {
+    await run("assistant-chat", async () => {
+      const goalRun = await api.addAiGoalRunSources(goalRunId, urls);
+      setAiGoalRuns((items) => upsertById(items, goalRun));
     });
   }
 
@@ -2226,6 +2324,11 @@ export function App() {
         assistantError={assistantError}
         orchestrations={aiOrchestrations}
         activeOrchestrationId={activeOrchestrationId}
+        goalRuns={aiGoalRuns}
+        activeGoalRunId={activeGoalRunId}
+        confirmGoalRun={confirmGoalRun}
+        retryGoalRun={retryGoalRun}
+        addGoalRunSources={addGoalRunSources}
         pendingSearchPlan={assistantSearchPlan}
         confirmSearchPlan={confirmAssistantSearchPlan}
         dismissSearchPlan={() => setAssistantSearchPlan(null)}
@@ -5401,6 +5504,11 @@ function AiAssistantDrawer({
   assistantError,
   orchestrations,
   activeOrchestrationId,
+  goalRuns,
+  activeGoalRunId,
+  confirmGoalRun,
+  retryGoalRun,
+  addGoalRunSources,
   pendingSearchPlan,
   confirmSearchPlan,
   dismissSearchPlan,
@@ -5435,6 +5543,11 @@ function AiAssistantDrawer({
   assistantError: string;
   orchestrations: AiOrchestration[];
   activeOrchestrationId: string;
+  goalRuns: AiGoalRun[];
+  activeGoalRunId: string;
+  confirmGoalRun: (id: string) => Promise<void>;
+  retryGoalRun: (id: string) => Promise<void>;
+  addGoalRunSources: (id: string, urls: string[]) => Promise<void>;
   pendingSearchPlan: AssistantSearchPlan | null;
   confirmSearchPlan: () => Promise<void>;
   dismissSearchPlan: () => void;
@@ -5537,6 +5650,10 @@ function AiAssistantDrawer({
     orchestrations.find((item) => item.id === activeOrchestrationId) ??
     orchestrations.find((item) => item.status === "running" || item.status === "waiting" || item.status === "queued") ??
     orchestrations[0];
+  const activeGoalRun =
+    goalRuns.find((item) => item.id === activeGoalRunId) ??
+    goalRuns.find((item) => item.status === "running" || item.status === "waiting" || item.status === "waiting_confirmation") ??
+    goalRuns[0];
   return (
     <aside className="assistant-drawer" style={{ width }}>
       <button className="assistant-resizer" onMouseDown={startResize} aria-label="调整 AI 助手宽度">
@@ -5588,6 +5705,16 @@ function AiAssistantDrawer({
             </button>
           </div>
         </section>
+      )}
+      {activeGoalRun && (
+        <GoalRunTimeline
+          goalRun={activeGoalRun}
+          busy={busy}
+          onConfirm={confirmGoalRun}
+          onRetry={retryGoalRun}
+          onAddSources={addGoalRunSources}
+          onOpenArtifacts={onOpenArtifacts}
+        />
       )}
       {activeOrchestration && (
         <div className="assistant-orchestration-slot">
@@ -5684,6 +5811,85 @@ function AiAssistantDrawer({
         </button>
       </div>
     </aside>
+  );
+}
+
+function GoalRunTimeline({
+  goalRun,
+  busy,
+  onConfirm,
+  onRetry,
+  onAddSources,
+  onOpenArtifacts
+}: {
+  goalRun: AiGoalRun;
+  busy: string;
+  onConfirm: (id: string) => Promise<void>;
+  onRetry: (id: string) => Promise<void>;
+  onAddSources: (id: string, urls: string[]) => Promise<void>;
+  onOpenArtifacts: (artifactId: string) => void;
+}) {
+  const [sourceInput, setSourceInput] = useState("");
+  const submitSources = async () => {
+    const urls = sourceInput.split(/\s+|，|,/u).map((item) => item.trim()).filter(Boolean);
+    if (!urls.length) return;
+    await onAddSources(goalRun.id, urls);
+    setSourceInput("");
+  };
+  return (
+    <section className="goal-run-card" aria-label="目标任务进度">
+      <div className="goal-run-head">
+        <div>
+          <span>目标式内容生产</span>
+          <strong>{goalRun.plan.subject}</strong>
+          <small>小红书 + 公开资料 · 生成 {goalRun.plan.outputCount} 篇 · {goalRunStatusLabel(goalRun.status)}</small>
+        </div>
+        {goalRun.status === "waiting_confirmation" && (
+          <button className="primary-button compact" onClick={() => void onConfirm(goalRun.id)} disabled={busy === "assistant-chat"}>
+            {busy === "assistant-chat" ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
+            确认并执行
+          </button>
+        )}
+        {goalRun.status === "failed" && (
+          <button className="primary-button compact" onClick={() => void onRetry(goalRun.id)} disabled={busy === "assistant-chat"}>
+            <RefreshCw size={14} />
+            从失败处重试
+          </button>
+        )}
+      </div>
+      <div className="goal-plan-summary">
+        <span>研究问题</span>
+        <p>{goalRun.plan.questions.join("、")}</p>
+        <span>内容角度</span>
+        <p>{goalRun.plan.angles.join("、")}</p>
+      </div>
+      <div className="goal-step-list">
+        {goalRun.steps.map((step) => (
+          <div key={step.key} className={`goal-step ${step.status}`}>
+            <span className="goal-step-dot" />
+            <div><strong>{step.title}</strong>{step.error && <small>{step.error}</small>}</div>
+          </div>
+        ))}
+      </div>
+      {goalRun.warning && <p className="goal-run-warning">{goalRun.warning}</p>}
+      {goalRun.dossier && (
+        <div className="goal-dossier-summary">
+          <strong>研究结果</strong>
+          <p>{goalRun.dossier.summary}</p>
+          {goalRun.dossier.gaps.map((gap) => <small key={gap}>数据缺口：{gap}</small>)}
+        </div>
+      )}
+      <div className="goal-source-row">
+        <input value={sourceInput} onChange={(event) => setSourceInput(event.target.value)} placeholder="补充官网、媒体或视频资料链接" />
+        <button className="ghost-button compact" onClick={() => void submitSources()} disabled={!sourceInput.trim() || busy === "assistant-chat"}>添加资料</button>
+      </div>
+      {goalRun.status === "completed" && goalRun.artifactIds[0] && (
+        <button className="ghost-button full" onClick={() => onOpenArtifacts(goalRun.artifactIds[0]!)}>
+          <FileText size={14} />
+          查看研究档案与终稿
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -7014,6 +7220,15 @@ function orchestrationStatusLabel(status: AiOrchestration["status"]): string {
   if (status === "waiting") return "等待数据";
   if (status === "completed") return "已完成";
   if (status === "failed") return "失败";
+  return "已取消";
+}
+
+function goalRunStatusLabel(status: AiGoalRun["status"]): string {
+  if (status === "waiting_confirmation") return "等待确认";
+  if (status === "running") return "执行中";
+  if (status === "waiting") return "等待数据";
+  if (status === "completed") return "已完成";
+  if (status === "failed") return "需要处理";
   return "已取消";
 }
 
