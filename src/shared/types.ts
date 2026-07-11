@@ -20,6 +20,20 @@ export type AiCustomPromptMode = "guided" | "advanced";
 export type AiCustomPromptStatus = "active" | "archived";
 export type AiOrchestrationStatus = "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled";
 export type AiOrchestrationStepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
+export type AiGoalRunStatus = "waiting_confirmation" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+export type GoalRunStepStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+export type GoalRunStepKey =
+  | "understand-goal"
+  | "plan-research"
+  | "collect-xhs"
+  | "collect-public-sources"
+  | "build-dossier"
+  | "plan-content"
+  | "generate-drafts"
+  | "review-drafts"
+  | "archive-results";
+export type ResearchSourceType = "xiaohongshu" | "brand-official" | "media" | "user-source";
+export type ResearchEvidenceKind = "verified-fact" | "platform-observation" | "user-opinion" | "ai-inference";
 export type AiOrchestrationStepKey =
   | "create-search-job"
   | "wait-notes"
@@ -660,6 +674,93 @@ export interface AiOrchestrationCreateInput {
   instruction: string;
   keywords?: string[];
   modelId?: string;
+}
+
+export interface ResearchPlan {
+  subject: string;
+  questions: string[];
+  keywords: string[];
+  sourceTypes: ResearchSourceType[];
+  outputCount: number;
+  angles: string[];
+}
+
+export interface ResearchEvidence {
+  id: string;
+  goalRunId: string;
+  claim: string;
+  sourceTitle: string;
+  sourceUrl?: string;
+  sourceType: ResearchSourceType;
+  publishedAt?: string;
+  collectedAt: string;
+  excerpt: string;
+  confidence: "high" | "medium" | "low";
+  kind: ResearchEvidenceKind;
+  metricScope?: string;
+  noteId?: string;
+}
+
+export interface ResearchDossier {
+  summary: string;
+  verifiedClaims: string[];
+  platformObservations: string[];
+  gaps: string[];
+  evidenceIds: string[];
+}
+
+export interface ContentBatchItem {
+  angle: string;
+  draftId: string;
+  reviewId?: string;
+  draftArtifactId?: string;
+  reviewArtifactId?: string;
+  evidenceIds: string[];
+}
+
+export interface ContentBatch {
+  items: ContentBatchItem[];
+  createdAt: string;
+}
+
+export interface GoalRunStep {
+  key: GoalRunStepKey;
+  title: string;
+  status: GoalRunStepStatus;
+  attempts: number;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface AiGoalRun {
+  id: string;
+  instruction: string;
+  modelId?: string;
+  playbookId?: string;
+  plan: ResearchPlan;
+  status: AiGoalRunStatus;
+  steps: GoalRunStep[];
+  jobId?: string;
+  userSourceUrls: string[];
+  evidence: ResearchEvidence[];
+  dossier?: ResearchDossier;
+  contentBatch?: ContentBatch;
+  artifactIds: string[];
+  warning?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiGoalRunCreateInput {
+  instruction: string;
+  modelId?: string;
+  playbookId?: string;
+}
+
+export interface AiGoalRunSourceInput {
+  urls: string[];
 }
 
 export interface ContentReplacementRule {

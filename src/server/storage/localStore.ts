@@ -4,6 +4,7 @@ import path from "node:path";
 import type {
   AnalyticsReport,
   AiArtifact,
+  AiGoalRun,
   AiAssistantMessage,
   AiCustomPrompt,
   AiCustomPromptRevision,
@@ -49,6 +50,7 @@ type CollectionName =
   | "aiCustomPrompts"
   | "aiCustomPromptRevisions"
   | "aiOrchestrations"
+  | "aiGoalRuns"
   | "aiMessages"
   | "replyPlans"
   | "replyActions"
@@ -80,6 +82,7 @@ interface DataShape {
   aiCustomPrompts: AiCustomPrompt[];
   aiCustomPromptRevisions: AiCustomPromptRevision[];
   aiOrchestrations: AiOrchestration[];
+  aiGoalRuns: AiGoalRun[];
   aiMessages: AiAssistantMessage[];
   replyPlans: ReplyPlanRecord[];
   replyActions: ReplyActionRecord[];
@@ -115,6 +118,7 @@ const defaults: DataShape = {
   aiCustomPrompts: [],
   aiCustomPromptRevisions: [],
   aiOrchestrations: [],
+  aiGoalRuns: [],
   aiMessages: [],
   replyPlans: [],
   replyActions: [],
