@@ -69,6 +69,15 @@ import {
 import { createAiOrchestrationWithToolsFallback, probeAiModelTools } from "../services/aiToolCallingService.js";
 import { getAiOrchestration, listAiOrchestrations } from "../services/aiOrchestratorService.js";
 import {
+  addAiGoalRunSources,
+  confirmAiGoalRun,
+  createAiGoalRun,
+  getAiGoalRun,
+  listAiGoalRuns,
+  planAiGoalRun,
+  retryAiGoalRun
+} from "../services/aiGoalService.js";
+import {
   acceptContentDraftReview,
   addContentProjectMaterialsFromNotes,
   deleteContentProject,
@@ -109,6 +118,16 @@ const jobInput = z.object({
 const noteBulkDeleteInput = z.object({
   noteIds: z.array(z.string().min(1)).min(1).max(500),
   jobId: z.string().optional()
+});
+
+const aiGoalRunInput = z.object({
+  instruction: z.string().min(1).max(4000),
+  modelId: z.string().optional(),
+  playbookId: z.string().optional()
+});
+
+const aiGoalRunSourcesInput = z.object({
+  urls: z.array(z.string().url()).min(1).max(20)
 });
 
 const aiModelInput = z.object({
@@ -1090,6 +1109,108 @@ api.post("/ai/orchestrations", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+api.post("/ai/goal-runs", async (req, res, next) => {
+  try {
+    res.status(201).json(await createAiGoalRun(aiGoalRunInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/goal-runs/plan", async (req, res, next) => {
+  try {
+    res.json(await planAiGoalRun(aiGoalRunInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/ai/goal-runs", async (_req, res) => {
+  res.json(await listAiGoalRuns());
+});
+
+api.get("/ai/goal-runs/:id", async (req, res) => {
+  const run = await getAiGoalRun(req.params.id);
+  if (!run) {
+    res.status(404).json({ error: "AI goal run not found" });
+    return;
+  }
+  res.json(run);
+});
+
+api.post("/ai/goal-runs/:id/confirm", async (req, res, next) => {
+  try {
+    res.json(await confirmAiGoalRun(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/goal-runs/:id/retry", async (req, res, next) => {
+  try {
+    res.json(await retryAiGoalRun(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/ai/goal-runs/:id/sources", async (req, res, next) => {
+  try {
+    res.json(await addAiGoalRunSources(req.params.id, aiGoalRunSourcesInput.parse(req.body)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/ai/goal-runs/:id/evidence", async (req, res) => {
+  const run = await getAiGoalRun(req.params.id);
+  if (!run) {
+    res.status(404).json({ error: "AI goal run not found" });
+    return;
+  }
+  res.json(run.evidence);
+});
+
+api.get("/ai/goal-runs/:id/artifacts", async (req, res) => {
+  const run = await getAiGoalRun(req.params.id);
+  if (!run) {
+    res.status(404).json({ error: "AI goal run not found" });
+    return;
+  }
+  const artifacts = await store.read("aiArtifacts");
+  const ids = new Set(run.artifactIds);
+  res.json(artifacts.filter((item) => ids.has(item.id)));
+});
+
+api.get("/ai/goal-runs/:id/events", async (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive"
+  });
+  let closed = false;
+  let timer: NodeJS.Timeout | undefined;
+  const close = () => {
+    closed = true;
+    if (timer) clearInterval(timer);
+    if (!res.destroyed && !res.writableEnded) res.end();
+  };
+  const send = async () => {
+    if (closed) return;
+    const run = await getAiGoalRun(req.params.id);
+    if (!run) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: "AI goal run not found" })}\n\n`);
+      close();
+      return;
+    }
+    res.write(`event: goal-run\ndata: ${JSON.stringify(run)}\n\n`);
+    if (["completed", "failed", "cancelled"].includes(run.status)) close();
+  };
+  timer = setInterval(() => void send().catch(close), 2000);
+  req.on("close", close);
+  await send().catch(close);
 });
 
 api.get("/ai/orchestrations", async (_req, res) => {
