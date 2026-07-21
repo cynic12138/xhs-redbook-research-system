@@ -32,9 +32,9 @@ small reversible changes, and verification over speed.
 ## Absolute Prohibitions
 
 - Do not configure a Git remote unless the user explicitly asks for it after the local refactor workflow.
-- Do not run `git push`.
+- Do not run `git push` unless the user explicitly authorizes the specific remote and branch after they have been confirmed. Never force push.
 - Do not create a remote repository.
-- Do not upload project source code or data.
+- Do not upload project source code except through an explicitly authorized Git push to a confirmed remote and branch. Never upload runtime/local data, credentials, or secrets.
 - Do not access production databases, production APIs, or real user data.
 - Do not print, modify, commit, or expose `.env`, tokens, cookies, API keys, private keys, passwords, or other secrets.
 - Do not change business rules, calculations, public API routes, HTTP status codes, field names, request/response formats, error semantics, database schema, indexes, constraints, migrations, or transaction semantics.
