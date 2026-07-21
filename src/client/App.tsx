@@ -64,6 +64,7 @@ import type {
   ContentDraft,
   ContentDraftLength,
   ContentPlaybook,
+  ContentPlaybookInput,
   ContentPlaybookRevision,
   ContentPlaybookStats,
   ContentProject,
@@ -86,6 +87,7 @@ import type {
   SearchSort
 } from "../shared/types.js";
 import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProviderKey } from "../shared/modelProviders.js";
+import { WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY } from "../shared/contentReviewPolicy.js";
 import { api } from "./lib/api.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "content" | "prompts" | "ai";
@@ -105,11 +107,12 @@ type ContentBriefForm = {
   length: ContentDraftLength;
   keywords: string;
 };
-type ContentReviewForm = { title: string; body: string; tags: string };
+export type ContentReviewForm = { title: string; body: string; tags: string };
 type ContentStudioTab = "projects" | "review" | "batch" | "write" | "rules" | "results";
 type PromptEditorTab = "guided" | "advanced" | "preview";
 type PromptScope = "system" | "custom";
 type CustomPromptTab = "guided" | "advanced" | "preview" | "versions";
+export type AiResourceScope = "all" | "current";
 type BatchReviewItem = { id: string; title: string; body: string; tags: string; selected: boolean };
 type ContentProjectForm = {
   name: string;
@@ -121,18 +124,27 @@ type ContentProjectForm = {
   jobId: string;
   status: ContentProjectStatus;
 };
-type ContentPlaybookForm = {
+export type ContentPlaybookForm = {
   name: string;
   productName: string;
   category: string;
   forbiddenTerms: string;
   sensitiveClaims: string;
   allowedSellingPoints: string;
+  requiredSections: string;
+  toneWords: string;
   personas: string;
   scenarios: string;
   tags: string;
+  replacements: string;
 };
-type ContentPlaybookTemplateKey = "general" | "maternal" | "food" | "education";
+export type ContentPlaybookTemplateKey = "specialty" | "general" | "maternal" | "food" | "education";
+export type ContentReviewRuleSummary = {
+  label: string;
+  forbiddenTermCount: number;
+  sensitiveClaimCount: number;
+};
+export const DEFAULT_CONTENT_REVIEW_RULE_LABEL = `${WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.name}（内置默认）`;
 type AssistantSearchPlan = {
   instruction: string;
   keywords: string[];
@@ -185,6 +197,9 @@ type ContentStudioProps = {
   acceptDraftReview: (draftId: string, reviewId?: string) => Promise<void>;
   savePlaybook: () => Promise<void>;
   openArtifact: (artifactId: string) => void;
+  openDraftReviewPrompt: () => void;
+  loadReviewForRereview: (review: ContentReviewRun) => void;
+  reviewExecutionLabel: string;
   busy: string;
 };
 type AssistantNoticeTone = "info" | "warning" | "error" | "progress";
@@ -207,7 +222,7 @@ const emptyModelForm: ModelForm = {
 };
 
 const defaultContentBriefForm: ContentBriefForm = {
-  productName: "产品",
+  productName: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName,
   persona: "孕妈",
   painPoint: "孕期便秘、出门不方便",
   scenario: "日常分享",
@@ -246,8 +261,8 @@ const defaultCustomPromptForm: AiCustomPromptInput = {
 };
 
 const defaultContentProjectForm: ContentProjectForm = {
-  name: "蜂蜜露种草项目",
-  productName: "蜂蜜露",
+  name: "周十五蜂蜜露种草项目",
+  productName: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName,
   targetAudience: "孕妈, 大学生, 上班族",
   scenarios: "出门携带, 日常分享, 朋友推荐",
   goals: "生成多篇种草笔记, 批量审稿, 归档可复盘",
@@ -256,35 +271,70 @@ const defaultContentProjectForm: ContentProjectForm = {
   status: "planning"
 };
 
-const defaultPlaybookForm: ContentPlaybookForm = {
-  name: "通用种草审稿规则",
-  productName: "产品",
-  category: "小红书种草",
-  forbiddenTerms: "yyds, 封神, 救命神器, 效果拉满, 绝了, 无敌, 性价比天花板, 闭眼冲, 必囤, 无限回购",
-  sensitiveClaims: "治疗, 治愈, 药效, 特效, 根治, 通便特效, 杜绝依赖, 百分百有效",
-  allowedSellingPoints: "真实使用感, 生活场景, 携带方便, 温和表达",
-  personas: "孕妈, 大学生, 上班族",
-  scenarios: "日常分享, 出门携带, 朋友推荐",
-  tags: "日常分享, 好物分享, 真实体验"
+export function createDefaultContentPlaybookForm(): ContentPlaybookForm {
+  return {
+    name: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.name,
+    productName: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName,
+    category: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.category,
+    forbiddenTerms: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms.join(", "),
+    sensitiveClaims: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims.join(", "),
+    allowedSellingPoints: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.allowedSellingPoints.join(", "),
+    requiredSections: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.requiredSections.join(", "),
+    toneWords: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.toneWords.join(", "),
+    personas: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.personas.join(", "),
+    scenarios: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.scenarios.join(", "),
+    tags: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.tags.join(", "),
+    replacements: formatReplacementRules(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.replacements)
+  };
+}
+
+const defaultPlaybookForm = createDefaultContentPlaybookForm();
+
+const defaultStructuredPlaybookFields = {
+  requiredSections: "标题, 内容, 标签",
+  toneWords: "口语化, 真实分享, 生活化",
+  replacements: formatReplacementRules([
+    { from: "闭眼冲", to: "可以按自己的需求看看", reason: "避免强购买引导" },
+    { from: "百分百有效", to: "这是我的个人使用感受", reason: "避免绝对化承诺" }
+  ])
 };
 
-const contentPlaybookTemplates: Array<{
+export const contentPlaybookTemplates: Array<{
   key: ContentPlaybookTemplateKey;
   label: string;
   description: string;
   form: ContentPlaybookForm;
 }> = [
   {
+    key: "specialty",
+    label: "周十五蜂蜜露专项",
+    description: "内置专项审稿规则，覆盖产品纠错、语气和结构化替换。",
+    form: defaultPlaybookForm
+  },
+  {
     key: "general",
     label: "通用种草",
     description: "适合大多数生活好物、日常分享和素人种草。",
-    form: defaultPlaybookForm
+    form: {
+      ...defaultPlaybookForm,
+      ...defaultStructuredPlaybookFields,
+      name: "通用种草审稿规则",
+      productName: "产品",
+      category: "小红书种草",
+      forbiddenTerms: "yyds, 封神, 救命神器, 效果拉满, 绝了, 无敌, 性价比天花板, 闭眼冲, 必囤, 无限回购",
+      sensitiveClaims: "治疗, 治愈, 药效, 特效, 根治, 通便特效, 杜绝依赖, 百分百有效",
+      allowedSellingPoints: "真实使用感, 生活场景, 携带方便, 温和表达",
+      personas: "孕妈, 大学生, 上班族",
+      scenarios: "日常分享, 出门携带, 朋友推荐",
+      tags: "日常分享, 好物分享, 真实体验"
+    }
   },
   {
     key: "maternal",
     label: "母婴孕妈",
     description: "弱化医疗功效，强调真实体验、生活场景和温和表达。",
     form: {
+      ...defaultStructuredPlaybookFields,
       name: "母婴孕妈审稿规则",
       productName: "产品",
       category: "母婴小红书种草",
@@ -301,6 +351,7 @@ const contentPlaybookTemplates: Array<{
     label: "食品饮品",
     description: "适合食品、饮品、营养补充类内容，避免功效化和绝对健康承诺。",
     form: {
+      ...defaultStructuredPlaybookFields,
       name: "食品饮品审稿规则",
       productName: "产品",
       category: "食品饮品种草",
@@ -317,6 +368,7 @@ const contentPlaybookTemplates: Array<{
     label: "教育课程",
     description: "适合课程、训练营、学习工具，避免保过、速成和焦虑营销。",
     form: {
+      ...defaultStructuredPlaybookFields,
       name: "教育课程审稿规则",
       productName: "产品",
       category: "教育课程种草",
@@ -385,6 +437,8 @@ export function App() {
   const [replyActions, setReplyActions] = useState<ReplyActionRecord[]>([]);
   const [aiModels, setAiModels] = useState<AiModelConfig[]>([]);
   const [aiReports, setAiReports] = useState<AiReport[]>([]);
+  const [scopedAiReports, setScopedAiReports] = useState<AiReport[]>([]);
+  const [aiResourceScope, setAiResourceScope] = useState<AiResourceScope>("all");
   const [aiWorkflows, setAiWorkflows] = useState<AiWorkflowDefinition[]>([]);
   const [aiPrompts, setAiPrompts] = useState<AiPromptInfo[]>([]);
   const [aiCustomPrompts, setAiCustomPrompts] = useState<AiCustomPrompt[]>([]);
@@ -401,6 +455,8 @@ export function App() {
   const [customPromptPreview, setCustomPromptPreview] = useState<AiCustomPromptPreview | null>(null);
   const [customPromptRevisions, setCustomPromptRevisions] = useState<AiCustomPromptRevision[]>([]);
   const [aiArtifacts, setAiArtifacts] = useState<AiArtifact[]>([]);
+  const [scopedAiArtifacts, setScopedAiArtifacts] = useState<AiArtifact[]>([]);
+  const [openedArtifactSnapshot, setOpenedArtifactSnapshot] = useState<AiArtifact | null>(null);
   const [contentProjects, setContentProjects] = useState<ContentProject[]>([]);
   const [selectedContentProjectId, setSelectedContentProjectId] = useState("");
   const [contentProjectForm, setContentProjectForm] = useState<ContentProjectForm>(defaultContentProjectForm);
@@ -592,25 +648,30 @@ export function App() {
   }, [activeJobId]);
 
   const loadOperations = useCallback(async () => {
-    const [plans, actions, reports, artifacts, customPrompts, projects, drafts, reviews] = await Promise.all([
+    const scopedJobId = aiResourceJobId(aiResourceScope, activeJobId);
+    const [plans, actions, reports, artifacts, customPrompts, projects, drafts, reviews, currentReports, currentArtifacts] = await Promise.all([
       api.listReplyPlans(),
       api.listReplyActions(),
-      api.listAiReports(activeJobId || undefined),
-      api.listAiArtifacts(activeJobId || undefined),
+      api.listAiReports(),
+      api.listAiArtifacts(),
       api.listAiCustomPrompts(),
       api.listContentProjects(),
       api.listContentDrafts(),
-      api.listContentReviews()
+      api.listContentReviews(),
+      scopedJobId ? api.listAiReports(scopedJobId) : Promise.resolve(undefined),
+      scopedJobId ? api.listAiArtifacts(scopedJobId) : Promise.resolve(undefined)
     ]);
     setReplyPlans(plans);
     setReplyActions(actions);
     setAiReports(reports);
     setAiArtifacts(artifacts);
+    setScopedAiReports(currentReports ?? reports);
+    setScopedAiArtifacts(currentArtifacts ?? artifacts);
     setAiCustomPrompts(customPrompts);
     setContentProjects(projects);
     setContentDrafts(drafts);
     setContentReviews(reviews);
-  }, [activeJobId]);
+  }, [activeJobId, aiResourceScope]);
 
   const loadOrchestrations = useCallback(async () => {
     setAiOrchestrations(await api.listAiOrchestrations());
@@ -748,26 +809,10 @@ export function App() {
     const applyOrchestration = async (orchestration: AiOrchestration) => {
       if (!alive) return;
       setAiOrchestrations((items) => upsertById(items, orchestration));
-      if (orchestration.jobId) {
-        setActiveJobId(orchestration.jobId);
-        setShowHistoryData(false);
-      }
       if (orchestration.artifactIds.length) {
-        const latestArtifactId = orchestration.artifactIds[orchestration.artifactIds.length - 1] ?? "";
-        setSelectedArtifactId(latestArtifactId);
-        setSelectedReportId("");
         await loadOperations();
-        if (latestArtifactId) {
-          const artifact = await api.getAiArtifact(latestArtifactId).catch(() => undefined);
-          if (alive && artifact) {
-            setAiArtifacts((items) => upsertById(items, artifact));
-          }
-        }
       }
       await refreshCore();
-      if (orchestration.status === "completed") {
-        setActiveModule("ai");
-      }
     };
     const tick = async () => {
       try {
@@ -815,18 +860,10 @@ export function App() {
     const applyGoalRun = async (goalRun: AiGoalRun) => {
       if (!alive) return;
       setAiGoalRuns((items) => upsertById(items, goalRun));
-      if (goalRun.jobId) {
-        setActiveJobId(goalRun.jobId);
-        setShowHistoryData(false);
-      }
       if (goalRun.artifactIds.length) {
-        const artifactId = goalRun.artifactIds[0] ?? "";
-        setSelectedArtifactId(artifactId);
-        setSelectedReportId("");
         await loadOperations();
       }
       await refreshCore();
-      if (goalRun.status === "completed") setActiveModule("ai");
     };
     const tick = async () => {
       try {
@@ -880,8 +917,16 @@ export function App() {
   }, [selectedModelId]);
 
   useEffect(() => {
-    if (selectedArtifactId && !aiArtifacts.some((artifact) => artifact.id === selectedArtifactId)) {
-      setSelectedArtifactId("");
+    const normalizedScope = normalizeAiResourceScope(aiResourceScope, activeJob?.id ?? "");
+    if (normalizedScope !== aiResourceScope) {
+      setAiResourceScope(normalizedScope);
+    }
+  }, [activeJob?.id, aiResourceScope]);
+
+  useEffect(() => {
+    const selectedArtifact = aiArtifacts.find((artifact) => artifact.id === selectedArtifactId);
+    if (selectedArtifact) {
+      setOpenedArtifactSnapshot(selectedArtifact);
     }
   }, [aiArtifacts, selectedArtifactId]);
 
@@ -925,6 +970,29 @@ export function App() {
         setBusy("");
       }
     }
+  }
+
+  async function openArtifactById(artifactId: string, artifactHint?: AiArtifact): Promise<void> {
+    const artifact = await loadArtifactForOpen(aiArtifacts, artifactId, api.getAiArtifact, artifactHint).catch(() => undefined);
+    if (!artifact) {
+      setError("产物不存在或读取失败，请刷新后重试。");
+      return;
+    }
+    setError("");
+    setAiArtifacts((items) => upsertById(items, artifact));
+    rememberSelectedArtifact(artifact);
+    setActiveModule("ai");
+  }
+
+  function rememberSelectedArtifact(artifact: AiArtifact): void {
+    setOpenedArtifactSnapshot(artifact);
+    setSelectedArtifactId(artifact.id);
+    setSelectedReportId("");
+  }
+
+  function clearSelectedArtifact(): void {
+    setSelectedArtifactId("");
+    setOpenedArtifactSnapshot(null);
   }
 
   async function saveCookie() {
@@ -1297,11 +1365,7 @@ export function App() {
 
   function createContentPlaybookForm() {
     setSelectedContentPlaybook("");
-    setContentPlaybookForm({
-      ...defaultPlaybookForm,
-      name: "新规则库",
-      productName: contentBriefForm.productName || "产品"
-    });
+    setContentPlaybookForm(createDefaultContentPlaybookForm());
     setContentPlaybookDirtyState(true);
     setContentStudioTab("rules");
   }
@@ -1339,8 +1403,7 @@ export function App() {
       setContentDrafts((drafts) => upsertById(drafts, result.draft));
       setContentReviews((reviews) => upsertById(reviews, result.review));
       setAiArtifacts((artifacts) => prependUniqueById(artifacts, [result.reviewArtifact, result.artifact]));
-      setSelectedArtifactId(result.reviewArtifact.id);
-      setSelectedReportId("");
+      rememberSelectedArtifact(result.reviewArtifact);
       setContentStudioTab("results");
       await loadOperations();
     });
@@ -1368,8 +1431,7 @@ export function App() {
       setContentReviews((items) => prependUniqueById(items, reviews));
       setAiArtifacts((items) => prependUniqueById(items, artifacts));
       if (artifacts[0]) {
-        setSelectedArtifactId(artifacts[0].id);
-        setSelectedReportId("");
+        rememberSelectedArtifact(artifacts[0]);
       }
       setContentStudioTab("results");
       await loadOperations();
@@ -1394,8 +1456,7 @@ export function App() {
       });
       setContentReviews((reviews) => upsertById(reviews, result.review));
       setAiArtifacts((artifacts) => upsertById(artifacts, result.artifact));
-      setSelectedArtifactId(result.artifact.id);
-      setSelectedReportId("");
+      rememberSelectedArtifact(result.artifact);
       setContentStudioTab("results");
       await loadOperations();
     });
@@ -1424,8 +1485,7 @@ export function App() {
       setContentReviews((reviews) => prependUniqueById(reviews, result.reviews));
       setAiArtifacts((artifacts) => prependUniqueById(artifacts, result.artifacts));
       if (result.artifacts[0]) {
-        setSelectedArtifactId(result.artifacts[0].id);
-        setSelectedReportId("");
+        rememberSelectedArtifact(result.artifacts[0]);
       }
       setContentStudioTab("results");
       await loadOperations();
@@ -1439,6 +1499,12 @@ export function App() {
       setContentStudioTab("results");
       await loadOperations();
     });
+  }
+
+  function loadContentReviewForRereview(review: ContentReviewRun) {
+    setContentReviewForm(contentReviewToForm(review));
+    setContentStudioTab("review");
+    setActiveModule("content");
   }
 
   function sendSelectedNotesToBatchReview() {
@@ -1573,11 +1639,8 @@ export function App() {
         modelId: selectedModel?.id,
         focus
       });
-      setAiArtifacts((items) => upsertById(items, artifact));
       setSelectedWorkflow(workflowKey);
-      setSelectedArtifactId(artifact.id);
-      setSelectedReportId("");
-      setActiveModule("ai");
+      await openArtifactById(artifact.id, artifact);
       await loadOperations();
       return artifact;
     });
@@ -1654,9 +1717,9 @@ export function App() {
         }
         setAssistantMessages((messages) => [...messages, response.message]);
         if (response.artifact) {
-          setAiArtifacts((items) => upsertById(items, response.artifact as AiArtifact));
-          setSelectedArtifactId(response.artifact.id);
-          setSelectedReportId("");
+          const artifact = response.artifact as AiArtifact;
+          setAiArtifacts((items) => upsertById(items, artifact));
+          rememberSelectedArtifact(artifact);
         }
         setActiveModule("content");
         await loadOperations();
@@ -1690,9 +1753,9 @@ export function App() {
       }
       setAssistantMessages((messages) => [...messages, response.message]);
       if (response.artifact) {
-        setAiArtifacts((items) => upsertById(items, response.artifact as AiArtifact));
-        setSelectedArtifactId(response.artifact.id);
-        setSelectedReportId("");
+        const artifact = response.artifact as AiArtifact;
+        setAiArtifacts((items) => upsertById(items, artifact));
+        rememberSelectedArtifact(artifact);
       }
       await loadOperations();
     });
@@ -1750,15 +1813,17 @@ export function App() {
     await run(`delete-artifact-${artifactId}`, async () => {
       await api.deleteAiArtifact(artifactId);
       if (selectedArtifactId === artifactId) {
-        setSelectedArtifactId("");
+        clearSelectedArtifact();
       }
       await loadOperations();
     });
   }
 
   function openPromptCenter(key: AiWorkflowKey) {
+    if (!selectPromptKey(key)) {
+      return;
+    }
     setSelectedPromptScope("system");
-    selectPromptKey(key);
     setActiveModule("prompts");
   }
 
@@ -1766,11 +1831,13 @@ export function App() {
     return !promptDirty || window.confirm("当前提示词修改尚未保存，确定放弃这些修改吗？");
   }
 
-  function selectPromptKey(key: AiWorkflowKey) {
-    if (key === selectedPromptKey) return;
-    if (!confirmDiscardPromptChanges()) return;
+  function selectPromptKey(key: AiWorkflowKey): boolean {
+    const discardConfirmed = key === selectedPromptKey || confirmDiscardPromptChanges();
+    if (!canSelectPromptKey(selectedPromptKey, key, discardConfirmed)) return false;
+    if (key === selectedPromptKey) return true;
     setSelectedPromptKey(key);
     setPromptPreview(null);
+    return true;
   }
 
   function selectPromptTab(tab: PromptEditorTab) {
@@ -1923,10 +1990,7 @@ export function App() {
         modelId: selectedModel?.id,
         focus
       });
-      setAiArtifacts((items) => upsertById(items, artifact));
-      setSelectedArtifactId(artifact.id);
-      setSelectedReportId("");
-      setActiveModule("ai");
+      await openArtifactById(artifact.id, artifact);
       await loadOperations();
       return artifact;
     });
@@ -2165,11 +2229,10 @@ export function App() {
             reviewBatch={reviewSelectedBatchItems}
             acceptDraftReview={acceptContentDraftReviewForm}
             savePlaybook={saveContentPlaybookForm}
-            openArtifact={(artifactId) => {
-              setSelectedArtifactId(artifactId);
-              setSelectedReportId("");
-              setActiveModule("ai");
-            }}
+            openDraftReviewPrompt={() => openPromptCenter("draft-review")}
+            loadReviewForRereview={loadContentReviewForRereview}
+            reviewExecutionLabel={selectedModel ? "将尝试 AI，失败自动本地降级" : "本地规则"}
+            openArtifact={(artifactId) => void openArtifactById(artifactId)}
             busy={busy}
           />
         )}
@@ -2193,11 +2256,7 @@ export function App() {
             saveAdvancedPrompt={saveAdvancedPrompt}
             resetPrompt={resetPrompt}
             loadPromptPreview={loadPromptPreview}
-            openArtifact={(artifactId) => {
-              setSelectedArtifactId(artifactId);
-              setSelectedReportId("");
-              setActiveModule("ai");
-            }}
+            openArtifact={(artifactId) => void openArtifactById(artifactId)}
             customPrompts={aiCustomPrompts}
             selectedScope={selectedPromptScope}
             setSelectedScope={setSelectedPromptScope}
@@ -2221,15 +2280,20 @@ export function App() {
         {activeModule === "ai" && (
           <AiWorkbenchPage
             activeJob={contextJob}
-            artifacts={aiArtifacts}
-            reports={aiReports}
+            hasCurrentJob={Boolean(activeJob)}
+            artifacts={aiResourceScope === "current" ? scopedAiArtifacts : aiArtifacts}
+            reports={aiResourceScope === "current" ? scopedAiReports : aiReports}
+            resourceScope={aiResourceScope}
+            setResourceScope={setAiResourceScope}
             reportFocus={reportFocus}
             setReportFocus={setReportFocus}
             createReport={createReport}
             deleteReport={deleteReport}
             deleteArtifact={deleteArtifact}
             selectedArtifactId={selectedArtifactId}
-            setSelectedArtifactId={setSelectedArtifactId}
+            openedArtifactSnapshot={openedArtifactSnapshot}
+            openArtifact={(artifactId, artifact) => void openArtifactById(artifactId, artifact)}
+            clearSelectedArtifact={clearSelectedArtifact}
             selectedReportId={selectedReportId}
             setSelectedReportId={setSelectedReportId}
             prompts={aiPrompts}
@@ -2339,11 +2403,7 @@ export function App() {
           setShowHistoryData(false);
           setActiveModule("overview");
         }}
-        onOpenArtifacts={(artifactId) => {
-          setSelectedArtifactId(artifactId);
-          setSelectedReportId("");
-          setActiveModule("ai");
-        }}
+        onOpenArtifacts={(artifactId) => void openArtifactById(artifactId)}
         onRefresh={refreshCore}
         workflows={visibleWorkflows.length ? visibleWorkflows : aiWorkflows.slice(0, 4)}
         runWorkflow={runAssistantWorkflow}
@@ -3776,7 +3836,8 @@ function parseTableCells(line: string): string[] {
 function ContentStudioPage(props: ContentStudioProps) {
   const selectedProject = props.projects.find((item) => item.id === props.selectedProjectId);
   const selectedPlaybook = props.playbooks.find((item) => item.id === props.selectedPlaybookId);
-  const ruleLabel = selectedPlaybook?.name ?? (props.selectedPlaybookId ? "规则已不存在" : props.playbookDirty ? `${props.playbookForm.name || "新规则库"}（未保存）` : "默认兜底规则");
+  const ruleSummary = contentReviewRuleSummary(selectedPlaybook);
+  const ruleLabel = ruleSummary.label;
   const projectLabel = selectedProject?.name ?? (props.selectedProjectId ? "项目已不存在" : props.projectDirty ? `${props.projectForm.name || "新内容项目"}（未保存）` : "未选择内容项目");
   const selectedCount = props.batchItems.filter((item) => item.selected && item.body.trim()).length;
   const tabs: Array<{ key: ContentStudioTab; label: string; icon: ReactNode }> = [
@@ -3803,6 +3864,10 @@ function ContentStudioPage(props: ContentStudioProps) {
             <button className="ghost-button compact" onClick={() => props.setActiveTab("rules")}>
               <Library size={14} />
               管理规则
+            </button>
+            <button className="ghost-button compact" onClick={props.openDraftReviewPrompt}>
+              <Eye size={14} />
+              查看审稿提示词
             </button>
           </div>
         </div>
@@ -3878,7 +3943,7 @@ function ContentProjectsPane(props: Pick<ContentStudioProps, "projects" | "selec
           <label>
             <span>规则库</span>
             <select value={props.projectForm.playbookId} onChange={(event) => updateProject("playbookId", event.target.value)}>
-              <option value="">默认兜底规则</option>
+              <option value="">{DEFAULT_CONTENT_REVIEW_RULE_LABEL}</option>
               {props.playbooks.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
             </select>
           </label>
@@ -3921,8 +3986,9 @@ function ContentProjectsPane(props: Pick<ContentStudioProps, "projects" | "selec
   );
 }
 
-function ContentReviewPane(props: Pick<ContentStudioProps, "reviewForm" | "setReviewForm" | "reviewDraft" | "busy" | "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "reviews" | "openArtifact">) {
+function ContentReviewPane(props: Pick<ContentStudioProps, "reviewForm" | "setReviewForm" | "reviewDraft" | "busy" | "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "reviews" | "openArtifact" | "openDraftReviewPrompt" | "loadReviewForRereview" | "reviewExecutionLabel">) {
   const updateReview = (key: keyof ContentReviewForm, value: string) => props.setReviewForm({ ...props.reviewForm, [key]: value });
+  const ruleSummary = contentReviewRuleSummary(props.playbooks.find((playbook) => playbook.id === props.selectedPlaybookId));
   return (
     <div className="content-studio-grid review-first">
       <section className="surface content-primary-panel">
@@ -3931,10 +3997,16 @@ function ContentReviewPane(props: Pick<ContentStudioProps, "reviewForm" | "setRe
           <label>
             <span>使用规则</span>
             <select value={props.selectedPlaybookId} onChange={(event) => props.setSelectedPlaybookId(event.target.value)}>
-              <option value="">默认兜底规则（未保存）</option>
+              <option value="">{DEFAULT_CONTENT_REVIEW_RULE_LABEL}</option>
               {props.playbooks.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
             </select>
           </label>
+          <div className="content-preview-box">
+            <strong>{ruleSummary.label}</strong>
+            <small>禁用词 {ruleSummary.forbiddenTermCount} 个 · 敏感词 {ruleSummary.sensitiveClaimCount} 个</small>
+            <small>执行方式：{props.reviewExecutionLabel}</small>
+            <button className="ghost-button compact" onClick={props.openDraftReviewPrompt}><Eye size={14} />查看审稿提示词</button>
+          </div>
           <label>
             <span>标题</span>
             <input value={props.reviewForm.title} onChange={(event) => updateReview("title", event.target.value)} />
@@ -3953,12 +4025,12 @@ function ContentReviewPane(props: Pick<ContentStudioProps, "reviewForm" | "setRe
           </button>
         </div>
       </section>
-      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} />
+      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} loadReviewForRereview={props.loadReviewForRereview} />
     </div>
   );
 }
 
-function ContentBatchReviewPane(props: Pick<ContentStudioProps, "batchItems" | "setBatchItems" | "reviewBatch" | "busy" | "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "reviews" | "openArtifact">) {
+function ContentBatchReviewPane(props: Pick<ContentStudioProps, "batchItems" | "setBatchItems" | "reviewBatch" | "busy" | "playbooks" | "selectedPlaybookId" | "setSelectedPlaybookId" | "reviews" | "openArtifact" | "openDraftReviewPrompt" | "loadReviewForRereview" | "reviewExecutionLabel">) {
   const updateItem = (id: string, patch: Partial<BatchReviewItem>) => {
     props.setBatchItems(props.batchItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
@@ -3966,6 +4038,7 @@ function ContentBatchReviewPane(props: Pick<ContentStudioProps, "batchItems" | "
   const removeItem = (id: string) => props.setBatchItems(props.batchItems.length > 1 ? props.batchItems.filter((item) => item.id !== id) : [createBatchReviewItem()]);
   const allSelected = props.batchItems.every((item) => item.selected);
   const selectedCount = props.batchItems.filter((item) => item.selected && item.body.trim()).length;
+  const ruleSummary = contentReviewRuleSummary(props.playbooks.find((playbook) => playbook.id === props.selectedPlaybookId));
   return (
     <div className="content-studio-grid batch-grid">
       <section className="surface content-primary-panel">
@@ -3989,10 +4062,16 @@ function ContentBatchReviewPane(props: Pick<ContentStudioProps, "batchItems" | "
           <label>
             <span>使用规则</span>
             <select value={props.selectedPlaybookId} onChange={(event) => props.setSelectedPlaybookId(event.target.value)}>
-              <option value="">默认兜底规则（未保存）</option>
+              <option value="">{DEFAULT_CONTENT_REVIEW_RULE_LABEL}</option>
               {props.playbooks.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
             </select>
           </label>
+          <div className="content-preview-box">
+            <strong>{ruleSummary.label}</strong>
+            <small>禁用词 {ruleSummary.forbiddenTermCount} 个 · 敏感词 {ruleSummary.sensitiveClaimCount} 个</small>
+            <small>执行方式：{props.reviewExecutionLabel}</small>
+            <button className="ghost-button compact" onClick={props.openDraftReviewPrompt}><Eye size={14} />查看审稿提示词</button>
+          </div>
           <div className="batch-review-list">
             {props.batchItems.map((item, index) => (
               <div key={item.id} className={item.selected ? "batch-review-row selected" : "batch-review-row"}>
@@ -4017,7 +4096,7 @@ function ContentBatchReviewPane(props: Pick<ContentStudioProps, "batchItems" | "
           </button>
         </div>
       </section>
-      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} />
+      <ContentReviewSidePanel reviews={props.reviews} openArtifact={props.openArtifact} loadReviewForRereview={props.loadReviewForRereview} />
     </div>
   );
 }
@@ -4208,13 +4287,16 @@ function ContentRulesPane(props: Pick<ContentStudioProps, "playbooks" | "selecte
           <label><span>禁用词</span><textarea value={props.playbookForm.forbiddenTerms} onChange={(event) => updatePlaybook("forbiddenTerms", event.target.value)} /></label>
           <label><span>敏感功效</span><textarea value={props.playbookForm.sensitiveClaims} onChange={(event) => updatePlaybook("sensitiveClaims", event.target.value)} /></label>
           <label><span>可说卖点</span><textarea value={props.playbookForm.allowedSellingPoints} onChange={(event) => updatePlaybook("allowedSellingPoints", event.target.value)} /></label>
+          <label><span>固定结构</span><textarea value={props.playbookForm.requiredSections} onChange={(event) => updatePlaybook("requiredSections", event.target.value)} /></label>
+          <label><span>语气规则</span><textarea value={props.playbookForm.toneWords} onChange={(event) => updatePlaybook("toneWords", event.target.value)} /></label>
+          <label><span>结构化替换规则（JSON：from / to / reason）</span><textarea value={props.playbookForm.replacements} onChange={(event) => updatePlaybook("replacements", event.target.value)} /></label>
         </div>
       </section>
     </div>
   );
 }
 
-function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews" | "artifacts" | "acceptDraftReview" | "openArtifact" | "busy">) {
+function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews" | "artifacts" | "acceptDraftReview" | "openArtifact" | "loadReviewForRereview" | "busy">) {
   const contentArtifacts = getContentArtifacts(props.artifacts);
   const counts = contentResultCounts(props.drafts, props.reviews, props.artifacts);
   const reviewByDraftId = new Map(props.reviews.filter((review) => review.draftId).map((review) => [review.draftId, review]));
@@ -4281,7 +4363,7 @@ function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews"
               <strong>审稿</strong>
               <span>{counts.passedReviews ? `${counts.passedReviews} 篇通过` : "审稿后显示风险与修改稿"}</span>
             </div>
-            <ContentReviewList reviews={props.reviews.slice(0, 8)} openArtifact={props.openArtifact} />
+            <ContentReviewList reviews={props.reviews.slice(0, 8)} openArtifact={props.openArtifact} loadReviewForRereview={props.loadReviewForRereview} />
           </div>
         </div>
       </section>
@@ -4289,7 +4371,7 @@ function ContentResultsPane(props: Pick<ContentStudioProps, "drafts" | "reviews"
   );
 }
 
-function ContentReviewSidePanel({ reviews, openArtifact }: { reviews: ContentReviewRun[]; openArtifact: (artifactId: string) => void }) {
+function ContentReviewSidePanel({ reviews, openArtifact, loadReviewForRereview }: { reviews: ContentReviewRun[]; openArtifact: (artifactId: string) => void; loadReviewForRereview: (review: ContentReviewRun) => void }) {
   return (
     <section className="surface content-side-panel">
       <SectionTitle icon={<FileText size={18} />} title="审稿结果" />
@@ -4299,13 +4381,13 @@ function ContentReviewSidePanel({ reviews, openArtifact }: { reviews: ContentRev
           <StatusRow label="高风险" value={`${reviews.filter((review) => review.risk === "high").length}`} ok={!reviews.some((review) => review.risk === "high")} />
           <StatusRow label="通过" value={`${reviews.filter((review) => review.risk === "pass").length}`} ok={reviews.some((review) => review.risk === "pass")} />
         </div>
-        <ContentReviewList reviews={reviews.slice(0, 10)} openArtifact={openArtifact} />
+        <ContentReviewList reviews={reviews.slice(0, 10)} openArtifact={openArtifact} loadReviewForRereview={loadReviewForRereview} />
       </div>
     </section>
   );
 }
 
-function ContentReviewList({ reviews, openArtifact }: { reviews: ContentReviewRun[]; openArtifact: (artifactId: string) => void }) {
+function ContentReviewList({ reviews, openArtifact, loadReviewForRereview }: { reviews: ContentReviewRun[]; openArtifact: (artifactId: string) => void; loadReviewForRereview: (review: ContentReviewRun) => void }) {
   return (
     <div className="review-card-list">
       {reviews.map((review) => (
@@ -4313,7 +4395,7 @@ function ContentReviewList({ reviews, openArtifact }: { reviews: ContentReviewRu
           <div className="review-result-head">
             <div>
               <strong>{review.revisedTitle || review.originalTitle || "AI 审稿报告"}</strong>
-              <small>{new Date(review.createdAt).toLocaleString()}</small>
+              <small>{new Date(review.createdAt).toLocaleString()} · {review.source === "ai" ? "AI" : "本地"} · {review.status === "completed" ? "已完成" : "失败"}</small>
             </div>
             <span className={`review-risk-pill ${review.risk}`}>{contentRiskLabel(review.risk)} · {review.score}/100</span>
           </div>
@@ -4334,10 +4416,16 @@ function ContentReviewList({ reviews, openArtifact }: { reviews: ContentReviewRu
             {!review.issues.length && <span>未发现明显风险。</span>}
             {review.issues.length > 3 && <span>另有 {review.issues.length - 3} 个问题，打开报告查看完整清单。</span>}
           </div>
-          <button className="ghost-button compact" onClick={() => review.artifactId && openArtifact(review.artifactId)} disabled={!review.artifactId}>
-            <FileText size={14} />
-            打开完整报告
-          </button>
+          <div className="button-row">
+            <button className="ghost-button compact" onClick={() => review.artifactId && openArtifact(review.artifactId)} disabled={!review.artifactId}>
+              <FileText size={14} />
+              打开完整报告
+            </button>
+            <button className="ghost-button compact" onClick={() => loadReviewForRereview(review)}>
+              <RefreshCw size={14} />
+              载入修改稿再审
+            </button>
+          </div>
         </div>
       ))}
       {!reviews.length && <EmptyState text="暂无审稿结果" />}
@@ -5207,15 +5295,20 @@ function ArtifactList({
 
 function AiWorkbenchPage(props: {
   activeJob?: SearchJob;
+  hasCurrentJob: boolean;
   artifacts: AiArtifact[];
   reports: AiReport[];
+  resourceScope: AiResourceScope;
+  setResourceScope: (scope: AiResourceScope) => void;
   reportFocus: string;
   setReportFocus: (value: string) => void;
   createReport: () => Promise<void>;
   deleteReport: (reportId: string) => Promise<void>;
   deleteArtifact: (artifactId: string) => Promise<void>;
   selectedArtifactId: string;
-  setSelectedArtifactId: (value: string) => void;
+  openedArtifactSnapshot: AiArtifact | null;
+  openArtifact: (artifactId: string, artifact?: AiArtifact) => void;
+  clearSelectedArtifact: () => void;
   selectedReportId: string;
   setSelectedReportId: (value: string) => void;
   prompts: AiPromptInfo[];
@@ -5226,8 +5319,11 @@ function AiWorkbenchPage(props: {
   runCustomPrompt: (promptId: string, focus?: string, options?: RunWorkflowOptions) => Promise<AiArtifact | undefined>;
   busy: string;
 }) {
-  const selectedArtifact = props.artifacts.find((artifact) => artifact.id === props.selectedArtifactId);
+  const selectedArtifact = resolveSelectedAiArtifact(props.artifacts, props.selectedArtifactId, props.openedArtifactSnapshot);
   const selectedReport = props.reports.find((report) => report.id === props.selectedReportId);
+  const selectedArtifactOutsideScope = Boolean(
+    selectedArtifact && props.resourceScope === "current" && !props.artifacts.some((artifact) => artifact.id === selectedArtifact.id)
+  );
   const preview: ReaderPreview | undefined =
     selectedArtifact
       ? {
@@ -5254,12 +5350,11 @@ function AiWorkbenchPage(props: {
           }
         : undefined;
   const selectArtifact = (artifactId: string) => {
-    props.setSelectedArtifactId(artifactId);
-    props.setSelectedReportId("");
+    props.openArtifact(artifactId, props.artifacts.find((artifact) => artifact.id === artifactId));
   };
   const selectReport = (reportId: string) => {
     props.setSelectedReportId(reportId);
-    props.setSelectedArtifactId("");
+    props.clearSelectedArtifact();
   };
   const selectedArtifactWorkflow = selectedArtifact && isAiWorkflowKey(selectedArtifact.workflowKey) ? selectedArtifact.workflowKey : undefined;
   return (
@@ -5270,9 +5365,15 @@ function AiWorkbenchPage(props: {
           <div className="ai-left-section">
             <div className="section-mini-head">
               <strong>产物与报告</strong>
-              <div className="resource-count-row">
-                <span>产物 {props.artifacts.length}</span>
-                <span>报告 {props.reports.length}</span>
+              <div className="ai-resource-scope-row">
+                <div className="button-row" aria-label="AI 产物范围">
+                  <button className={`ghost-button compact ${props.resourceScope === "all" ? "active" : ""}`} onClick={() => props.setResourceScope("all")}>全部产物</button>
+                  <button className={`ghost-button compact ${props.resourceScope === "current" ? "active" : ""}`} onClick={() => props.setResourceScope("current")} disabled={!props.hasCurrentJob}>当前任务</button>
+                </div>
+                <div className="resource-count-row">
+                  <span>产物 {props.artifacts.length}</span>
+                  <span>报告 {props.reports.length}</span>
+                </div>
               </div>
             </div>
             <div className="resource-list">
@@ -5340,13 +5441,15 @@ function AiWorkbenchPage(props: {
         preview={preview}
         selectedArtifact={selectedArtifact}
         selectedArtifactWorkflow={selectedArtifactWorkflow}
+        selectedArtifactOutsideScope={selectedArtifactOutsideScope}
+        showAllArtifacts={() => props.setResourceScope("all")}
         openPrompt={props.openPrompt}
         runWorkflow={props.runWorkflow}
         openCustomPrompt={props.openCustomPrompt}
         runCustomPrompt={props.runCustomPrompt}
         busy={props.busy}
         close={() => {
-          props.setSelectedArtifactId("");
+          props.clearSelectedArtifact();
           props.setSelectedReportId("");
         }}
       />
@@ -5403,6 +5506,8 @@ function ArtifactReader({
   preview,
   selectedArtifact,
   selectedArtifactWorkflow,
+  selectedArtifactOutsideScope,
+  showAllArtifacts,
   openPrompt,
   runWorkflow,
   openCustomPrompt,
@@ -5413,6 +5518,8 @@ function ArtifactReader({
   preview?: ReaderPreview;
   selectedArtifact?: AiArtifact;
   selectedArtifactWorkflow?: AiWorkflowKey;
+  selectedArtifactOutsideScope: boolean;
+  showAllArtifacts: () => void;
   openPrompt: (key: AiWorkflowKey) => void;
   runWorkflow: RunWorkflow;
   openCustomPrompt: (promptId: string) => void;
@@ -5470,7 +5577,15 @@ function ArtifactReader({
       />
       {preview ? (
         <>
-          <ContextBadgeRow items={preview.meta} />
+          <div className="artifact-reader-context">
+            {selectedArtifactOutsideScope && (
+              <div className="artifact-scope-notice">
+                <span>当前打开的产物不在“当前任务”范围内，正文会继续保留。</span>
+                <button className="ghost-button compact" onClick={showAllArtifacts}>查看全部产物</button>
+              </div>
+            )}
+            <ContextBadgeRow items={preview.meta} />
+          </div>
           <div className="artifact-reader-body">
             <MarkdownView content={preview.markdown} />
           </div>
@@ -5883,8 +5998,8 @@ function GoalRunTimeline({
         <input value={sourceInput} onChange={(event) => setSourceInput(event.target.value)} placeholder="补充官网、媒体或视频资料链接" />
         <button className="ghost-button compact" onClick={() => void submitSources()} disabled={!sourceInput.trim() || busy === "assistant-chat" || goalRun.status === "running" || goalRun.status === "waiting"}>添加资料</button>
       </div>
-      {goalRun.status === "completed" && goalRun.artifactIds[0] && (
-        <button className="ghost-button full" onClick={() => onOpenArtifacts(goalRun.artifactIds[0]!)}>
+      {goalRun.status === "completed" && goalPrimaryArtifactId(goalRun) && (
+        <button className="ghost-button full" onClick={() => onOpenArtifacts(goalPrimaryArtifactId(goalRun))}>
           <FileText size={14} />
           查看研究档案与终稿
         </button>
@@ -5932,8 +6047,8 @@ function OrchestrationTimeline({
               查看任务
             </button>
           )}
-          {orchestration.artifactIds.length > 0 && (
-            <button className="ghost-button compact" onClick={() => onOpenArtifacts(orchestration.artifactIds[orchestration.artifactIds.length - 1]!)}>
+          {orchestrationLatestArtifactId(orchestration) && (
+            <button className="ghost-button compact" onClick={() => onOpenArtifacts(orchestrationLatestArtifactId(orchestration))}>
               打开产物
             </button>
           )}
@@ -6863,7 +6978,7 @@ function isAiWorkflowKey(value: AiArtifact["workflowKey"]): value is AiWorkflowK
   return value !== "assistant";
 }
 
-function playbookToForm(playbook: ContentPlaybook): ContentPlaybookForm {
+export function playbookToForm(playbook: ContentPlaybook): ContentPlaybookForm {
   return {
     name: playbook.name,
     productName: playbook.productName,
@@ -6871,9 +6986,12 @@ function playbookToForm(playbook: ContentPlaybook): ContentPlaybookForm {
     forbiddenTerms: playbook.forbiddenTerms.join(", "),
     sensitiveClaims: playbook.sensitiveClaims.join(", "),
     allowedSellingPoints: playbook.allowedSellingPoints.join(", "),
+    requiredSections: playbook.requiredSections.join(", "),
+    toneWords: playbook.toneWords.join(", "),
     personas: playbook.personas.join(", "),
     scenarios: playbook.scenarios.join(", "),
-    tags: playbook.tags.join(", ")
+    tags: playbook.tags.join(", "),
+    replacements: formatReplacementRules(playbook.replacements)
   };
 }
 
@@ -6892,7 +7010,7 @@ function projectToForm(project: ContentProject): ContentProjectForm {
 
 export function applyContentPlaybookTemplate(form: ContentPlaybookForm, templateKey: ContentPlaybookTemplateKey): ContentPlaybookForm {
   const template = contentPlaybookTemplates.find((item) => item.key === templateKey) ?? contentPlaybookTemplates[0];
-  const productName = form.productName.trim() || template.form.productName;
+  const productName = template.key === "specialty" ? template.form.productName : form.productName.trim() || template.form.productName;
   return {
     ...template.form,
     productName
@@ -6944,7 +7062,7 @@ function contentProjectInputFromForm(form: ContentProjectForm): ContentProjectIn
   };
 }
 
-function contentPlaybookInputFromForm(form: ContentPlaybookForm) {
+export function contentPlaybookInputFromForm(form: ContentPlaybookForm): ContentPlaybookInput {
   return {
     name: form.name,
     productName: form.productName,
@@ -6952,10 +7070,74 @@ function contentPlaybookInputFromForm(form: ContentPlaybookForm) {
     forbiddenTerms: splitTextList(form.forbiddenTerms),
     sensitiveClaims: splitTextList(form.sensitiveClaims),
     allowedSellingPoints: splitTextList(form.allowedSellingPoints),
+    requiredSections: splitTextList(form.requiredSections),
+    toneWords: splitTextList(form.toneWords),
     personas: splitTextList(form.personas),
     scenarios: splitTextList(form.scenarios),
-    tags: splitTextList(form.tags)
+    tags: splitTextList(form.tags),
+    replacements: parseReplacementRules(form.replacements)
   };
+}
+
+function formatReplacementRules(rules: ReadonlyArray<{ from: string; to: string; reason?: string }>): string {
+  return JSON.stringify(rules);
+}
+
+export function parseReplacementRules(value: string): ContentPlaybookInput["replacements"] {
+  if (!value.trim()) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    throw new Error("替换规则必须是合法 JSON 数组");
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("替换规则必须是 JSON 数组");
+  }
+  return parsed.map((item, index) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`替换规则第 ${index + 1} 条必须包含字符串 from 和 to`);
+    }
+    const rule = item as { from?: unknown; to?: unknown; reason?: unknown };
+    if (typeof rule.from !== "string" || typeof rule.to !== "string" || (rule.reason !== undefined && typeof rule.reason !== "string")) {
+      throw new Error(`替换规则第 ${index + 1} 条必须包含字符串 from 和 to`);
+    }
+    return { from: rule.from, to: rule.to, ...(rule.reason === undefined ? {} : { reason: rule.reason }) };
+  });
+}
+
+export function contentReviewToForm(review: Pick<ContentReviewRun, "revisedTitle" | "revisedBody" | "revisedTags">): ContentReviewForm {
+  return {
+    title: review.revisedTitle,
+    body: review.revisedBody,
+    tags: review.revisedTags.join(", ")
+  };
+}
+
+export function contentReviewRuleSummary(playbook?: Pick<ContentPlaybook, "name" | "productName" | "forbiddenTerms" | "sensitiveClaims">): ContentReviewRuleSummary {
+  if (playbook) {
+    const usesSpecialtyPolicy = playbook.productName === WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName;
+    return {
+      label: playbook.name,
+      forbiddenTermCount: usesSpecialtyPolicy
+        ? new Set([...playbook.forbiddenTerms, ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms]).size
+        : playbook.forbiddenTerms.length,
+      sensitiveClaimCount: usesSpecialtyPolicy
+        ? new Set([...playbook.sensitiveClaims, ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims]).size
+        : playbook.sensitiveClaims.length
+    };
+  }
+  return {
+    label: DEFAULT_CONTENT_REVIEW_RULE_LABEL,
+    forbiddenTermCount: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms.length,
+    sensitiveClaimCount: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims.length
+  };
+}
+
+export function canSelectPromptKey(currentKey: AiWorkflowKey, targetKey: AiWorkflowKey, discardConfirmed: boolean): boolean {
+  return currentKey === targetKey || discardConfirmed;
 }
 
 function briefFromForm(form: ContentBriefForm) {
@@ -7183,6 +7365,40 @@ export function prependUniqueById<T extends { id: string }>(items: T[], nextItem
     return true;
   });
   return [...uniqueNext, ...items.filter((item) => !nextIds.has(item.id))];
+}
+
+export function normalizeAiResourceScope(scope: AiResourceScope, activeJobId: string): AiResourceScope {
+  return scope === "current" && !activeJobId ? "all" : scope;
+}
+
+export function aiResourceJobId(scope: AiResourceScope, activeJobId: string): string | undefined {
+  return normalizeAiResourceScope(scope, activeJobId) === "current" ? activeJobId : undefined;
+}
+
+export function resolveSelectedAiArtifact(
+  artifacts: AiArtifact[],
+  selectedArtifactId: string,
+  openedArtifactSnapshot: AiArtifact | null
+): AiArtifact | undefined {
+  return artifacts.find((artifact) => artifact.id === selectedArtifactId) ??
+    (openedArtifactSnapshot?.id === selectedArtifactId ? openedArtifactSnapshot : undefined);
+}
+
+export async function loadArtifactForOpen(
+  artifacts: AiArtifact[],
+  artifactId: string,
+  loadById: (artifactId: string) => Promise<AiArtifact>,
+  artifactHint?: AiArtifact
+): Promise<AiArtifact> {
+  return artifactHint ?? artifacts.find((artifact) => artifact.id === artifactId) ?? await loadById(artifactId);
+}
+
+export function goalPrimaryArtifactId(goalRun: Pick<AiGoalRun, "artifactIds">): string {
+  return goalRun.artifactIds[0] ?? "";
+}
+
+export function orchestrationLatestArtifactId(orchestration: Pick<AiOrchestration, "artifactIds">): string {
+  return orchestration.artifactIds[orchestration.artifactIds.length - 1] ?? "";
 }
 
 function readStoredPosition(key: string, fallback: { x: number; y: number }): { x: number; y: number } {

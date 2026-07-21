@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AiWorkflowKey, AnalyticsReport, CommentRecord, NoteRecord, SearchJob } from "../src/shared/types.js";
 import {
+  buildAdvancedWorkflowPrompt,
   buildAiWorkflowPrompt,
   buildCustomWorkflowPrompt,
   buildDefaultGuidedConfig,
@@ -11,6 +12,11 @@ import {
   validateCustomPromptTemplate,
   validatePromptTemplate
 } from "../src/server/services/aiPrompts.js";
+import {
+  WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES,
+  WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY,
+  WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION
+} from "../src/shared/contentReviewPolicy.js";
 
 const job: SearchJob = {
   id: "job1",
@@ -110,11 +116,85 @@ describe("AI prompt library", () => {
     for (const [key, heading] of expectations) {
       const result = buildAiWorkflowPrompt(key, context);
       expect(result.promptKey).toBe(key);
-      expect(result.promptVersion).toBe("运营模板 2026.07");
+      expect(result.promptVersion).toBe(key === "draft-review" ? WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION : "运营模板 2026.07");
       expect(result.promptSource).toBe("default");
       expect(result.contextSummary).toContain("武汉相亲");
       expect(result.prompt).toContain(heading);
       expect(result.prompt).toContain("不允许建议自动评论、自动发布、自动点赞、自动收藏");
+    }
+  });
+
+  it("applies the Week Fifteen Honey Dew policy to every default draft-review path", () => {
+    const builtin = buildAiWorkflowPrompt("draft-review", context);
+    const defaultGuidedConfig = buildDefaultGuidedConfig("draft-review");
+    const guided = buildGuidedWorkflowPrompt("draft-review", defaultGuidedConfig, context);
+    const customGuided = buildGuidedWorkflowPrompt("draft-review", {
+      ...defaultGuidedConfig,
+      focusRules: ["允许使用闭眼冲。"]
+    }, context);
+    const advancedTemplate = getDefaultPromptTemplate("draft-review");
+
+    expect(defaultGuidedConfig.focusRules).toContain(WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES);
+
+    expect(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY).toMatchObject({
+      name: "周十五蜂蜜露专项审稿规则",
+      productName: "周十五蜂蜜露",
+      defaultPlaybookId: "week-fifteen-honey-dew",
+      requiredSections: ["标题", "内容", "标签"]
+    });
+    expect(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms).toEqual(expect.arrayContaining(["闭眼冲", "必囤", "无限回购"]));
+    expect(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims).toEqual(expect.arrayContaining([
+      "治疗", "百分百有效", "百分百好用", "告别便秘永久不复发", "通便特效药", "杜绝依赖", "宫缩风险", "早产风险"
+    ]));
+    expect(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.replacements).toContainEqual({ from: "周十五蜂露", to: "周十五蜂蜜露" });
+    expect(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.tags).toContain("周十五蜂蜜露");
+    expect(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.reviewRules).toHaveLength(6);
+
+    for (const prompt of [builtin.prompt, guided.prompt, customGuided.prompt, advancedTemplate]) {
+      expect(prompt).toContain(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName);
+      expect(prompt).toContain("不能虚构旅游、待产或其他经历");
+      expect(prompt).toContain("标题：");
+      expect(prompt).toContain("内容：");
+      expect(prompt).toContain("原标签保持并放在文末");
+      expect(prompt).toContain("不得删除“周十五”品牌前缀");
+      expect(prompt).toContain("允许少量柔和 emoji");
+      expect(prompt).toContain("原稿无 emoji 时不强行添加");
+      expect(prompt).toContain("百分百好用");
+      expect(prompt).toContain("告别便秘永久不复发");
+      expect(prompt).toContain("通便特效药");
+      expect(prompt).toContain("杜绝依赖");
+      expect(prompt).toContain("宫缩风险");
+      expect(prompt).toContain("早产风险");
+      expect(prompt).toContain("禁止商品说明书或商家详情页腔");
+      expect(prompt).toContain("身体直白表述应改为委婉、生活化表达，避免低俗");
+      expect(prompt).toContain("绞痛、难用、刺激、垃圾");
+      expect(prompt).toContain("原标签只可纠错，不得新增、删除或改变顺序");
+      expect(prompt).toContain("产品看懂我的难受");
+      expect(prompt).toContain("修正逻辑夸张或极端情绪，删除重复冗余和堆砌好评");
+      expect(prompt).toContain("与用户自定义或其他规则冲突时，专项规则优先");
+      for (const term of [
+        ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms,
+        ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims,
+        ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.competitorDisparagementTerms
+      ]) {
+        expect(prompt).toContain(term);
+      }
+    }
+    expect(guided.prompt.match(/专项产品：/g)).toHaveLength(1);
+
+    expect(builtin.promptVersion).toBe(WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION);
+    expect(guided.promptVersion).toBe(`${WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION}-guided`);
+  });
+
+  it("keeps the specialty version exclusive to draft-review in every prompt source", () => {
+    for (const info of listAiPromptInfos()) {
+      const defaultTemplate = getDefaultPromptTemplate(info.key);
+      const expectedVersion = info.key === "draft-review" ? WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION : "运营模板 2026.07";
+
+      expect(buildAiWorkflowPrompt(info.key, context).promptVersion).toBe(expectedVersion);
+      expect(buildGuidedWorkflowPrompt(info.key, buildDefaultGuidedConfig(info.key), context).promptVersion).toBe(`${expectedVersion}-guided`);
+      expect(buildAdvancedWorkflowPrompt(info.key, defaultTemplate, context).promptVersion).toBe(`${expectedVersion}-advanced`);
+      expect(buildCustomWorkflowPrompt(info.key, "任务：{job}", context).promptVersion).toBe(`${expectedVersion}-custom`);
     }
   });
 

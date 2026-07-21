@@ -2825,6 +2825,45 @@ body {
   margin-bottom: 0;
 }
 
+.ai-resource-scope-row {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.ai-resource-scope-row .button-row {
+  gap: 4px;
+}
+
+.ai-resource-scope-row .ghost-button {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.artifact-reader-context {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.artifact-scope-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #f6c86f;
+  border-radius: 8px;
+  color: #7a4d00;
+  background: #fff8e8;
+  font-size: 12px;
+}
+
+.artifact-scope-notice span {
+  line-height: 1.45;
+}
+
 .ai-left-section .resource-list,
 .ai-left-section .prompt-mini-list {
   flex: 1 1 auto;

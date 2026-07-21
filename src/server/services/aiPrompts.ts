@@ -12,6 +12,10 @@ import type {
   NoteRecord,
   SearchJob
 } from "../../shared/types.js";
+import {
+  WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES,
+  WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION
+} from "../../shared/contentReviewPolicy.js";
 
 export const AI_PROMPT_VERSION = "运营模板 2026.07";
 export const AI_ASSISTANT_PROMPT_VERSION = "助手模板 2026.07";
@@ -100,7 +104,7 @@ const promptInfos: AiPromptInfo[] = [
     key: "draft-review",
     title: "种草笔记审稿",
     description: "按平台表达风险和产品规则检查草稿，并给出保留原意的最小修改版。",
-    version: AI_PROMPT_VERSION,
+    version: WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION,
     inputRequirements: ["原始笔记", "产品规则", "禁用词", "替代表达", "当前任务上下文"],
     outputSections: ["审稿结论", "问题清单", "修改原则", "最小修改版", "标签建议", "二次复核"]
   },
@@ -154,7 +158,7 @@ export function buildAiWorkflowPrompt(key: AiWorkflowKey, context: AiPromptConte
     promptKey: key,
     promptTitle: info.title,
     promptSource: "default",
-    promptVersion: AI_PROMPT_VERSION,
+    promptVersion: workflowPromptVersion(key),
     contextSummary: summarizeContext(context)
   };
 }
@@ -166,7 +170,7 @@ export function buildCustomWorkflowPrompt(key: AiWorkflowKey, template: string, 
     promptKey: key,
     promptTitle: info.title,
     promptSource: "custom",
-    promptVersion: `${AI_PROMPT_VERSION}-custom`,
+    promptVersion: `${workflowPromptVersion(key)}-custom`,
     contextSummary: summarizeContext(context)
   };
 }
@@ -178,7 +182,7 @@ export function buildAdvancedWorkflowPrompt(key: AiWorkflowKey, template: string
     promptKey: key,
     promptTitle: info.title,
     promptSource: "advanced",
-    promptVersion: `${AI_PROMPT_VERSION}-advanced`,
+    promptVersion: `${workflowPromptVersion(key)}-advanced`,
     contextSummary: summarizeContext(context)
   };
 }
@@ -186,13 +190,15 @@ export function buildAdvancedWorkflowPrompt(key: AiWorkflowKey, template: string
 export function buildDefaultGuidedConfig(key: AiWorkflowKey): AiPromptGuidedConfig {
   const info = getPromptInfo(key);
   const enabledVariables = templateVariableKeys(defaultPromptTemplates[key]);
+  const reviewRules = key === "draft-review" ? [WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES] : [];
   return {
     role: `${info.title}助手`,
     objective: info.description,
     focusRules: [
       "只基于系统读取的数据输出结论，不编造数字、作者、评论或平台规则。",
       "把数据结论、用户需求和运营建议分开说明。",
-      "数据不足时明确标注缺口，不强行下判断。"
+      "数据不足时明确标注缺口，不强行下判断。",
+      ...reviewRules
     ],
     forbiddenRules: [
       "不建议自动发布、自动评论、自动点赞、自动收藏。",
@@ -216,7 +222,7 @@ export function buildGuidedWorkflowPrompt(
     promptKey: key,
     promptTitle: info.title,
     promptSource: "guided",
-    promptVersion: `${AI_PROMPT_VERSION}-guided`,
+    promptVersion: `${workflowPromptVersion(key)}-guided`,
     contextSummary: summarizeContext(context)
   };
 }
@@ -536,6 +542,8 @@ const defaultPromptTemplates: Record<AiWorkflowKey, string> = {
 质量检查：
 - 每条建议必须具体到标题、段落、封面、评论或下一篇选题。`,
   "draft-review": `你是一名小红书种草笔记审稿员。你的工作是在保留原稿真实感的前提下，检查风险并给出最小修改版。
+
+专项规则：${WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES}
 
 工作目标：
 - 找出广告腔、敏感功效、绝对化表达、强促销、人设不一致和格式问题。
@@ -982,6 +990,8 @@ function buildNoteAnalysisPrompt(context: AiPromptContext, focus?: string): stri
 function buildDraftReviewPrompt(context: AiPromptContext, focus?: string): string {
   return `${baseInstruction("小红书 AI 审稿员")}
 
+专项规则：${WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES}
+
 你的任务：
 对用户提供的小红书笔记原稿做审稿和最小改稿。不要把原稿重写成硬广，要保留人设、经历和叙事顺序。
 
@@ -1179,7 +1189,12 @@ function renderGuidedPrompt(key: AiWorkflowKey, config: AiPromptGuidedConfig, co
   const forbiddenRules = config.forbiddenRules.filter((item) => item.trim());
   const outputSections = config.outputSections.filter((item) => item.trim());
 
-  return `${baseInstruction(config.role.trim() || `${info.title}助手`)}
+  const hasConfiguredReviewPolicy = [...focusRules, ...forbiddenRules].includes(WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES);
+  const reviewPolicy = key === "draft-review" && !hasConfiguredReviewPolicy
+    ? `\n专项规则：${WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES}\n`
+    : "";
+
+  return `${baseInstruction(config.role.trim() || `${info.title}助手`)}${reviewPolicy}
 
 工作目标：
 ${config.objective.trim() || info.description}
@@ -1240,6 +1255,10 @@ function closestPromptVariable(key: string): string | undefined {
 
 function getPromptInfo(key: AiWorkflowKey): AiPromptInfo {
   return promptInfos.find((info) => info.key === key) ?? promptInfos[0];
+}
+
+function workflowPromptVersion(key: AiWorkflowKey): string {
+  return key === "draft-review" ? WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION : AI_PROMPT_VERSION;
 }
 
 function ratio(numerator: number, denominator: number): number {

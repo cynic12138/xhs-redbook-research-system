@@ -34,6 +34,11 @@ import type {
   SearchJob
 } from "../../shared/types.js";
 import { createId, nowIso, unique } from "../../shared/utils.js";
+import {
+  WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES,
+  WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION,
+  WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY
+} from "../../shared/contentReviewPolicy.js";
 import { store } from "../storage/localStore.js";
 import { getEnvValue } from "../utils/env.js";
 
@@ -94,6 +99,12 @@ const defaultSensitiveClaims = [
 const absolutePatterns = [/国家级/u, /最高级/u, /最佳/u, /顶级/u, /第一品牌/u, /百分百/u, /永久/u, /立刻见效/u];
 const hardSellPatterns = [/马上下单/u, /赶紧买/u, /闭眼冲/u, /不买后悔/u, /链接在/u, /全网最低/u];
 const maxPlaybookRevisionsPerPlaybook = 20;
+const protectedSpecialtyProduct = "\uE000";
+const contextualCompetitorTerms = ["绞痛", "难用", "刺激", "垃圾"];
+const competitorContextWords = ["别的", "其他", "其它", "竞品", "同类", "别家", "其他开塞露"];
+const compoundSensitivePhrases = ["通便特效药", "告别便秘永久不复发", "百分百好用"];
+const contrastWords = ["不过", "然而", "可是", "但"];
+const sensitiveClaimDisclaimer = "这些只是我的个人使用感受，不能当成功效承诺";
 
 export async function listContentPlaybooks(localStore: StoreLike = store): Promise<ContentPlaybook[]> {
   return localStore.read("contentPlaybooks");
@@ -441,11 +452,12 @@ export async function reviewContentDraft(input: ContentReviewInput, localStore: 
     },
     validate: isDraftText
   }, localStore);
-  const revised = modelResult.value ?? {
+  const modelDraft = modelResult.value ?? {
     title: localReview.revisedTitle,
     body: localReview.revisedBody,
     tags: localReview.revisedTags
   };
+  const revised = normalizeReviewedDraft(input, modelDraft, playbook);
   const secondScan = scanContentDraft({
     ...input,
     title: revised.title,
@@ -462,13 +474,13 @@ export async function reviewContentDraft(input: ContentReviewInput, localStore: 
     draftId: input.draftId,
     originalTitle: input.title,
     originalBody: input.body,
-    originalTags: normalizeList(input.tags, []),
+    originalTags: normalizeTags(input.tags),
     risk: localReview.risk,
     score: localReview.score,
     issues: localReview.issues,
     revisedTitle: revised.title,
     revisedBody: revised.body,
-    revisedTags: unique(revised.tags.map(cleanTag).filter(Boolean)).slice(0, 12),
+    revisedTags: revised.tags,
     modelId: modelResult.modelId,
     source: modelResult.source,
     status: modelResult.status,
@@ -485,6 +497,7 @@ export async function reviewContentDraft(input: ContentReviewInput, localStore: 
     status: modelResult.status,
     modelId: modelResult.modelId,
     promptTitle: "AI 审稿员",
+    promptVersion: usesSpecialtyPolicy(playbook) ? WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION : "xhs-content-studio-v1",
     contextSummary: summarizeContentContext(playbook, context)
   }, localStore);
   const savedReview = { ...review, artifactId: artifact.id, updatedAt: nowIso() };
@@ -503,7 +516,7 @@ export async function reviewContentDraftBatch(input: ContentReviewBatchInput, lo
       ...item,
       title: item.title?.trim(),
       body: item.body.trim(),
-      tags: normalizeList(item.tags, [])
+      tags: normalizeTags(item.tags)
     }))
     .filter((item) => item.body);
   const selectedItems = safeItems.slice(0, 20);
@@ -536,15 +549,33 @@ export function scanContentDraft(input: Pick<ContentReviewInput, "title" | "body
 } {
   const title = input.title?.trim() ?? "";
   const body = input.body.trim();
-  const tags = normalizeList(input.tags, []);
+  const tags = normalizeTags(input.tags);
   const text = `${title}\n${body}\n${tags.join(" ")}`;
   const issues: ContentReviewIssue[] = [];
+  const specialtyPolicyEnabled = usesSpecialtyPolicy(playbook);
 
-  for (const term of playbook.forbiddenTerms) {
+  const forbiddenTerms = specialtyPolicyEnabled
+    ? orderTermsByLength(unique([...playbook.forbiddenTerms, ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms]))
+    : orderTermsByLength(playbook.forbiddenTerms);
+  const sensitiveClaims = specialtyPolicyEnabled
+    ? orderTermsByLength(unique([...playbook.sensitiveClaims, ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims]))
+    : orderTermsByLength(playbook.sensitiveClaims);
+  for (const term of forbiddenTerms) {
     addTermIssue(issues, text, term, "warning", "广告话术", `避免使用“${term}”这类强营销或网感过重表达。`, replacementFor(term, playbook));
   }
-  for (const term of playbook.sensitiveClaims) {
+  for (const term of sensitiveClaims) {
     addTermIssue(issues, text, term, "blocker", "敏感功效", `“${term}”容易被理解为医疗或绝对功效承诺。`, replacementFor(term, playbook) || "改成真实体验、使用感或生活场景描述。");
+  }
+  if (specialtyPolicyEnabled) {
+    const strongCompetitorTerms = WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.competitorDisparagementTerms.filter((term) => !contextualCompetitorTerms.includes(term));
+    for (const term of strongCompetitorTerms) {
+      addTermIssue(issues, text, term, "warning", "竞品贬低", `避免使用“${term}”这类贬低竞品或同类的表达。`, "删除贬低或比较性表述，只保留自己的真实体验。");
+    }
+    for (const term of contextualCompetitorTerms) {
+      if (hasCompetitorDisparagementContext(text, term)) {
+        issues.push(createIssue("warning", "竞品贬低", `避免在竞品或同类语境中使用“${term}”这类贬低表达。`, term, "删除贬低或比较性表述，只保留自己的真实体验。"));
+      }
+    }
   }
   for (const pattern of absolutePatterns) {
     const match = text.match(pattern);
@@ -571,12 +602,11 @@ export function scanContentDraft(input: Pick<ContentReviewInput, "title" | "body
     issues.push(createIssue("info", "标签缺失", "缺少标签。", undefined, "补充产品、人设、场景和内容主题标签。"));
   }
 
-  const revisedTitle = reviseText(title || localTitle(playbook.productName, "真实分享"), playbook);
-  const revisedBody = reviseText(body, playbook);
-  const revisedTags = unique([
-    ...tags.map((tag) => reviseText(cleanTag(tag), playbook)),
-    ...playbook.tags.slice(0, 4)
-  ].map(cleanTag).filter(Boolean)).slice(0, 10);
+  const revisedTitle = specialtyPolicyEnabled ? reviseSpecialtyText(title, playbook) : reviseText(title, playbook);
+  const revisedBody = specialtyPolicyEnabled ? reviseSpecialtyText(body, playbook) : reviseText(body, playbook);
+  const revisedTags = specialtyPolicyEnabled
+    ? reviseReviewTags(input.tags)
+    : normalizeTags(input.tags);
   const score = scoreForIssues(issues);
   return {
     risk: riskForIssues(issues, score),
@@ -639,19 +669,19 @@ export async function runContentAssistant(input: {
 function createDefaultPlaybook(): ContentPlaybook {
   const now = nowIso();
   return {
-    id: "playbook_default_xhs_seed",
-    name: "通用种草审稿规则",
-    productName: "产品",
-    category: "小红书种草",
-    forbiddenTerms: defaultForbiddenTerms,
-    sensitiveClaims: defaultSensitiveClaims,
-    allowedSellingPoints: ["真实使用感", "生活场景", "携带方便", "温和表达", "个人体验"],
-    requiredSections: ["标题", "内容", "标签"],
-    toneWords: ["口语化", "真实分享", "生活化", "少广告感"],
-    personas: ["孕妈", "大学生", "上班族"],
-    scenarios: ["日常分享", "出门携带", "朋友推荐", "宿舍备用"],
-    tags: ["日常分享", "好物分享", "生活小物", "真实体验"],
-    replacements: defaultReplacements(),
+    id: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.defaultPlaybookId,
+    name: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.name,
+    productName: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName,
+    category: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.category,
+    forbiddenTerms: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms],
+    sensitiveClaims: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims],
+    allowedSellingPoints: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.allowedSellingPoints],
+    requiredSections: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.requiredSections],
+    toneWords: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.toneWords],
+    personas: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.personas],
+    scenarios: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.scenarios],
+    tags: [...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.tags],
+    replacements: WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.replacements.map((rule) => ({ ...rule })),
     createdAt: now,
     updatedAt: now
   };
@@ -678,7 +708,7 @@ function defaultReplacements(): ContentReplacementRule[] {
 
 async function resolvePlaybook(id: string | undefined, localStore: StoreLike): Promise<ContentPlaybook> {
   const playbooks = await listContentPlaybooks(localStore);
-  return (id ? playbooks.find((item) => item.id === id) : undefined) ?? playbooks[0] ?? createDefaultPlaybook();
+  return (id ? playbooks.find((item) => item.id === id) : undefined) ?? createDefaultPlaybook();
 }
 
 async function resolveProject(id: string | undefined, localStore: StoreLike): Promise<ContentProject | undefined> {
@@ -779,9 +809,12 @@ Brief：${JSON.stringify(brief)}
 }
 
 function buildReviewPrompt(input: ContentReviewInput, playbook: ContentPlaybook, context: ContentContext, issues: ContentReviewIssue[]): string {
+  const specialtyPolicy = usesSpecialtyPolicy(playbook)
+    ? `\n专项固定约束（优先级最高，不执行用户自定义 guided 或 advanced 规则）：\n${WEEK_FIFTEEN_HONEY_DEW_PROMPT_RULES}\n`
+    : "";
   return `你是小红书 AI 审稿员，请严格输出 JSON，不要 Markdown。
 
-任务：在保留原稿意图和人设的前提下做最小必要修改。
+任务：在保留原稿意图和人设的前提下做最小必要修改。${specialtyPolicy}
 
 规则库：${JSON.stringify(compactPlaybook(playbook))}
 原始标题：${input.title ?? ""}
@@ -882,6 +915,7 @@ async function createContentArtifact(
     status: AiArtifact["status"];
     modelId?: string;
     promptTitle: string;
+    promptVersion?: string;
     contextSummary: string;
   },
   localStore: StoreLike
@@ -900,7 +934,7 @@ async function createContentArtifact(
     promptKey: input.workflowKey === "draft-review" || input.workflowKey === "note-writing" ? input.workflowKey : undefined,
     promptTitle: input.promptTitle,
     promptSource: "default",
-    promptVersion: "xhs-content-studio-v1",
+    promptVersion: input.promptVersion ?? "xhs-content-studio-v1",
     contextSummary: input.contextSummary,
     createdAt: now,
     updatedAt: now
@@ -973,7 +1007,13 @@ ${review.revisedTags.map((tag) => `#${tag}`).join(" ")}
 
 - 核对产品事实、使用体验和素材授权。
 - 避免把个人体验写成普遍功效。
-- 不自动发布，发布前必须人工确认。`;
+- 不自动发布，发布前必须人工确认。
+
+## 可直接复制的最小修改版
+
+标题：${review.revisedTitle}
+内容：${review.revisedBody}
+${review.revisedTags.map((tag) => `#${tag}`).join(" ")}`;
 }
 
 function addTermIssue(
@@ -1010,18 +1050,64 @@ function createIssue(
 
 function reviseText(value: string, playbook: ContentPlaybook): string {
   let next = value;
-  for (const rule of playbook.replacements) {
+  for (const rule of orderReplacementsByLength(playbook.replacements)) {
     if (rule.from.trim()) {
       next = next.split(rule.from).join(rule.to);
     }
   }
-  for (const term of [...playbook.forbiddenTerms, ...playbook.sensitiveClaims]) {
+  for (const term of orderTermsByLength([...playbook.forbiddenTerms, ...playbook.sensitiveClaims])) {
     const replacement = replacementFor(term, playbook);
     if (replacement) {
       next = next.split(term).join(replacement);
     }
   }
   return next.replace(/!{2,}|！{2,}/g, "。").trim();
+}
+
+function reviseSpecialtyText(value: string, playbook: ContentPlaybook): string {
+  const specialtySafePlaybook: ContentPlaybook = {
+    ...playbook,
+    replacements: playbook.replacements.filter((rule) => rule.from !== "周十五蜂露" && rule.from !== WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName)
+  };
+  let next = value
+    .split("周十五蜂露").join(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName)
+    .split(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName).join(protectedSpecialtyProduct);
+  next = rewriteNegativeSensitiveClaimSentences(next);
+  next = reviseText(next, specialtySafePlaybook);
+  for (const rule of orderReplacementsByLength([...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.replacements])) {
+    next = next.split(rule.from).join(rule.to);
+  }
+  const strongCompetitorTerms = WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.competitorDisparagementTerms.filter((term) => !contextualCompetitorTerms.includes(term));
+  for (const term of orderTermsByLength([
+    ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.forbiddenTerms,
+    ...WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.sensitiveClaims,
+    ...strongCompetitorTerms
+  ])) {
+    const replacement = WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.replacements.find((rule) => rule.from === term)?.to ?? "";
+    next = next.split(term).join(replacement);
+  }
+  next = replaceContextualCompetitorFragments(next);
+  return next
+    .replace(/国家级|最高级|最佳|顶级|第一品牌|百分百|永久|立刻见效/gu, "")
+    .split(protectedSpecialtyProduct).join(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName)
+    .trim();
+}
+
+function normalizeReviewedDraft(input: ContentReviewInput, draft: DraftText, playbook: ContentPlaybook): DraftText {
+  const originalTitle = input.title?.trim() ?? "";
+  const specialtyPolicyEnabled = usesSpecialtyPolicy(playbook);
+  return {
+    title: originalTitle
+      ? (specialtyPolicyEnabled ? reviseSpecialtyText(draft.title, playbook) : reviseText(draft.title, playbook))
+      : "",
+    body: specialtyPolicyEnabled ? reviseSpecialtyText(draft.body, playbook) : reviseText(draft.body, playbook),
+    tags: specialtyPolicyEnabled ? reviseReviewTags(input.tags) : normalizeTags(input.tags)
+  };
+}
+
+function usesSpecialtyPolicy(playbook: ContentPlaybook): boolean {
+  return playbook.id === WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.defaultPlaybookId ||
+    playbook.productName === WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName;
 }
 
 function replacementFor(term: string, playbook: ContentPlaybook): string | undefined {
@@ -1067,6 +1153,14 @@ function normalizeList(values: string[] | undefined, fallback: string[]): string
   return unique(source.map((item) => item.trim()).filter(Boolean));
 }
 
+function normalizeTags(values: string[] | undefined): string[] {
+  return (values ?? []).map(cleanTag).filter(Boolean);
+}
+
+function reviseReviewTags(values: string[] | undefined): string[] {
+  return normalizeTags(values).map((tag) => tag.split("周十五蜂露").join(WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY.productName));
+}
+
 function normalizeReplacements(values: ContentReplacementRule[] | undefined, fallback: ContentReplacementRule[]): ContentReplacementRule[] {
   const source = values === undefined ? fallback : values;
   return source
@@ -1076,6 +1170,96 @@ function normalizeReplacements(values: ContentReplacementRule[] | undefined, fal
       reason: item.reason?.trim()
     }))
     .filter((item) => item.from && item.to);
+}
+
+function orderTermsByLength(terms: readonly string[]): string[] {
+  return [...terms].sort((left, right) => right.length - left.length);
+}
+
+function orderReplacementsByLength(replacements: readonly ContentReplacementRule[]): ContentReplacementRule[] {
+  return [...replacements].sort((left, right) => right.from.length - left.from.length);
+}
+
+function hasCompetitorDisparagementContext(text: string, term: string): boolean {
+  let offset = 0;
+  while (offset < text.length) {
+    const index = text.indexOf(term, offset);
+    if (index < 0) return false;
+    if (isCompetitorDisparagementOccurrence(text, term, index)) return true;
+    offset = index + term.length;
+  }
+  return false;
+}
+
+function isCompetitorDisparagementOccurrence(text: string, term: string, index: number): boolean {
+  if (term === "刺激" && text.slice(index + term.length).startsWith("味蕾")) return false;
+  const clauseStart = Math.max(
+    text.lastIndexOf("。", index - 1),
+    text.lastIndexOf("！", index - 1),
+    text.lastIndexOf("？", index - 1),
+    text.lastIndexOf("，", index - 1),
+    text.lastIndexOf("\n", index - 1),
+    index - 32
+  );
+  const prefix = text.slice(clauseStart + 1, index);
+  if (/(?:没有|并没有|不会|并无|不).{0,6}$/u.test(prefix)) return false;
+  return competitorContextWords.some((word) => prefix.includes(word));
+}
+
+function replaceContextualCompetitorFragments(value: string): string {
+  return value.replace(/[^。！？；;，\n]+[。！？；;，\n]?/gu, (fragment) => {
+    const punctuation = fragment.match(/[。！？；;，\n]$/u)?.[0] ?? "";
+    const clause = punctuation ? fragment.slice(0, -punctuation.length) : fragment;
+    let firstOccurrence = Number.POSITIVE_INFINITY;
+    for (const term of contextualCompetitorTerms) {
+      let offset = 0;
+      while (offset < clause.length) {
+        const index = clause.indexOf(term, offset);
+        if (index < 0) break;
+        if (isCompetitorDisparagementOccurrence(clause, term, index)) {
+          firstOccurrence = Math.min(firstOccurrence, index);
+          break;
+        }
+        offset = index + term.length;
+      }
+    }
+    if (!Number.isFinite(firstOccurrence)) return fragment;
+    const prefix = clause.slice(0, firstOccurrence);
+    const contextStart = competitorContextWords.reduce((latest, word) => Math.max(latest, prefix.lastIndexOf(word)), -1);
+    if (contextStart < 0) return fragment;
+    const contrastStart = contrastWords.reduce((earliest, word) => {
+      const index = clause.indexOf(word, firstOccurrence + 1);
+      return index >= 0 ? Math.min(earliest, index) : earliest;
+    }, Number.POSITIVE_INFINITY);
+    const safeSuffix = Number.isFinite(contrastStart) ? clause.slice(contrastStart) : "";
+    return `${clause.slice(0, contextStart)}同类产品的使用感受因人而异${safeSuffix}${punctuation}`;
+  });
+}
+
+function rewriteNegativeSensitiveClaimSentences(value: string): string {
+  let rewritten = value.replace(/[^。！？；;，,\n]+[。！？；;，,\n]?/gu, (fragment) => {
+    const punctuation = fragment.match(/[。！？；;，,\n]$/u)?.[0] ?? "";
+    const clause = punctuation ? fragment.slice(0, -punctuation.length) : fragment;
+    const hasBoundNegation = compoundSensitivePhrases.some((phrase) =>
+      new RegExp(`(?:不是|不能|没有|并非|不会|不可)(?:(?:真的|让人|明显的?|任何|完全|一定|再)\\s*){0,2}${phrase}`, "u").test(clause)
+    );
+    if (hasBoundNegation) return `${sensitiveClaimDisclaimer}${punctuation}`;
+    let revisedClause = clause;
+    for (const phrase of compoundSensitivePhrases) {
+      revisedClause = revisedClause.replace(
+        new RegExp(`(?:这个产品是|周十五蜂蜜露是|${protectedSpecialtyProduct}是|它是|这是)${phrase}`, "gu"),
+        "实际使用感受因人而异"
+      );
+    }
+    return revisedClause === clause ? fragment : `${revisedClause}${punctuation}`;
+  });
+  for (const separator of ["，", ",", "；", ";"]) {
+    const duplicated = `${sensitiveClaimDisclaimer}${separator}${sensitiveClaimDisclaimer}`;
+    while (rewritten.includes(duplicated)) {
+      rewritten = rewritten.split(duplicated).join(sensitiveClaimDisclaimer);
+    }
+  }
+  return rewritten;
 }
 
 function normalizeProjectStatus(value: ContentProjectStatus | undefined, fallback: ContentProjectStatus): ContentProjectStatus {
