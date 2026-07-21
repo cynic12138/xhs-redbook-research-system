@@ -4,6 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const pauseActiveJobsOnStartup = vi.fn(async () => undefined);
 const resumeActiveJobs = vi.fn(async () => undefined);
+const requiresLegacyImport = vi.fn(() => false);
+const closeRuntimeStorage = vi.fn();
+const getRuntimeStorage = vi.fn(() => ({ requiresLegacyImport }));
+const activateApplicationRuntime = vi.fn(async ({ resumeJobs = false }: { resumeJobs?: boolean } = {}) => {
+  if (resumeJobs) await resumeActiveJobs();
+  else await pauseActiveJobsOnStartup();
+});
+const deactivateApplicationRuntime = vi.fn(async () => undefined);
 
 vi.mock("../src/server/routes/api.js", () => {
   const api = express.Router();
@@ -20,8 +28,20 @@ vi.mock("../src/server/services/jobService.js", () => ({
   jobs: { pauseActiveJobsOnStartup, resumeActiveJobs }
 }));
 
+vi.mock("../src/server/storage/runtimeStorage.js", () => ({
+  closeRuntimeStorage,
+  getRuntimeStorage
+}));
+
+vi.mock("../src/server/runtime/applicationRuntime.js", () => ({
+  activateApplicationRuntime,
+  deactivateApplicationRuntime
+}));
+
 afterEach(() => {
   vi.clearAllMocks();
+  requiresLegacyImport.mockReturnValue(false);
+  getRuntimeStorage.mockImplementation(() => ({ requiresLegacyImport }));
 });
 
 describe("application server", () => {
@@ -35,9 +55,11 @@ describe("application server", () => {
       expect(await fetch(`${running.url}/api/health`).then((response) => response.json())).toEqual({ ok: true });
       expect(pauseActiveJobsOnStartup).toHaveBeenCalledOnce();
       expect(resumeActiveJobs).not.toHaveBeenCalled();
+      expect(activateApplicationRuntime).toHaveBeenCalledWith({ resumeJobs: false });
     } finally {
       await running.close();
     }
+    expect(deactivateApplicationRuntime).toHaveBeenCalledOnce();
   });
 
   it("resumes jobs only when explicitly requested", async () => {
@@ -51,6 +73,26 @@ describe("application server", () => {
     }
   });
 
+  it("fails startup when SQLite initialization fails instead of opening a broken app", async () => {
+    getRuntimeStorage.mockImplementationOnce(() => {
+      throw new Error("database migration failed");
+    });
+    const { startApplicationServer } = await import("../src/server/application.js");
+
+    await expect(startApplicationServer({ port: 0, resumeJobs: false })).rejects.toThrow("database migration failed");
+    expect(pauseActiveJobsOnStartup).not.toHaveBeenCalled();
+    expect(resumeActiveJobs).not.toHaveBeenCalled();
+  });
+
+  it("propagates startup job preparation failures and releases the opened storage", async () => {
+    pauseActiveJobsOnStartup.mockRejectedValueOnce(new Error("pause preparation failed"));
+    const { startApplicationServer } = await import("../src/server/application.js");
+
+    await expect(startApplicationServer({ port: 0, resumeJobs: false })).rejects.toThrow("pause preparation failed");
+    expect(closeRuntimeStorage).toHaveBeenCalledOnce();
+    expect(activateApplicationRuntime).toHaveBeenCalledOnce();
+  });
+
   it("returns JSON for unknown API routes", async () => {
     const { startApplicationServer } = await import("../src/server/application.js");
     const running = await startApplicationServer({ port: 0, resumeJobs: false });
@@ -58,6 +100,22 @@ describe("application server", () => {
       const response = await fetch(`${running.url}/api/missing`);
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual({ error: "API route not found" });
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("blocks every business API method while legacy data still requires import", async () => {
+    requiresLegacyImport.mockReturnValue(true);
+    const { startApplicationServer } = await import("../src/server/application.js");
+    const running = await startApplicationServer({ port: 0, resumeJobs: false });
+    try {
+      const response = await fetch(`${running.url}/api/health`);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining("旧版 JSON") });
+      expect(pauseActiveJobsOnStartup).not.toHaveBeenCalled();
+      expect(resumeActiveJobs).not.toHaveBeenCalled();
+      expect(activateApplicationRuntime).not.toHaveBeenCalled();
     } finally {
       await running.close();
     }
@@ -95,6 +153,8 @@ describe("application server", () => {
       expect(failure).toBeInstanceOf(Error);
       expect((failure as Error).message).toContain(`端口 ${address.port} 已被占用`);
       expect(((failure as Error & { cause?: { code?: string } }).cause)?.code).toBe("EADDRINUSE");
+      expect(pauseActiveJobsOnStartup).not.toHaveBeenCalled();
+      expect(activateApplicationRuntime).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve, reject) => blocker.close((error) => error ? reject(error) : resolve()));
     }

@@ -23,34 +23,41 @@ export class ApplicationStorage {
   }
 
   async status(): Promise<StorageStatus> {
-    const imported = this.database.connection.prepare(
-      "SELECT imported_at FROM legacy_imports ORDER BY imported_at DESC LIMIT 1"
-    ).get() as { imported_at: string } | undefined;
-    const legacyDataDetected = collectionNames.some((name) =>
-      existsSync(path.join(this.legacyDataDir, `${name}.json`))
-    );
-    const counts: Record<string, number> = {};
-    for (const name of collectionNames) {
-      const value = await this.store.read(name);
-      counts[name] = Array.isArray(value) ? value.length : 1;
-    }
+    const imported = this.latestImport();
+    const legacyDataDetected = this.hasLegacyData();
 
     return {
       engine: "sqlite",
       schemaVersion: this.database.schemaVersion,
       migrationState: imported
         ? "imported"
-        : this.store.isEmpty() && legacyDataDetected
-          ? "legacy-import-required"
+        : legacyDataDetected
+          ? this.store.isEmpty()
+            ? "legacy-import-required"
+            : "legacy-import-conflict"
           : "ready",
       legacyDataDetected,
       importedAt: imported?.imported_at,
-      counts
+      counts: this.store.collectionCounts()
     };
+  }
+
+  requiresLegacyImport(): boolean {
+    return !this.latestImport() && this.hasLegacyData();
   }
 
   close(): void {
     this.database.close();
+  }
+
+  private latestImport(): { imported_at: string } | undefined {
+    return this.database.connection.prepare(
+      "SELECT imported_at FROM legacy_imports ORDER BY imported_at DESC LIMIT 1"
+    ).get() as { imported_at: string } | undefined;
+  }
+
+  private hasLegacyData(): boolean {
+    return collectionNames.some((name) => existsSync(path.join(this.legacyDataDir, `${name}.json`)));
   }
 }
 

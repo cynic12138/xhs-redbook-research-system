@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { NotesQuery } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
 import { getRuntimePaths } from "../runtime/runtimePaths.js";
+import { activateApplicationRuntime } from "../runtime/applicationRuntime.js";
 import { getRuntimeStorage, store } from "../storage/runtimeStorage.js";
 import { saveCookieString, getCookieString } from "../utils/env.js";
 import { jobs } from "../services/jobService.js";
@@ -28,8 +29,7 @@ import {
   approveReplyAction,
   createReplyPlan,
   listReplyActions,
-  listReplyPlans,
-  startReplyWorker
+  listReplyPlans
 } from "../services/commentOps.js";
 import {
   chatWithAssistant,
@@ -103,7 +103,6 @@ import {
 } from "../services/contentStudioService.js";
 
 export const api = Router();
-startReplyWorker();
 
 const serverStartedAt = nowIso();
 
@@ -136,7 +135,13 @@ api.post("/system/legacy-import/preview", async (req, res, next) => {
 api.post("/system/legacy-import/execute", async (req, res, next) => {
   try {
     const input = legacyImportExecuteInput.parse(req.body);
-    res.json(await getRuntimeStorage().legacyImport.execute(input));
+    const result = await getRuntimeStorage().legacyImport.execute(input);
+    try {
+      await activateApplicationRuntime({ resumeJobs: false });
+    } catch (error) {
+      throw new Error("旧版数据已成功迁入 SQLite，但后台任务初始化失败，请重启应用。", { cause: error });
+    }
+    res.json(result);
   } catch (error) {
     next(error);
   }

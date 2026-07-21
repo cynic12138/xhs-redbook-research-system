@@ -4,8 +4,8 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import { getRuntimePaths } from "./runtime/runtimePaths.js";
+import { activateApplicationRuntime, deactivateApplicationRuntime } from "./runtime/applicationRuntime.js";
 import { api } from "./routes/api.js";
-import { jobs } from "./services/jobService.js";
 import { closeRuntimeStorage, getRuntimeStorage } from "./storage/runtimeStorage.js";
 import { getAutoResumeJobs, getPort } from "./utils/env.js";
 
@@ -32,17 +32,17 @@ export function createApplication(options: { clientDist?: string } = {}): expres
   app.use(cors());
   app.use(express.json({ limit: "2mb" }));
   app.use(async (req, res, next) => {
-    if (
-      ["GET", "HEAD", "OPTIONS"].includes(req.method) ||
-      req.path.startsWith("/api/system/storage-status") ||
-      req.path.startsWith("/api/system/legacy-import/")
-    ) {
+    const migrationRoutes = new Set([
+      "/api/system/storage-status",
+      "/api/system/legacy-import/preview",
+      "/api/system/legacy-import/execute"
+    ]);
+    if (!req.path.startsWith("/api/") || req.method === "OPTIONS" || migrationRoutes.has(req.path)) {
       next();
       return;
     }
     try {
-      const status = await getRuntimeStorage().status();
-      if (status.migrationState === "legacy-import-required") {
+      if (getRuntimeStorage().requiresLegacyImport()) {
         res.status(409).json({ error: "检测到旧版 JSON 数据，请先在模型设置的数据存储栏目完成迁移。" });
         return;
       }
@@ -77,20 +77,29 @@ export async function startApplicationServer(
 ): Promise<RunningApplicationServer> {
   const host = options.host ?? "127.0.0.1";
   const requestedPort = options.port ?? getPort();
+  const storage = getRuntimeStorage();
   const app = createApplication({ clientDist: options.clientDist });
   const server = createServer(app);
-
-  await listen(server, host, requestedPort);
+  const resumeJobs = options.resumeJobs ?? getAutoResumeJobs();
+  try {
+    await listen(server, host, requestedPort);
+    if (!storage.requiresLegacyImport()) {
+      await activateApplicationRuntime({ resumeJobs });
+    }
+  } catch (error) {
+    await deactivateApplicationRuntime().catch(() => undefined);
+    await closeServer(server).catch(() => undefined);
+    closeRuntimeStorage();
+    throw error;
+  }
   const address = server.address();
   if (!address || typeof address === "string") {
     await closeServer(server);
+    closeRuntimeStorage();
     throw new Error("本地服务已启动，但无法读取监听地址。");
   }
 
   const port = address.port;
-  const resumeJobs = options.resumeJobs ?? getAutoResumeJobs();
-  const startupTask = resumeJobs ? jobs.resumeActiveJobs() : jobs.pauseActiveJobsOnStartup();
-  void startupTask.catch((error) => logBackgroundError(resumeJobs ? "resumeActiveJobs" : "pauseActiveJobsOnStartup", error));
 
   return {
     app,
@@ -130,6 +139,7 @@ async function listen(server: Server, host: "127.0.0.1", port: number): Promise<
 
 async function closeApplication(server: Server): Promise<void> {
   try {
+    await deactivateApplicationRuntime();
     await closeServer(server);
   } finally {
     closeRuntimeStorage();

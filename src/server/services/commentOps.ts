@@ -12,7 +12,8 @@ import { redbook } from "./redbookService.js";
 
 const MIN_REPLY_DELAY_MS = 180_000;
 let lastReplyAt = 0;
-let workerStarted = false;
+let workerTimer: NodeJS.Timeout | undefined;
+let activeReplyWork: Promise<void> | undefined;
 
 export interface ReplyPlanInput {
   noteId: string;
@@ -118,13 +119,23 @@ export async function approveReplyAction(actionId: string, content?: string): Pr
 }
 
 export function startReplyWorker(): void {
-  if (workerStarted) {
-    return;
-  }
-  workerStarted = true;
-  setInterval(() => {
-    void processReplyQueue().catch(() => undefined);
+  if (workerTimer) return;
+  workerTimer = setInterval(() => {
+    if (activeReplyWork) return;
+    const work = processReplyQueue().then(() => undefined, () => undefined);
+    activeReplyWork = work;
+    void work.finally(() => {
+      if (activeReplyWork === work) activeReplyWork = undefined;
+    });
   }, 30_000);
+}
+
+export async function stopReplyWorker(): Promise<void> {
+  if (workerTimer) {
+    clearInterval(workerTimer);
+    workerTimer = undefined;
+  }
+  if (activeReplyWork) await activeReplyWork;
 }
 
 export async function processReplyQueue(): Promise<ReplyActionRecord | undefined> {

@@ -72,6 +72,33 @@ describe("legacy JSON import", () => {
     })).rejects.toThrow("已经完成");
     fixture.close();
   });
+
+  it("does not mark an empty folder as a completed legacy import", async () => {
+    const fixture = await createFixture();
+    const preview = await fixture.service.preview(fixture.sourceDir);
+
+    expect(preview.detectedFiles).toEqual([]);
+    await expect(fixture.service.execute({
+      sourceDir: fixture.sourceDir,
+      fingerprint: preview.fingerprint
+    })).rejects.toThrow("未检测到可迁移");
+    expect(fixture.store.isEmpty()).toBe(true);
+    fixture.close();
+  });
+
+  it("rejects duplicate logical ids and rolls back the entire import", async () => {
+    const fixture = await createFixture();
+    await writeJson(fixture.sourceDir, "searchJobs", [job("duplicate"), job("duplicate")]);
+    const preview = await fixture.service.preview(fixture.sourceDir);
+
+    await expect(fixture.service.execute({
+      sourceDir: fixture.sourceDir,
+      fingerprint: preview.fingerprint
+    })).rejects.toThrow("重复");
+    expect(fixture.store.isEmpty()).toBe(true);
+    expect(fixture.database.connection.prepare("SELECT COUNT(*) AS count FROM legacy_imports").get()).toEqual({ count: 0 });
+    fixture.close();
+  });
 });
 
 async function createFixture() {

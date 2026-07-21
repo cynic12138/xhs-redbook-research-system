@@ -63,6 +63,54 @@ describe("SQLite repository store", () => {
     expect((await store.read("notes")).map((item) => item.id)).toEqual(["note-1"]);
     close();
   });
+
+  it("persists the specialty review and artifact through the production SQLite store", async () => {
+    const { store, close } = await createStore();
+    const { reviewContentDraft } = await import("../src/server/services/contentStudioService.js");
+
+    const result = await reviewContentDraft({
+      title: "周十五蜂露封神",
+      body: "周十五蜂露是通便特效药，闭眼冲。",
+      tags: ["周十五蜂露", "孕期日常"]
+    }, store);
+
+    expect(result.review.revisedTitle).toContain("周十五蜂蜜露");
+    expect(result.review.revisedBody).not.toContain("通便特效药");
+    expect(result.review.revisedTags).toEqual(["周十五蜂蜜露", "孕期日常"]);
+    expect((await store.read("contentReviews")).map((item) => item.id)).toEqual([result.review.id]);
+    expect((await store.read("aiArtifacts")).map((item) => item.id)).toEqual([result.artifact.id]);
+    close();
+  });
+
+  it("executes the production project delete workflow with SQLite cascade cleanup", async () => {
+    const { store, close } = await createStore();
+    const {
+      deleteContentProject,
+      saveContentProject,
+      saveContentProjectMaterial
+    } = await import("../src/server/services/contentStudioService.js");
+    const project = await saveContentProject({
+      name: "迁移验收项目",
+      productName: "周十五蜂蜜露",
+      targetAudience: [],
+      scenarios: [],
+      goals: []
+    }, undefined, store);
+    await saveContentProjectMaterial({
+      projectId: project.id,
+      source: "manual",
+      category: "general",
+      title: "素材",
+      content: "用于验证 SQLite 外键级联。",
+      tags: []
+    }, store);
+
+    await expect(deleteContentProject(project.id, store)).resolves.toEqual({ deleted: 1 });
+    expect(await store.read("contentProjects")).toEqual([]);
+    expect(await store.read("contentProjectMaterials")).toEqual([]);
+    expect(store.database.connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    close();
+  });
 });
 
 async function createStore() {

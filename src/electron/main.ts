@@ -108,7 +108,7 @@ function createMainWindow(appUrl: string): BrowserWindow {
     show: false,
     webPreferences: {
       ...desktopWebPreferences,
-      preload: path.join(import.meta.dirname, "preload.js")
+      preload: path.join(import.meta.dirname, "preload.cjs")
     }
   });
 

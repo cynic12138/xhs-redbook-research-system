@@ -125,6 +125,25 @@ export class SqliteStore implements StoreLike {
       });
   }
 
+  collectionCounts(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const name of collectionNames) {
+      if (singletonCollections.has(name)) {
+        const row = this.database.connection.prepare(
+          "SELECT COUNT(*) AS count FROM app_state WHERE key = ?"
+        ).get(name) as { count: number | bigint };
+        counts[name] = Number(row.count);
+        continue;
+      }
+      const table = entityConfigurations[name as EntityCollectionName].table;
+      const row = this.database.connection.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
+        count: number | bigint;
+      };
+      counts[name] = Number(row.count);
+    }
+    return counts;
+  }
+
   replaceAllCollections(values: CollectionValue, beforeCommit?: () => void): void {
     if (!this.isEmpty()) throw new Error("SQLite database already contains business data.");
     const connection = this.database.connection;
@@ -194,6 +213,9 @@ export class SqliteStore implements StoreLike {
     values.forEach((value, position) => {
       const record = asRecord(value);
       const key = requiredString(record, configuration.keyField);
+      if (incomingKeys.has(key)) {
+        throw new Error(`SQLite 集合 ${name} 中存在重复的 ${configuration.keyField}：${key}`);
+      }
       incomingKeys.add(key);
       const fields = configuration.columns.map((column) => columnValue(record[column.field], column.boolean));
       upsert.run(key, ...fields, position, JSON.stringify(value));

@@ -46,6 +46,14 @@ function applyMigrations(connection: DatabaseSync): void {
     )
   `);
 
+  const supportedVersion = databaseMigrations.reduce((maximum, migration) => Math.max(maximum, migration.version), 0);
+  const currentVersion = readSchemaVersion(connection);
+  if (currentVersion > supportedVersion) {
+    throw new Error(
+      `数据库 Schema 版本 ${currentVersion} 高于当前应用支持版本 ${supportedVersion}，请升级应用后再打开。`
+    );
+  }
+
   const applied = new Set(
     connection.prepare("SELECT version FROM schema_migrations").all()
       .map((row) => Number((row as { version: unknown }).version))

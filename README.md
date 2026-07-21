@@ -123,9 +123,9 @@ npm run build
 npm start
 ```
 
-## Windows 桌面试用版（D-001）
+## Windows 桌面试用版（D-002）
 
-D-001 使用 Electron 包装现有 React 和 Express 应用，仍然复用相同 HTTP API、业务逻辑和 JSON Store。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。
+D-002 使用 Electron 包装现有 React 和 Express 应用，复用相同 HTTP API 和业务逻辑，并使用 Node 24 内置 `node:sqlite` 保存业务数据。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。
 
 本机调试桌面壳：
 
@@ -149,7 +149,7 @@ npm run desktop:make
 
 ```text
 out/小红书运营台-win32-x64/
-out/make/squirrel.windows/x64/小红书运营台-0.1.1-Setup.exe
+out/make/squirrel.windows/x64/小红书运营台-0.2.0-Setup.exe
 ```
 
 如果 Electron 官方 GitHub 下载在中国网络中断，可以仅对当前 PowerShell 会话使用 Electron README 推荐的镜像，不需要写入项目配置：
@@ -162,14 +162,26 @@ npm run desktop:make
 安装和使用限制：
 
 - 当前安装包没有 Windows 代码签名，只用于少量内部工程验收；SmartScreen 可能显示未知发布者提示。
-- 安装版运行数据位于 `%APPDATA%\小红书运营台`，其中包含 `data/`、`output/`、`media-cache/`、`browser-profile/` 和 `.env.local`。
-- D-001 仍使用 JSON 和明文 `.env.local`；Cookie 与模型 Key 尚未接入 Electron `safeStorage`，不要把该目录共享给其他人。
+- 安装版运行数据位于 `%APPDATA%\小红书运营台`，其中包含 `data/app.db`、`output/`、`media-cache/`、`browser-profile/` 和 `.env.local`。
+- D-002 已将业务数据切换到 SQLite；Cookie 与模型 Key 仍使用明文 `.env.local`，尚未接入 Electron `safeStorage`，不要把该目录共享给其他人。
 - 应用使用单实例锁。再次启动会聚焦已有窗口，不会打开第二套 Store 或 HTTP 服务。
 - 如果 `127.0.0.1:8787` 被开发服务器或其他程序占用，桌面版会显示中文启动失败信息；先正常关闭占用进程再重试。
 - 关闭应用时如有抓取任务，会先要求确认并把任务安全暂停；下次启动后可以恢复。
-- 当前版本不包含 SQLite、自动备份、自动更新、正式图标和代码签名，这些属于后续里程碑。
+- 当前版本不包含自动备份、自动更新、正式图标和代码签名，这些属于后续里程碑。
 
 双击 `Setup.exe` 可以按当前 Windows 用户安装，不要求管理员权限。覆盖安装不得依赖或写入程序目录；用户数据与安装目录相互分离。
+
+### 从 0.1.1 迁移旧数据
+
+1. 覆盖安装 `0.2.0` 并启动应用。
+2. 如果 `%APPDATA%\小红书运营台\data` 中检测到旧 JSON，模型设置会自动打开“数据存储”栏目。
+3. 点击“预检旧数据”，确认识别文件和记录数量。
+4. 点击“确认迁入 SQLite”。导入使用单个事务，失败会整体回滚；成功后应用会立即安全暂停旧版运行中任务并启用后台服务，不要求重启。
+5. 原 JSON 和 `.env.local` 不会被删除、改名或覆盖；成功后新业务数据只写入 `data/app.db`。
+
+如需从其他旧项目迁移，点击“选择文件夹”并选择该项目的 `data` 目录。一个数据库只能导入一个来源，不能合并多个业务员的数据。
+
+如果界面提示“旧数据与当前数据库发生冲突”，应用会继续阻止业务写入，也不会允许直接覆盖导入。请先完整备份 `%APPDATA%\小红书运营台\data`，再联系维护人员处理，不要手工删除旧 JSON。
 
 ## 登录小红书
 
@@ -493,11 +505,19 @@ GET /api/ai/orchestrations/:id/events
 | `data/media-cache/` | 媒体代理缓存 |
 | `data/xhs-login-edge-profile/` | 专用 Edge 登录窗口 profile |
 
-这些目录和文件都不应提交到 Git。
+这些目录和文件都不应提交到 Git。`0.2.0` 正式运行只写 `data/app.db`；上表中的 JSON 文件仅作为 `0.1.1` 旧数据来源保留。
 
-以上路径适用于浏览器开发模式。Electron 安装版使用 `%APPDATA%\小红书运营台` 作为根目录，避免把 JSON、媒体、Edge Profile 或 `.env.local` 写入只读安装目录。
+以上路径适用于浏览器开发模式。Electron 安装版使用 `%APPDATA%\小红书运营台` 作为根目录，避免把数据库、媒体、Edge Profile 或 `.env.local` 写入只读安装目录。
 
 ## 常用 API
+
+存储与旧数据迁移：
+
+```text
+GET  /api/system/storage-status
+POST /api/system/legacy-import/preview
+POST /api/system/legacy-import/execute
+```
 
 认证和浏览器辅助：
 

@@ -549,7 +549,7 @@ export function App() {
   const loadStorageStatus = useCallback(async () => {
     const status = await api.storageStatus();
     setStorageStatus(status);
-    if (status.migrationState === "legacy-import-required") setModelSettingsOpen(true);
+    if (["legacy-import-required", "legacy-import-conflict"].includes(status.migrationState)) setModelSettingsOpen(true);
     return status;
   }, []);
 
@@ -6413,9 +6413,11 @@ function ModelSettingsDrawer(props: {
         </div>
         <section className="drawer-section storage-settings-section">
           <SectionTitle icon={<Database size={16} />} title="数据存储" />
-          <div className={props.storageStatus?.migrationState === "legacy-import-required" ? "storage-status-card warning" : "storage-status-card"}>
+          <div className={["legacy-import-required", "legacy-import-conflict"].includes(props.storageStatus?.migrationState ?? "") ? "storage-status-card warning" : "storage-status-card"}>
             <strong>
-              {props.storageStatus?.migrationState === "legacy-import-required"
+              {props.storageStatus?.migrationState === "legacy-import-conflict"
+                ? "旧数据与当前数据库发生冲突"
+                : props.storageStatus?.migrationState === "legacy-import-required"
                 ? "需要迁移旧版数据"
                 : props.storageStatus?.migrationState === "imported"
                   ? "旧版数据已迁入 SQLite"
@@ -6428,6 +6430,9 @@ function ModelSettingsDrawer(props: {
             </span>
             {props.storageStatus?.migrationState === "legacy-import-required" && (
               <small>完成迁移前，应用不会向空数据库写入新业务数据。原 JSON 文件不会被删除或修改。</small>
+            )}
+            {props.storageStatus?.migrationState === "legacy-import-conflict" && (
+              <small>当前 SQLite 已存在未确认数据，系统已停止业务写入以保护旧 JSON。请先备份 data 文件夹，再联系维护人员处理。</small>
             )}
             {props.storageStatus?.importedAt && <small>迁移时间：{formatDateTime(props.storageStatus.importedAt)}</small>}
           </div>
@@ -6458,10 +6463,12 @@ function ModelSettingsDrawer(props: {
                   <strong>预检完成：{previewCount} 条记录</strong>
                   <small>识别到 {props.legacyImportPreview.detectedFiles.length} 个允许的 JSON 文件。</small>
                   {props.legacyImportPreview.warnings.map((warning) => <small key={warning}>{warning}</small>)}
-                  <button className="primary-button full" onClick={() => void props.executeLegacyImport()} disabled={props.busy === "storage-import"}>
-                    {props.busy === "storage-import" ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
-                    确认迁入 SQLite
-                  </button>
+                  {props.legacyImportPreview.detectedFiles.length > 0 && props.storageStatus?.migrationState !== "legacy-import-conflict" && (
+                    <button className="primary-button full" onClick={() => void props.executeLegacyImport()} disabled={props.busy === "storage-import"}>
+                      {props.busy === "storage-import" ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
+                      确认迁入 SQLite
+                    </button>
+                  )}
                 </div>
               )}
             </div>

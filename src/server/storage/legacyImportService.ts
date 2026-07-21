@@ -37,6 +37,9 @@ export class LegacyImportService {
     if (!this.store.isEmpty()) throw new Error("当前数据库已经包含业务数据，不能导入旧版数据。");
 
     const snapshot = await readLegacySnapshot(input.sourceDir);
+    if (!snapshot.preview.detectedFiles.length) {
+      throw new Error("所选文件夹中未检测到可迁移的旧版 JSON 数据。");
+    }
     if (snapshot.preview.fingerprint !== input.fingerprint) {
       throw new Error("旧版数据在预检后发生变化，请重新预检后再导入。");
     }

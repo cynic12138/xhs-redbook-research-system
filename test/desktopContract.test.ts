@@ -16,7 +16,7 @@ describe("desktop build contract", () => {
     };
 
     expect(packageJson.productName).toBe("小红书运营台");
-    expect((packageJson as { version?: string }).version).toBe("0.1.1");
+    expect((packageJson as { version?: string }).version).toBe("0.2.0");
     expect(packageJson.author).toBeTruthy();
     expect(packageJson.description).toBeTruthy();
     expect(packageJson.main).toBe("dist/server/electron/main.js");
@@ -40,7 +40,7 @@ describe("desktop build contract", () => {
   it("exposes only a narrow legacy data directory picker to the renderer", async () => {
     const [mainSource, preloadSource] = await Promise.all([
       readFile("src/electron/main.ts", "utf8"),
-      readFile("src/electron/preload.ts", "utf8")
+      readFile("src/electron/preload.cts", "utf8")
     ]);
     expect(mainSource).toContain('ipcMain.handle("storage:select-legacy-data-directory"');
     expect(mainSource).toContain("preload:");
@@ -56,7 +56,7 @@ describe("desktop build contract", () => {
     expect(source).toContain("@electron-forge/maker-squirrel");
     expect(source).not.toContain("@electron-forge/plugin-auto-unpack-natives");
     expect(source).toContain("checksums: electronChecksums");
-    expect(source).toContain("setupExe: \"小红书运营台-0.1.1-Setup.exe\"");
+    expect(source).toContain("setupExe: \"小红书运营台-0.2.0-Setup.exe\"");
     for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
     }

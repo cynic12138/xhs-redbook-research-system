@@ -62,7 +62,7 @@ export type ContentProjectMaterialSource = "note" | "manual";
 export interface StorageStatus {
   engine: "sqlite";
   schemaVersion: number;
-  migrationState: "ready" | "legacy-import-required" | "imported";
+  migrationState: "ready" | "legacy-import-required" | "legacy-import-conflict" | "imported";
   legacyDataDetected: boolean;
   importedAt?: string;
   counts: Record<string, number>;

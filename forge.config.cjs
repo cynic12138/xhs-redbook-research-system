@@ -50,7 +50,7 @@ module.exports = {
       name: "@electron-forge/maker-squirrel",
       config: {
         name: "xiaohongshu-yunyingtai",
-        setupExe: "小红书运营台-0.1.1-Setup.exe",
+        setupExe: "小红书运营台-0.2.0-Setup.exe",
         noMsi: true
       }
     }

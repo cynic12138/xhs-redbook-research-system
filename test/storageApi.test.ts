@@ -3,6 +3,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { vi } from "vitest";
+
+const activateApplicationRuntime = vi.fn(async () => undefined);
+
+vi.mock("../src/server/runtime/applicationRuntime.js", () => ({ activateApplicationRuntime }));
 
 const tempDirs: string[] = [];
 
@@ -37,6 +42,7 @@ describe("storage migration API", () => {
     });
     expect(execute.status).toBe(200);
     expect(execute.body).toMatchObject({ imported: true, integrityCheck: "ok" });
+    expect(activateApplicationRuntime).toHaveBeenCalledWith({ resumeJobs: false });
 
     const status = await request(app, "/api/system/storage-status");
     expect(status.status).toBe(200);

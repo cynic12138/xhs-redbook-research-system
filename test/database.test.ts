@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 
 const tempDirs: string[] = [];
 
@@ -48,5 +49,25 @@ describe("application database", () => {
     expect(reopened.connection.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()).toMatchObject({ count: 1 });
     expect(reopened.schemaVersion).toBe(1);
     reopened.close();
+  });
+
+  it("refuses to open a database created by a newer schema version", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "xhs-sqlite-future-"));
+    tempDirs.push(dir);
+    const databaseFile = path.join(dir, "app.db");
+    const future = new DatabaseSync(databaseFile);
+    future.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations (version, name, applied_at)
+      VALUES (999, 'future-schema', '2026-07-21T00:00:00.000Z');
+    `);
+    future.close();
+
+    const { openApplicationDatabase } = await import("../src/server/storage/database.js");
+    expect(() => openApplicationDatabase(databaseFile)).toThrow("高于当前应用支持版本");
   });
 });
