@@ -35,6 +35,8 @@ export function createApplication(options: { clientDist?: string } = {}): expres
   app.use(async (req, res, next) => {
     const migrationRoutes = new Set([
       "/api/system/storage-status",
+      "/api/system/credential-security",
+      "/api/system/credential-security/retry",
       "/api/system/legacy-import/preview",
       "/api/system/legacy-import/execute"
     ]);

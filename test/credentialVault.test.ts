@@ -58,6 +58,27 @@ describe("SQLite credential vault", () => {
     fixture.database.close();
   });
 
+  it("re-encrypts credentials while calculating security status", async () => {
+    const fixture = await createFixture();
+    await fixture.vault.set("XHS_COOKIE_STRING", "vault-value");
+    const before = fixture.database.connection.prepare(
+      "SELECT encrypted_value FROM secure_credentials WHERE credential_key = ?"
+    ).get("XHS_COOKIE_STRING") as { encrypted_value: Uint8Array };
+    fixture.cipher.shouldReEncrypt = true;
+
+    await expect(fixture.vault.getStatus()).resolves.toMatchObject({
+      state: "encrypted",
+      cookieConfigured: true,
+      unreadableCredentialCount: 0
+    });
+
+    const after = fixture.database.connection.prepare(
+      "SELECT encrypted_value FROM secure_credentials WHERE credential_key = ?"
+    ).get("XHS_COOKIE_STRING") as { encrypted_value: Uint8Array };
+    expect(Buffer.from(after.encrypted_value).equals(Buffer.from(before.encrypted_value))).toBe(false);
+    fixture.database.close();
+  });
+
   it("does not let a delayed rotation overwrite a newer concurrent value", async () => {
     const fixture = await createFixture();
     try {

@@ -207,8 +207,12 @@ export class SqliteCredentialVault implements CredentialVault {
     let unreadableCredentialCount = 0;
     for (const row of rows) {
       try {
-        const decrypted = await this.cipher.decryptString(Buffer.from(row.encrypted_value));
-        if (!decrypted.value) continue;
+        const decrypted = await this.getResult(row.credential_key);
+        if (decrypted.status === "unreadable") {
+          unreadableCredentialCount += 1;
+          continue;
+        }
+        if (decrypted.status !== "found" || !decrypted.value) continue;
         if (row.credential_key === COOKIE_CREDENTIAL_KEY) cookieConfigured = true;
         if (isLegacyModelCredentialKey(row.credential_key)) modelKeyCount += 1;
       } catch {

@@ -16,6 +16,7 @@ const deactivateApplicationRuntime = vi.fn(async () => undefined);
 vi.mock("../src/server/routes/api.js", () => {
   const api = express.Router();
   api.get("/health", (_req, res) => res.json({ ok: true }));
+  api.get("/system/credential-security", (_req, res) => res.json({ state: "encrypted" }));
   api.get("/stream", (_req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     res.write("event: ready\ndata: {}\n\n");
@@ -116,6 +117,19 @@ describe("application server", () => {
       expect(pauseActiveJobsOnStartup).not.toHaveBeenCalled();
       expect(resumeActiveJobs).not.toHaveBeenCalled();
       expect(activateApplicationRuntime).not.toHaveBeenCalled();
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("keeps credential security status available while legacy data requires import", async () => {
+    requiresLegacyImport.mockReturnValue(true);
+    const { startApplicationServer } = await import("../src/server/application.js");
+    const running = await startApplicationServer({ port: 0, resumeJobs: false });
+    try {
+      const response = await fetch(`${running.url}/api/system/credential-security`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ state: "encrypted" });
     } finally {
       await running.close();
     }

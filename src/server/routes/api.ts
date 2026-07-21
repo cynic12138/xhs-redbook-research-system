@@ -4,7 +4,7 @@ import type { NotesQuery } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
 import { getRuntimePaths } from "../runtime/runtimePaths.js";
 import { activateApplicationRuntime } from "../runtime/applicationRuntime.js";
-import { readRuntimeCredential, resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { prepareRuntimeCredentials, readRuntimeCredential, resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
 import { COOKIE_CREDENTIAL_KEY } from "../storage/credentialKeys.js";
 import { getRuntimeStorage, store } from "../storage/runtimeStorage.js";
 import { jobs } from "../services/jobService.js";
@@ -119,6 +119,22 @@ const legacyImportExecuteInput = z.object({
 api.get("/system/storage-status", async (_req, res, next) => {
   try {
     res.json(await getRuntimeStorage().status());
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.get("/system/credential-security", async (_req, res, next) => {
+  try {
+    res.json(await (await resolveRuntimeCredentialVault()).getStatus());
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/system/credential-security/retry", async (_req, res, next) => {
+  try {
+    res.json(await prepareRuntimeCredentials());
   } catch (error) {
     next(error);
   }

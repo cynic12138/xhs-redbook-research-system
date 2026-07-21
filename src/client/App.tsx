@@ -73,6 +73,7 @@ import type {
   ContentProjectMaterialCategory,
   ContentProjectStatus,
   ContentReviewRun,
+  CredentialSecurityStatus,
   HealthReportRecord,
   NoteBulkDeletePreview,
   NoteScopeClearPreview,
@@ -91,6 +92,7 @@ import type {
 import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProviderKey } from "../shared/modelProviders.js";
 import { WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY } from "../shared/contentReviewPolicy.js";
 import { api } from "./lib/api.js";
+import { credentialSecurityPresentation, shouldOpenCredentialSettings } from "./securityStatus.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "content" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
@@ -497,6 +499,8 @@ export function App() {
   const [selectedReportId, setSelectedReportId] = useState("");
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [credentialSecurityStatus, setCredentialSecurityStatus] = useState<CredentialSecurityStatus | null>(null);
+  const credentialSettingsAutoOpenedRef = useRef(false);
   const [legacyImportPreview, setLegacyImportPreview] = useState<LegacyImportPreview | null>(null);
   const [legacyImportSourceDir, setLegacyImportSourceDir] = useState("");
   const [modelEditorOpen, setModelEditorOpen] = useState(false);
@@ -550,6 +554,16 @@ export function App() {
     const status = await api.storageStatus();
     setStorageStatus(status);
     if (["legacy-import-required", "legacy-import-conflict"].includes(status.migrationState)) setModelSettingsOpen(true);
+    return status;
+  }, []);
+
+  const loadCredentialSecurityStatus = useCallback(async () => {
+    const status = await api.credentialSecurity();
+    setCredentialSecurityStatus(status);
+    if (shouldOpenCredentialSettings(status) && !credentialSettingsAutoOpenedRef.current) {
+      credentialSettingsAutoOpenedRef.current = true;
+      setModelSettingsOpen(true);
+    }
     return status;
   }, []);
 
@@ -729,6 +743,10 @@ export function App() {
   useEffect(() => {
     void loadStorageStatus().catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [loadStorageStatus]);
+
+  useEffect(() => {
+    void loadCredentialSecurityStatus().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, [loadCredentialSecurityStatus]);
 
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
@@ -1016,6 +1034,7 @@ export function App() {
       const status = await api.saveCookie(cookieFields);
       setAuth(status);
       setCookieFields({ a1: "", web_session: "", webId: "" });
+      await loadCredentialSecurityStatus();
       await refreshCore();
     });
   }
@@ -1023,6 +1042,7 @@ export function App() {
   async function autoReadCookie() {
     await run("auth", async () => {
       setAuth(await api.autoReadCookie());
+      await loadCredentialSecurityStatus();
       await refreshCore();
     });
   }
@@ -1068,6 +1088,7 @@ export function App() {
         message: "已同步并验证当前浏览器的小红书登录态。",
         diagnostic: ""
       }));
+      await loadCredentialSecurityStatus();
       await refreshCore();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1602,6 +1623,7 @@ export function App() {
       setEditingModelId("");
       setModelEditorOpen(false);
       setModelForm(emptyModelForm);
+      await loadCredentialSecurityStatus();
       await refreshCore();
     });
   }
@@ -1614,6 +1636,16 @@ export function App() {
         setModelEditorOpen(false);
         setModelForm(emptyModelForm);
       }
+      await loadCredentialSecurityStatus();
+      await refreshCore();
+    });
+  }
+
+  async function retryCredentialSecurity() {
+    await run("credential-security", async () => {
+      const status = await api.retryCredentialSecurity();
+      setCredentialSecurityStatus(status);
+      if (!shouldOpenCredentialSettings(status)) credentialSettingsAutoOpenedRef.current = false;
       await refreshCore();
     });
   }
@@ -2359,6 +2391,8 @@ export function App() {
         <ModelSettingsDrawer
           models={aiModels}
           storageStatus={storageStatus}
+          credentialSecurityStatus={credentialSecurityStatus}
+          retryCredentialSecurity={retryCredentialSecurity}
           legacyImportPreview={legacyImportPreview}
           legacyImportSourceDir={legacyImportSourceDir}
           setLegacyImportSourceDir={(value) => {
@@ -6355,6 +6389,8 @@ function BulkDeleteNotesDialog(props: {
 function ModelSettingsDrawer(props: {
   models: AiModelConfig[];
   storageStatus: StorageStatus | null;
+  credentialSecurityStatus: CredentialSecurityStatus | null;
+  retryCredentialSecurity: () => Promise<void>;
   legacyImportPreview: LegacyImportPreview | null;
   legacyImportSourceDir: string;
   setLegacyImportSourceDir: (value: string) => void;
@@ -6382,6 +6418,7 @@ function ModelSettingsDrawer(props: {
   const previewCount = props.legacyImportPreview
     ? Object.values(props.legacyImportPreview.counts).reduce((sum, count) => sum + count, 0)
     : 0;
+  const credentialSecurity = credentialSecurityPresentation(props.credentialSecurityStatus);
   const update = (key: keyof ModelForm, value: string) => props.setModelForm({ ...props.modelForm, [key]: value });
   const selectProvider = (providerKey: AiModelProviderKey) => {
     const preset = AI_MODEL_PROVIDER_PRESETS.find((item) => item.key === providerKey) ?? AI_MODEL_PROVIDER_PRESETS[0];
@@ -6411,6 +6448,32 @@ function ModelSettingsDrawer(props: {
           <strong>{defaultModel ? `${defaultModel.name} · ${defaultModel.model}` : "未配置"}</strong>
           <small>{defaultModel ? `${findModelProviderPreset(defaultModel.provider, defaultModel.baseUrl, defaultModel.model).name} · ${defaultModel.apiKeyMasked || "未配置 Key"}` : "新增模型后即可用于 AI 助手、AI 工作流和报告生成。"}</small>
         </div>
+        <section className="drawer-section storage-settings-section">
+          <SectionTitle icon={<ShieldCheck size={16} />} title="凭证安全" />
+          <div className={credentialSecurity.warning ? "storage-status-card warning" : "storage-status-card"}>
+            <strong>{credentialSecurity.title}</strong>
+            <span>{credentialSecurity.description}</span>
+            {props.credentialSecurityStatus && (
+              <small>
+                Cookie：{props.credentialSecurityStatus.cookieConfigured ? "已配置" : "未配置"}
+                {" · "}模型 Key：{props.credentialSecurityStatus.modelKeyCount} 个
+                {props.credentialSecurityStatus.mode === "desktop-encrypted"
+                  ? ` · 已加密：${props.credentialSecurityStatus.encryptedCredentialCount} 项`
+                  : ""}
+              </small>
+            )}
+            {credentialSecurity.canRetry && (
+              <button
+                className="ghost-button compact"
+                onClick={() => void props.retryCredentialSecurity()}
+                disabled={props.busy === "credential-security"}
+              >
+                {props.busy === "credential-security" ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+                重新检查并清理
+              </button>
+            )}
+          </div>
+        </section>
         <section className="drawer-section storage-settings-section">
           <SectionTitle icon={<Database size={16} />} title="数据存储" />
           <div className={["legacy-import-required", "legacy-import-conflict"].includes(props.storageStatus?.migrationState ?? "") ? "storage-status-card warning" : "storage-status-card"}>

@@ -6,8 +6,25 @@ import { afterAll, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 
 const activateApplicationRuntime = vi.fn(async () => undefined);
+const credentialStatus = {
+  mode: "desktop-encrypted",
+  state: "cleanup-required",
+  encryptionAvailable: true,
+  cookieConfigured: true,
+  modelKeyCount: 1,
+  encryptedCredentialCount: 2,
+  unreadableCredentialCount: 0,
+  legacyPlaintextCredentialCount: 1
+} as const;
+const getCredentialStatus = vi.fn(async () => credentialStatus);
+const prepareRuntimeCredentials = vi.fn(async () => credentialStatus);
 
 vi.mock("../src/server/runtime/applicationRuntime.js", () => ({ activateApplicationRuntime }));
+vi.mock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+  prepareRuntimeCredentials,
+  readRuntimeCredential: vi.fn(async () => undefined),
+  resolveRuntimeCredentialVault: vi.fn(async () => ({ getStatus: getCredentialStatus }))
+}));
 
 const tempDirs: string[] = [];
 
@@ -18,6 +35,23 @@ afterAll(async () => {
 });
 
 describe("storage migration API", () => {
+  it("reports and retries credential security without returning credential identifiers", async () => {
+    const { api } = await import("../src/server/routes/api.js");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", api);
+
+    const status = await request(app, "/api/system/credential-security");
+    expect(status.status).toBe(200);
+    expect(status.body).toEqual(credentialStatus);
+    expect(JSON.stringify(status.body)).not.toContain("XHS_COOKIE_STRING");
+
+    const retry = await request(app, "/api/system/credential-security/retry", { method: "POST" });
+    expect(retry.status).toBe(200);
+    expect(retry.body).toEqual(credentialStatus);
+    expect(prepareRuntimeCredentials).toHaveBeenCalled();
+  });
+
   it("previews, executes and reports a SQLite legacy import", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "xhs-storage-api-"));
     tempDirs.push(root);

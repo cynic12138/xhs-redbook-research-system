@@ -50,6 +50,7 @@ import type {
   ContentReviewBatchResult,
   ContentReviewInput,
   ContentReviewResult,
+  CredentialSecurityStatus,
   ContentReviewRun,
   HealthReportRecord,
   NoteBulkDeleteInput,
@@ -105,6 +106,8 @@ export async function apiDelete<T>(path: string): Promise<T> {
 
 export const api = {
   storageStatus: () => apiGet<StorageStatus>("/api/system/storage-status"),
+  credentialSecurity: () => apiGet<CredentialSecurityStatus>("/api/system/credential-security"),
+  retryCredentialSecurity: () => apiPost<CredentialSecurityStatus>("/api/system/credential-security/retry"),
   previewLegacyImport: (sourceDir?: string) =>
     apiPost<LegacyImportPreview>("/api/system/legacy-import/preview", sourceDir ? { sourceDir } : {}),
   executeLegacyImport: (sourceDir: string, fingerprint: string) =>
