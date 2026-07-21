@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import dotenv from "dotenv";
+import { getRuntimePaths } from "../runtime/runtimePaths.js";
 
-const envPath = path.join(process.cwd(), ".env.local");
+const envPath = getRuntimePaths().envFile;
 
 dotenv.config({ path: envPath });
 dotenv.config();

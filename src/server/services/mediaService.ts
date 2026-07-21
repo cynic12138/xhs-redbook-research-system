@@ -7,12 +7,13 @@ import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { NoteMediaRefreshResult, NoteRecord } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
+import { getRuntimePaths } from "../runtime/runtimePaths.js";
 import { store } from "../storage/localStore.js";
 import { getMediaAutoRefresh } from "../utils/env.js";
 import { normalizeNote } from "./normalizers.js";
 import { redbook } from "./redbookService.js";
 
-const cacheDir = path.join(process.cwd(), "data", "media-cache");
+const cacheDir = getRuntimePaths().mediaCacheDir;
 const allowedHostSuffixes = [".xhscdn.com", ".xiaohongshu.com"];
 
 interface CachedMediaMeta {

@@ -6,12 +6,13 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { BrowserAuthBrowser, BrowserAuthSessionInfo, BrowserAuthSessionStatus, BrowserOpenResult, UserSummary } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
+import { getRuntimePaths } from "../runtime/runtimePaths.js";
 import { redbook } from "./redbookService.js";
 
 const XHS_LOGIN_URL = "https://www.xiaohongshu.com/";
 const BROWSER: BrowserAuthBrowser = "edge";
 const BROWSER_NAME = "Microsoft Edge";
-const PROFILE_DIR = path.join(process.cwd(), "data", "xhs-login-edge-profile");
+const PROFILE_DIR = getRuntimePaths().browserProfileDir;
 const REQUIRED_KEYS = ["a1", "web_session"] as const;
 
 interface BrowserAuthSession {

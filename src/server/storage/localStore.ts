@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { getRuntimePaths } from "../runtime/runtimePaths.js";
 import type {
   AnalyticsReport,
   AiArtifact,
@@ -143,7 +144,7 @@ export class LocalStore {
   private readonly dataDir: string;
   private readonly locks = new Map<CollectionName, Promise<unknown>>();
 
-  constructor(dataDir = path.join(process.cwd(), "data")) {
+  constructor(dataDir = getRuntimePaths().dataDir) {
     this.dataDir = dataDir;
   }
 
