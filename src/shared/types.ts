@@ -68,6 +68,17 @@ export interface StorageStatus {
   counts: Record<string, number>;
 }
 
+export interface CredentialSecurityStatus {
+  mode: "desktop-encrypted" | "development-env";
+  state: "empty" | "encrypted" | "cleanup-required" | "reconfiguration-required" | "development";
+  encryptionAvailable: boolean;
+  cookieConfigured: boolean;
+  modelKeyCount: number;
+  encryptedCredentialCount: number;
+  unreadableCredentialCount: number;
+  legacyPlaintextCredentialCount: number;
+}
+
 export interface LegacyImportPreview {
   sourceDir: string;
   fingerprint: string;

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, type MessageBoxOptions, type OpenDialogOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, type MessageBoxOptions, type OpenDialogOptions } from "electron";
 import { finishStartupFailure } from "./lifecycle.js";
 import { desktopWebPreferences, isAllowedAppNavigation } from "./windowPolicy.js";
 
@@ -61,6 +61,13 @@ async function bootDesktop(): Promise<void> {
     appPath: app.getAppPath()
   });
   runtime.configureRuntimePaths(runtimePaths);
+
+  const [{ createSafeStorageCipher }, credentials] = await Promise.all([
+    import("./safeStorageCipher.js"),
+    import("../server/runtime/runtimeCredentialVault.js")
+  ]);
+  credentials.configureRuntimeCredentials({ cipher: createSafeStorageCipher(safeStorage) });
+  await credentials.prepareRuntimeCredentials();
 
   await Promise.all([
     mkdir(runtimePaths.dataDir, { recursive: true }),

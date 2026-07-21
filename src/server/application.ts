@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
+import { prepareRuntimeCredentials } from "./runtime/runtimeCredentialVault.js";
 import { getRuntimePaths } from "./runtime/runtimePaths.js";
 import { activateApplicationRuntime, deactivateApplicationRuntime } from "./runtime/applicationRuntime.js";
 import { api } from "./routes/api.js";
@@ -77,6 +78,7 @@ export async function startApplicationServer(
 ): Promise<RunningApplicationServer> {
   const host = options.host ?? "127.0.0.1";
   const requestedPort = options.port ?? getPort();
+  await prepareRuntimeCredentials();
   const storage = getRuntimeStorage();
   const app = createApplication({ clientDist: options.clientDist });
   const server = createServer(app);

@@ -1,12 +1,34 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import dotenv from "dotenv";
-import { getRuntimePaths } from "../runtime/runtimePaths.js";
+import { isLegacyModelCredentialKey } from "../storage/credentialKeys.js";
+import { getRuntimePaths, type RuntimePaths } from "../runtime/runtimePaths.js";
 
 const envPath = getRuntimePaths().envFile;
 
-dotenv.config({ path: envPath });
-dotenv.config();
+if (process.env.NODE_ENV !== "test") loadRuntimeEnvironment();
+
+export function loadRuntimeEnvironment(
+  runtimePaths: Pick<RuntimePaths, "mode" | "envFile"> = getRuntimePaths(),
+  target: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd()
+): void {
+  if (runtimePaths.mode === "development") {
+    dotenv.config({ path: runtimePaths.envFile, processEnv: target, quiet: true });
+    dotenv.config({ path: path.join(cwd, ".env"), processEnv: target, quiet: true });
+    return;
+  }
+
+  for (const key of Object.keys(target)) {
+    if (isSensitiveCredentialKey(key)) delete target[key];
+  }
+  if (!existsSync(runtimePaths.envFile)) return;
+  const parsed = dotenv.parse(readFileSync(runtimePaths.envFile, "utf8"));
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!isSensitiveCredentialKey(key) && target[key] === undefined) target[key] = value;
+  }
+}
 
 export function getPort(): number {
   return Number(process.env.PORT ?? 8787);
@@ -96,4 +118,8 @@ function stripQuotes(value: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isSensitiveCredentialKey(key: string): boolean {
+  return key === "XHS_COOKIE_STRING" || isLegacyModelCredentialKey(key);
 }
