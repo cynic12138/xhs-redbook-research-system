@@ -77,6 +77,15 @@ Existing bugs and unusual behavior are part of the current behavior baseline unl
 - Credential encryption, extension pairing, general backup/restore, automatic updates, signing, accounts, cloud sync, and multi-source data merging remain outside `D-002`.
 - External SQLite native modules and machine-wide C++ build tools are not part of `D-002`; Node and packaged Electron must both pass the built-in SQLite runtime gate.
 
+## Approved Credential Security Track
+
+- `D-003` is explicitly approved to add Electron `safeStorage` encryption, SQLite Schema v2 secure credential storage, one-time legacy plaintext credential migration, and the minimal credential-security status API/UI required by the approved plan.
+- The installed desktop application must read Cookie and AI model keys only through the encrypted credential vault; plaintext fallback is prohibited after encrypted migration succeeds.
+- Browser development mode may continue to use `.env.local`; installed desktop mode must preserve non-sensitive settings while removing only migrated credential lines.
+- Existing authentication, AI model, content review, Goal, tool-calling, and business API contracts must remain compatible.
+- Credential values, encrypted blobs, and complete credential names must never appear in logs, API responses, artifacts, exports, tests, or committed fixtures.
+- Extension pairing, backup/restore, code signing, automatic updates, cloud sync, accounts, and whole-database encryption remain outside `D-003`.
+
 ## Completion Standards
 
 The repository audit is complete only when:

@@ -6,16 +6,18 @@
 - Baseline commit: `6b606d1`.
 - D-001 development branch: `codex/local-exe-productization`.
 - D-002 development branch: `codex/d-002-sqlite-storage`.
+- D-003 development branch: `codex/d-003-safe-storage`.
 - Baseline verification: 18 Vitest files and 138 tests passed; TypeScript typecheck and production build passed.
 - `docs/PROJECT_CONTEXT.md` remains an untracked user file and is not part of this milestone.
 
 ## Completed Milestone
 
 - `D-001.1` version `0.1.1` passed automated verification and the user's installed-app acceptance, including the Xiaohongshu browser link, extension workflow, and preservation of existing local data.
+- `D-002` version `0.2.0` passed automated verification and the user's installed-app acceptance, including SQLite migration, restart persistence, and Windows installer validation.
 
 ## Current Work
 
-- Active milestone: `D-002` SQLite storage migration.
+- Active milestone: `D-003` encrypted local credentials and version `0.3.0`.
 - Production services now use SQLite only; `LocalStore` is retained solely as a legacy JSON reader for compatibility tests and import support, with no JSON/SQLite dual write.
 - The `0.2.0` installer remains unsigned and restricted to internal engineering validation.
 - Runtime paths, reusable Express lifecycle, graceful job shutdown, Electron single-instance shell, Forge packaging, and Squirrel installer configuration are implemented.
@@ -30,5 +32,6 @@
 - Startup rejects unsupported future Schema versions, and shutdown waits for any in-flight reply before closing SQLite.
 - The unsigned Windows x64 `小红书运营台-0.2.0-Setup.exe` was generated successfully; SHA-256 is `A641B7F1D694BE3293A07286C3D1A7BAA8F795A6B276B984D7A17C0A0C703DEC`.
 - Package inspection found no `.env.local`, `app.db`, legacy JSON data, output, project docs, or `PROJECT_CONTEXT.md`; the sandboxed CommonJS preload is present in the ASAR.
-- Remaining D-002 gate: complete installed `0.1.1 → 0.2.0` migration, restart persistence, and post-upgrade workflow acceptance on Windows.
-- Credential encryption, backup/restore, signing, and fleet distribution remain later milestones.
+- D-002 installed acceptance is complete and its commit is present on remote `main`.
+- D-003 will add SQLite Schema v2, Electron `safeStorage`, automatic plaintext credential migration, a single credential vault, and credential-security status in model settings.
+- Extension pairing, backup/restore, signing, and fleet distribution remain later milestones.

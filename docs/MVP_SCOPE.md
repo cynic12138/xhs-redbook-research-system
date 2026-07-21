@@ -2,28 +2,31 @@
 
 ## Current Milestone
 
-`D-002` replaces the desktop pilot's JSON persistence with a local SQLite database while preserving the existing React, Express, AI, content review, and dedicated Edge login workflows.
+`D-003` protects the installed desktop pilot's Xiaohongshu Cookie and AI model API keys with Electron `safeStorage` and SQLite while preserving the existing React, Express, AI, content review, and dedicated Edge login workflows.
 
 ## In Scope
 
-- SQLite runtime lifecycle, versioned schema migrations, WAL, foreign keys, and busy timeout.
-- Domain repositories for all existing JSON-backed business data.
-- Transactional import of one legacy JSON data directory without modifying its files.
-- A minimal migration status, preview, and execute workflow in the existing settings surface.
-- Built-in `node:sqlite` runtime validation in Node and packaged Electron, plus Windows x64 installer validation.
-- Existing browser development and production server commands remain available.
+- SQLite Schema v2 `secure_credentials` storage for encrypted credential blobs.
+- Electron `safeStorage` encryption and decryption through a single injected credential vault.
+- Automatic, idempotent migration of `XHS_COOKIE_STRING` and AI model keys from the desktop `.env.local`.
+- Preservation of comments, UTF-8 text, blank lines, and non-sensitive configuration during plaintext cleanup.
+- Credential-security status and retry controls in the existing model settings surface.
+- Existing browser development mode continues to use `.env.local`.
+- Windows x64 credential smoke, packaging, installer, and upgrade validation.
 
 ## Out of Scope
 
 - Account management, roles, cloud deployment, or shared data.
-- Credential encryption, extension pairing, general backup/restore, automatic updates, code signing, or custom application artwork.
+- Extension pairing, general backup/restore, automatic updates, code signing, or custom application artwork.
 - Multi-source data merging or long-term JSON/SQLite dual writes.
-- Changes to HTTP routes, response contracts, business rules, or React interactions.
+- Cloud sync, accounts, roles, whole-database encryption, or cross-Windows-user credential portability.
+- Changes to existing business HTTP routes, response contracts, status codes, or business rules.
 
 ## Success Criteria
 
-- All legacy JSON collections migrate with IDs, ordering, and relationships preserved.
-- Production services no longer import `LocalStore`; new writes go only to `app.db`.
-- Import failures roll back without modifying legacy JSON or exposing credentials.
-- Existing API contracts, automated tests, typecheck, web build, and Windows installer build pass.
-- An installed `0.2.0` upgrades a `0.1.1` data directory and safely persists new data across restarts.
+- Installed desktop Cookie and AI model keys are stored only as Electron-encrypted SQLite blobs.
+- Successful migration removes only credential lines from `.env.local` and is safe to repeat.
+- Encryption or verification failure does not modify the plaintext source; cleanup failure remains visible and retryable without plaintext fallback.
+- Unreadable copied credentials require reconfiguration while business data remains available.
+- Existing API contracts, D-002 storage workflows, automated tests, typecheck, web build, credential smoke, and Windows installer build pass.
+- An installed `0.3.0` upgrades a validated `0.2.0` installation without losing business data or non-sensitive configuration.
