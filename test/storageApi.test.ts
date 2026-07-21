@@ -17,13 +17,13 @@ const credentialStatus = {
   legacyPlaintextCredentialCount: 1
 } as const;
 const getCredentialStatus = vi.fn(async () => credentialStatus);
-const prepareRuntimeCredentials = vi.fn(async () => credentialStatus);
+const retryRuntimeCredentialCleanup = vi.fn(async () => credentialStatus);
 
 vi.mock("../src/server/runtime/applicationRuntime.js", () => ({ activateApplicationRuntime }));
 vi.mock("../src/server/runtime/runtimeCredentialVault.js", () => ({
-  prepareRuntimeCredentials,
   readRuntimeCredential: vi.fn(async () => undefined),
-  resolveRuntimeCredentialVault: vi.fn(async () => ({ getStatus: getCredentialStatus }))
+  resolveRuntimeCredentialVault: vi.fn(async () => ({ getStatus: getCredentialStatus })),
+  retryRuntimeCredentialCleanup
 }));
 
 const tempDirs: string[] = [];
@@ -49,7 +49,7 @@ describe("storage migration API", () => {
     const retry = await request(app, "/api/system/credential-security/retry", { method: "POST" });
     expect(retry.status).toBe(200);
     expect(retry.body).toEqual(credentialStatus);
-    expect(prepareRuntimeCredentials).toHaveBeenCalled();
+    expect(retryRuntimeCredentialCleanup).toHaveBeenCalled();
   });
 
   it("previews, executes and reports a SQLite legacy import", async () => {

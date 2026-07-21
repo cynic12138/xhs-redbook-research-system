@@ -4,7 +4,7 @@ import type { NotesQuery } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
 import { getRuntimePaths } from "../runtime/runtimePaths.js";
 import { activateApplicationRuntime } from "../runtime/applicationRuntime.js";
-import { prepareRuntimeCredentials, readRuntimeCredential, resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { readRuntimeCredential, resolveRuntimeCredentialVault, retryRuntimeCredentialCleanup } from "../runtime/runtimeCredentialVault.js";
 import { COOKIE_CREDENTIAL_KEY } from "../storage/credentialKeys.js";
 import { getRuntimeStorage, store } from "../storage/runtimeStorage.js";
 import { jobs } from "../services/jobService.js";
@@ -134,7 +134,7 @@ api.get("/system/credential-security", async (_req, res, next) => {
 
 api.post("/system/credential-security/retry", async (_req, res, next) => {
   try {
-    res.json(await prepareRuntimeCredentials());
+    res.json(await retryRuntimeCredentialCleanup());
   } catch (error) {
     next(error);
   }

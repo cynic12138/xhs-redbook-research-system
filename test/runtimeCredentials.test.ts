@@ -122,6 +122,20 @@ describe("runtime credential boundary", () => {
     expect(fixture.runtime.getRuntimeCredentialVault()).not.toBe(firstVault);
     expect(fixture.storage.getRuntimeStorage()).not.toBe(firstStorage);
   });
+
+  it("keeps the active vault and SQLite storage open when an in-app cleanup retry fails", async () => {
+    const fixture = await createDesktopRuntime();
+    await fixture.runtime.prepareRuntimeCredentials();
+    const vault = fixture.runtime.getRuntimeCredentialVault();
+    const storage = fixture.storage.getRuntimeStorage();
+    vi.spyOn(vault, "migrateLegacyPlaintext").mockRejectedValue(new Error("synthetic cleanup detail"));
+
+    await expect(fixture.runtime.retryRuntimeCredentialCleanup())
+      .rejects.toThrow("本地凭据清理重试失败。");
+
+    expect(fixture.runtime.getRuntimeCredentialVault()).toBe(vault);
+    expect(fixture.storage.getRuntimeStorage()).toBe(storage);
+  });
 });
 
 async function createDesktopRuntime() {

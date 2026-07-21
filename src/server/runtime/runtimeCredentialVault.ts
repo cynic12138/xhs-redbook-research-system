@@ -16,6 +16,7 @@ let configurationComplete = false;
 let runtimeVault: CredentialVault | undefined;
 let runtimeVaultStorage: ApplicationStorage | undefined;
 let preparation: Promise<CredentialSecurityStatus> | undefined;
+let cleanupRetry: Promise<CredentialSecurityStatus> | undefined;
 
 export function configureRuntimeCredentials(options: { cipher: CredentialCipher }): void {
   if (configurationComplete) {
@@ -53,6 +54,20 @@ export async function resolveRuntimeCredentialVault(): Promise<CredentialVault> 
   return getRuntimeCredentialVault();
 }
 
+export function retryRuntimeCredentialCleanup(): Promise<CredentialSecurityStatus> {
+  if (cleanupRetry) return cleanupRetry;
+  const currentRetry = resolveRuntimeCredentialVault()
+    .then((vault) => vault.migrateLegacyPlaintext())
+    .catch(() => {
+      throw new Error("本地凭据清理重试失败。");
+    })
+    .finally(() => {
+      if (cleanupRetry === currentRetry) cleanupRetry = undefined;
+    });
+  cleanupRetry = currentRetry;
+  return currentRetry;
+}
+
 export async function readRuntimeCredential(key: string): Promise<string | undefined> {
   try {
     return await (await resolveRuntimeCredentialVault()).get(key);
@@ -64,6 +79,7 @@ export async function readRuntimeCredential(key: string): Promise<string | undef
 export function disposeRuntimeCredentials(): void {
   runtimeVault = undefined;
   runtimeVaultStorage = undefined;
+  cleanupRetry = undefined;
 }
 
 async function prepareRuntimeCredentialsOnce(): Promise<CredentialSecurityStatus> {
