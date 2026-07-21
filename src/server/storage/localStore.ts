@@ -2,145 +2,16 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { getRuntimePaths } from "../runtime/runtimePaths.js";
-import type {
-  AnalyticsReport,
-  AiArtifact,
-  AiGoalRun,
-  AiAssistantMessage,
-  AiCustomPrompt,
-  AiCustomPromptRevision,
-  AiModelConfig,
-  AiOrchestration,
-  AiPromptConfig,
-  AiReport,
-  AuthStatus,
-  AuthorPostRecord,
-  AuthorRecord,
-  BrowserBridgeStatus,
-  BoardRecord,
-  CommentRecord,
-  ContentDraft,
-  ContentPlaybook,
-  ContentPlaybookRevision,
-  ContentProject,
-  ContentProjectMaterial,
-  ContentReviewRun,
-  FavoriteNoteRecord,
-  HealthReportRecord,
-  NoteRecord,
-  QueueItem,
-  ReplyActionRecord,
-  ReplyPlanRecord,
-  SearchJob
-} from "../../shared/types.js";
+import {
+  getCollectionDefault,
+  type CollectionName,
+  type CollectionValue,
+  type StoreLike
+} from "./storageContract.js";
 
-type CollectionName =
-  | "authStatus"
-  | "browserBridgeStatus"
-  | "searchJobs"
-  | "queueItems"
-  | "notes"
-  | "comments"
-  | "authors"
-  | "authorPosts"
-  | "analysisReports"
-  | "aiModels"
-  | "aiReports"
-  | "aiArtifacts"
-  | "aiPromptConfigs"
-  | "aiCustomPrompts"
-  | "aiCustomPromptRevisions"
-  | "aiOrchestrations"
-  | "aiGoalRuns"
-  | "aiMessages"
-  | "replyPlans"
-  | "replyActions"
-  | "healthReports"
-  | "boards"
-  | "favoriteNotes"
-  | "contentPlaybooks"
-  | "contentPlaybookRevisions"
-  | "contentProjects"
-  | "contentProjectMaterials"
-  | "contentDrafts"
-  | "contentReviews"
-  | "rateLimit";
+export type { CollectionName, CollectionValue, StoreLike } from "./storageContract.js";
 
-interface DataShape {
-  authStatus: AuthStatus;
-  browserBridgeStatus: BrowserBridgeStatus;
-  searchJobs: SearchJob[];
-  queueItems: QueueItem[];
-  notes: NoteRecord[];
-  comments: CommentRecord[];
-  authors: AuthorRecord[];
-  authorPosts: AuthorPostRecord[];
-  analysisReports: AnalyticsReport[];
-  aiModels: AiModelConfig[];
-  aiReports: AiReport[];
-  aiArtifacts: AiArtifact[];
-  aiPromptConfigs: AiPromptConfig[];
-  aiCustomPrompts: AiCustomPrompt[];
-  aiCustomPromptRevisions: AiCustomPromptRevision[];
-  aiOrchestrations: AiOrchestration[];
-  aiGoalRuns: AiGoalRun[];
-  aiMessages: AiAssistantMessage[];
-  replyPlans: ReplyPlanRecord[];
-  replyActions: ReplyActionRecord[];
-  healthReports: HealthReportRecord[];
-  boards: BoardRecord[];
-  favoriteNotes: FavoriteNoteRecord[];
-  contentPlaybooks: ContentPlaybook[];
-  contentPlaybookRevisions: ContentPlaybookRevision[];
-  contentProjects: ContentProject[];
-  contentProjectMaterials: ContentProjectMaterial[];
-  contentDrafts: ContentDraft[];
-  contentReviews: ContentReviewRun[];
-  rateLimit: {
-    budgetDate: string;
-    consumedToday: number;
-  };
-}
-
-const defaults: DataShape = {
-  authStatus: { connected: false, configured: false },
-  browserBridgeStatus: { connected: false, browser: "unknown", permissionStatus: "unknown" },
-  searchJobs: [],
-  queueItems: [],
-  notes: [],
-  comments: [],
-  authors: [],
-  authorPosts: [],
-  analysisReports: [],
-  aiModels: [],
-  aiReports: [],
-  aiArtifacts: [],
-  aiPromptConfigs: [],
-  aiCustomPrompts: [],
-  aiCustomPromptRevisions: [],
-  aiOrchestrations: [],
-  aiGoalRuns: [],
-  aiMessages: [],
-  replyPlans: [],
-  replyActions: [],
-  healthReports: [],
-  boards: [],
-  favoriteNotes: [],
-  contentPlaybooks: [],
-  contentPlaybookRevisions: [],
-  contentProjects: [],
-  contentProjectMaterials: [],
-  contentDrafts: [],
-  contentReviews: [],
-  rateLimit: {
-    budgetDate: new Date().toISOString().slice(0, 10),
-    consumedToday: 0
-  }
-};
-
-export type CollectionValue = DataShape;
-
-export class LocalStore {
+export class LocalStore implements StoreLike {
   private readonly dataDir: string;
   private readonly locks = new Map<CollectionName, Promise<unknown>>();
 
@@ -152,12 +23,12 @@ export class LocalStore {
     await this.ensureDataDir();
     const filePath = this.pathFor(name);
     if (!existsSync(filePath)) {
-      return structuredClone(defaults[name]);
+      return getCollectionDefault(name);
     }
 
     const raw = await readFile(filePath, "utf8");
     if (!raw.trim()) {
-      return structuredClone(defaults[name]);
+      return getCollectionDefault(name);
     }
     return JSON.parse(raw) as CollectionValue[K];
   }
