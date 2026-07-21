@@ -20,4 +20,11 @@ describe("runtime credential startup order", () => {
     expect(source.indexOf("await prepareRuntimeCredentials()"))
       .toBeLessThan(source.indexOf("await listen(server"));
   });
+
+  it("invalidates runtime credentials whenever application storage is closed", async () => {
+    const source = await readFile("src/server/application.ts", "utf8");
+
+    expect(source).toContain("disposeRuntimeCredentials");
+    expect(source).toMatch(/disposeRuntimeCredentials\(\);\s*closeRuntimeStorage\(\);/);
+  });
 });

@@ -58,6 +58,26 @@ describe("SQLite credential vault", () => {
     fixture.database.close();
   });
 
+  it("does not let a delayed rotation overwrite a newer concurrent value", async () => {
+    const fixture = await createFixture();
+    try {
+      await fixture.vault.set("credential-rotation-race", "original-placeholder");
+      fixture.cipher.shouldReEncrypt = true;
+      const gate = fixture.cipher.gateEncryptionFor("original-placeholder");
+
+      const rotatingRead = fixture.vault.get("credential-rotation-race");
+      await gate.started;
+      fixture.cipher.shouldReEncrypt = false;
+      await fixture.vault.set("credential-rotation-race", "newer-placeholder");
+      gate.release();
+
+      await expect(rotatingRead).resolves.toBe("original-placeholder");
+      await expect(fixture.vault.get("credential-rotation-race")).resolves.toBe("newer-placeholder");
+    } finally {
+      fixture.database.close();
+    }
+  });
+
   it("reports unreadable ciphertext without deleting or replacing the stored row", async () => {
     const fixture = await createFixture();
     await fixture.vault.set("credential-four", "vault-value");
@@ -132,6 +152,8 @@ class TestCipher implements CredentialCipher {
   shouldReEncrypt = false;
   private nextCiphertext = 1;
   private readonly plaintextByCiphertext = new Map<string, string>();
+  private gatedValue: string | undefined;
+  private encryptionGate: Deferred | undefined;
 
   async isAvailable(): Promise<boolean> {
     return true;
@@ -139,6 +161,13 @@ class TestCipher implements CredentialCipher {
 
   async encryptString(value: string): Promise<Buffer> {
     if (this.failEncrypt) throw new Error(`cipher failure detail: ${value}`);
+    if (value === this.gatedValue && this.encryptionGate) {
+      const gate = this.encryptionGate;
+      this.gatedValue = undefined;
+      this.encryptionGate = undefined;
+      gate.start();
+      await gate.promise;
+    }
     const encrypted = Buffer.from([this.nextCiphertext++]);
     this.plaintextByCiphertext.set(encrypted.toString("hex"), value);
     return encrypted;
@@ -150,4 +179,26 @@ class TestCipher implements CredentialCipher {
     if (plaintext === undefined) throw new Error("unknown ciphertext");
     return { value: plaintext, shouldReEncrypt: this.shouldReEncrypt };
   }
+
+  gateEncryptionFor(value: string): { started: Promise<void>; release(): void } {
+    const deferred = new Deferred();
+    this.gatedValue = value;
+    this.encryptionGate = deferred;
+    return { started: deferred.started, release: () => deferred.resolve() };
+  }
+}
+
+class Deferred {
+  readonly promise: Promise<void>;
+  readonly started: Promise<void>;
+  private resolvePromise!: () => void;
+  private resolveStarted!: () => void;
+
+  constructor() {
+    this.promise = new Promise((resolve) => { this.resolvePromise = resolve; });
+    this.started = new Promise((resolve) => { this.resolveStarted = resolve; });
+  }
+
+  start(): void { this.resolveStarted(); }
+  resolve(): void { this.resolvePromise(); }
 }

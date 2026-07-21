@@ -1,6 +1,6 @@
 import type { CredentialSecurityStatus } from "../../shared/types.js";
 import { getRuntimePaths } from "./runtimePaths.js";
-import { closeRuntimeStorage, getRuntimeStorage } from "../storage/runtimeStorage.js";
+import { closeRuntimeStorage, getRuntimeStorage, type ApplicationStorage } from "../storage/runtimeStorage.js";
 import { isLegacyModelCredentialKey } from "../storage/credentialKeys.js";
 import {
   SqliteCredentialVault,
@@ -14,6 +14,7 @@ const DESKTOP_STARTUP_FAILURE = "本地凭据安全初始化失败。";
 let configuredCipher: CredentialCipher | undefined;
 let configurationComplete = false;
 let runtimeVault: CredentialVault | undefined;
+let runtimeVaultStorage: ApplicationStorage | undefined;
 let preparation: Promise<CredentialSecurityStatus> | undefined;
 
 export function configureRuntimeCredentials(options: { cipher: CredentialCipher }): void {
@@ -27,15 +28,19 @@ export function configureRuntimeCredentials(options: { cipher: CredentialCipher 
   configurationComplete = true;
 }
 
-export async function prepareRuntimeCredentials(): Promise<CredentialSecurityStatus> {
-  if (runtimeVault) return runtimeVault.migrateLegacyPlaintext();
+export function prepareRuntimeCredentials(): Promise<CredentialSecurityStatus> {
   if (preparation) return preparation;
-  preparation = prepareRuntimeCredentialsOnce();
-  try {
-    return await preparation;
-  } finally {
-    preparation = undefined;
-  }
+  const currentPreparation = prepareRuntimeCredentialsOnce()
+    .catch(() => {
+      disposeRuntimeCredentials();
+      closeRuntimeStorage();
+      throw new Error(DESKTOP_STARTUP_FAILURE);
+    })
+    .finally(() => {
+      if (preparation === currentPreparation) preparation = undefined;
+    });
+  preparation = currentPreparation;
+  return currentPreparation;
 }
 
 export function getRuntimeCredentialVault(): CredentialVault {
@@ -43,29 +48,34 @@ export function getRuntimeCredentialVault(): CredentialVault {
   return runtimeVault;
 }
 
+export function disposeRuntimeCredentials(): void {
+  runtimeVault = undefined;
+  runtimeVaultStorage = undefined;
+}
+
 async function prepareRuntimeCredentialsOnce(): Promise<CredentialSecurityStatus> {
   const runtimePaths = getRuntimePaths();
   if (runtimePaths.mode === "development") {
-    runtimeVault = new DevelopmentEnvCredentialVault();
-    return runtimeVault.getStatus();
-  }
-
-  try {
-    if (!configurationComplete || !configuredCipher || !await configuredCipher.isAvailable()) {
-      throw new Error(DESKTOP_STARTUP_FAILURE);
-    }
-    const storage = getRuntimeStorage();
-    const vault = new SqliteCredentialVault(storage.database, configuredCipher, {
-      legacyEnvFile: runtimePaths.envFile
-    });
+    const vault = runtimeVault ?? new DevelopmentEnvCredentialVault();
     const status = await vault.migrateLegacyPlaintext();
     runtimeVault = vault;
+    runtimeVaultStorage = undefined;
     return status;
-  } catch {
-    closeRuntimeStorage();
-    runtimeVault = undefined;
+  }
+
+  if (!configurationComplete || !configuredCipher || !await configuredCipher.isAvailable()) {
     throw new Error(DESKTOP_STARTUP_FAILURE);
   }
+  const storage = getRuntimeStorage();
+  const vault = runtimeVault && runtimeVaultStorage === storage
+    ? runtimeVault
+    : new SqliteCredentialVault(storage.database, configuredCipher, {
+      legacyEnvFile: runtimePaths.envFile
+    });
+  const status = await vault.migrateLegacyPlaintext();
+  runtimeVault = vault;
+  runtimeVaultStorage = storage;
+  return status;
 }
 
 class DevelopmentEnvCredentialVault implements CredentialVault {

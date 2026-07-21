@@ -68,16 +68,17 @@ export class SqliteCredentialVault implements CredentialVault {
       "SELECT encrypted_value FROM secure_credentials WHERE credential_key = ?"
     ).get(key) as { encrypted_value: Uint8Array } | undefined;
     if (!row) return { status: "missing" };
+    const originalEncryptedValue = Buffer.from(row.encrypted_value);
 
     let decrypted: { value: string; shouldReEncrypt: boolean };
     try {
-      decrypted = await this.cipher.decryptString(Buffer.from(row.encrypted_value));
+      decrypted = await this.cipher.decryptString(originalEncryptedValue);
     } catch {
       return { status: "unreadable" };
     }
 
     if (decrypted.shouldReEncrypt) {
-      await this.set(key, decrypted.value);
+      await this.rotateIfUnchanged(key, decrypted.value, originalEncryptedValue);
     }
     return { status: "found", value: decrypted.value };
   }
@@ -111,6 +112,20 @@ export class SqliteCredentialVault implements CredentialVault {
     this.database.connection.prepare(
       "DELETE FROM secure_credentials WHERE credential_key = ?"
     ).run(key);
+  }
+
+  private async rotateIfUnchanged(key: string, value: string, originalEncryptedValue: Buffer): Promise<void> {
+    let rotatedValue: Buffer;
+    try {
+      rotatedValue = await this.cipher.encryptString(value);
+    } catch {
+      throw new Error("Credential encryption failed.");
+    }
+    this.database.connection.prepare(`
+      UPDATE secure_credentials
+      SET encrypted_value = ?, provider = ?, updated_at = ?
+      WHERE credential_key = ? AND encrypted_value = ?
+    `).run(rotatedValue, CREDENTIAL_PROVIDER, new Date().toISOString(), key, originalEncryptedValue);
   }
 
   async getStatus(): Promise<CredentialSecurityStatus> {
@@ -214,7 +229,7 @@ export class SqliteCredentialVault implements CredentialVault {
 
     for (const key of legacy.values.keys()) delete process.env[key];
     if (removableKeys.size > 0) {
-      const cleaned = legacy.lines
+      const cleaned = legacy.bom + legacy.lines
         .filter((line) => line.key === undefined || !removableKeys.has(line.key))
         .map((line) => line.raw)
         .join("");
@@ -238,12 +253,12 @@ export class SqliteCredentialVault implements CredentialVault {
   }
 
   private async readLegacyPlaintext(): Promise<LegacyPlaintextSource> {
-    if (!this.legacyEnvFile) return { lines: [], values: new Map() };
+    if (!this.legacyEnvFile) return { bom: "", lines: [], values: new Map() };
     let source: string;
     try {
       source = await this.fileSystem.readFile(this.legacyEnvFile, "utf8");
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { lines: [], values: new Map() };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { bom: "", lines: [], values: new Map() };
       throw new Error("Credential status failed.");
     }
     return parseLegacyPlaintext(source);
@@ -269,12 +284,15 @@ interface LegacyPlaintextLine {
 }
 
 interface LegacyPlaintextSource {
+  bom: string;
   lines: LegacyPlaintextLine[];
   values: Map<string, string>;
 }
 
 function parseLegacyPlaintext(source: string): LegacyPlaintextSource {
-  const rawLines = source.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g)?.filter((line) => line !== "") ?? [];
+  const bom = source.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const content = bom ? source.slice(1) : source;
+  const rawLines = content.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g)?.filter((line) => line !== "") ?? [];
   const values = new Map<string, string>();
   const lines = rawLines.map((raw): LegacyPlaintextLine => {
     const content = raw.replace(/(?:\r\n|\n|\r)$/, "");
@@ -285,5 +303,5 @@ function parseLegacyPlaintext(source: string): LegacyPlaintextSource {
     values.set(key, parsed[key] ?? "");
     return { key, raw };
   });
-  return { lines, values };
+  return { bom, lines, values };
 }

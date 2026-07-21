@@ -110,6 +110,22 @@ describe("desktop legacy credential migration", () => {
     expect(process.env.XHS_COOKIE_STRING).toBeUndefined();
     fixture.database.close();
   });
+
+  it("preserves a UTF-8 BOM while cleaning a sensitive first line with CRLF endings", async () => {
+    const source = "\uFEFFXHS_COOKIE_STRING=bom-placeholder\r\nPORT=8787\r\n# 保留\r\n";
+    const fixture = await createFixture(source);
+    try {
+      const status = await fixture.vault.migrateLegacyPlaintext();
+
+      expect(status.state).toBe("encrypted");
+      expect(status.cookieConfigured).toBe(true);
+      expect(await readFile(fixture.envFile, "utf8")).toBe("\uFEFFPORT=8787\r\n# 保留\r\n");
+      await expect(fixture.vault.migrateLegacyPlaintext()).resolves.toEqual(status);
+      expect(await readFile(fixture.envFile, "utf8")).toBe("\uFEFFPORT=8787\r\n# 保留\r\n");
+    } finally {
+      fixture.database.close();
+    }
+  });
 });
 
 async function createFixture(source: string, failRename = false) {

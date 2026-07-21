@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
-import { prepareRuntimeCredentials } from "./runtime/runtimeCredentialVault.js";
+import { disposeRuntimeCredentials, prepareRuntimeCredentials } from "./runtime/runtimeCredentialVault.js";
 import { getRuntimePaths } from "./runtime/runtimePaths.js";
 import { activateApplicationRuntime, deactivateApplicationRuntime } from "./runtime/applicationRuntime.js";
 import { api } from "./routes/api.js";
@@ -91,13 +91,13 @@ export async function startApplicationServer(
   } catch (error) {
     await deactivateApplicationRuntime().catch(() => undefined);
     await closeServer(server).catch(() => undefined);
-    closeRuntimeStorage();
+    releaseRuntimeStorage();
     throw error;
   }
   const address = server.address();
   if (!address || typeof address === "string") {
     await closeServer(server);
-    closeRuntimeStorage();
+    releaseRuntimeStorage();
     throw new Error("本地服务已启动，但无法读取监听地址。");
   }
 
@@ -144,8 +144,13 @@ async function closeApplication(server: Server): Promise<void> {
     await deactivateApplicationRuntime();
     await closeServer(server);
   } finally {
-    closeRuntimeStorage();
+    releaseRuntimeStorage();
   }
+}
+
+function releaseRuntimeStorage(): void {
+  disposeRuntimeCredentials();
+  closeRuntimeStorage();
 }
 
 async function closeServer(server: Server): Promise<void> {
