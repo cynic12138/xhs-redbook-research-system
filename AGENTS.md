@@ -68,6 +68,14 @@ Existing bugs and unusual behavior are part of the current behavior baseline unl
 - Desktop runtime data must stay outside the installation directory and must never be committed or packaged.
 - SQLite, credential encryption, extension pairing, backup/restore, automatic updates, and code signing remain outside `D-001` and require their own approved tasks.
 
+## Approved SQLite Storage Track
+
+- `D-002` is explicitly approved to add `better-sqlite3`, versioned migrations, domain repositories, the Electron native-module unpack configuration, legacy JSON import, and the minimal storage-migration UI/API required by the approved plan.
+- `D-002` must preserve existing business API paths, request/response contracts, status codes, business rules, and the Windows-only local deployment model.
+- Production storage must cut over once from JSON to SQLite; long-term JSON/SQLite dual writes and silent fallback to JSON are prohibited.
+- `LocalStore` may remain only as the read-only legacy importer after cutover. Legacy JSON, `.env.local`, browser profiles, and user output must never be deleted or packaged.
+- Credential encryption, extension pairing, general backup/restore, automatic updates, signing, accounts, cloud sync, and multi-source data merging remain outside `D-002`.
+
 ## Completion Standards
 
 The repository audit is complete only when:

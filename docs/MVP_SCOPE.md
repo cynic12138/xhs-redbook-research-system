@@ -2,27 +2,28 @@
 
 ## Current Milestone
 
-`D-001` delivers an unsigned Windows x64 Electron pilot that runs the existing React, Express, JSON storage, AI, content review, and dedicated Edge login workflows as a local desktop application.
+`D-002` replaces the desktop pilot's JSON persistence with a local SQLite database while preserving the existing React, Express, AI, content review, and dedicated Edge login workflows.
 
 ## In Scope
 
-- Electron main process and single-instance desktop lifecycle.
-- Runtime paths rooted in the Windows user profile for packaged builds.
-- Reusable Express application/server startup and graceful shutdown.
-- Electron Forge and Squirrel.Windows packaging.
+- SQLite runtime lifecycle, versioned schema migrations, WAL, foreign keys, and busy timeout.
+- Domain repositories for all existing JSON-backed business data.
+- Transactional import of one legacy JSON data directory without modifying its files.
+- A minimal migration status, preview, and execute workflow in the existing settings surface.
+- Electron native-module rebuilding/unpacking and Windows x64 installer validation.
 - Existing browser development and production server commands remain available.
 
 ## Out of Scope
 
-- SQLite or any database migration.
 - Account management, roles, cloud deployment, or shared data.
-- Credential encryption, extension pairing, backup/restore, automatic updates, code signing, or custom application artwork.
+- Credential encryption, extension pairing, general backup/restore, automatic updates, code signing, or custom application artwork.
+- Multi-source data merging or long-term JSON/SQLite dual writes.
 - Changes to HTTP routes, response contracts, business rules, or React interactions.
 
 ## Success Criteria
 
-- The existing automated suite, typecheck, and web production build pass.
-- A Windows x64 package and unsigned Setup.exe can be generated.
-- The installed app stores runtime files under the current Windows user's application data directory.
-- A second launch focuses the existing app instead of starting a second server.
-- Running jobs are safely paused before an approved application exit.
+- All legacy JSON collections migrate with IDs, ordering, and relationships preserved.
+- Production services no longer import `LocalStore`; new writes go only to `app.db`.
+- Import failures roll back without modifying legacy JSON or exposing credentials.
+- Existing API contracts, automated tests, typecheck, web build, and Windows installer build pass.
+- An installed `0.2.0` upgrades a `0.1.1` data directory and safely persists new data across restarts.
