@@ -21,7 +21,7 @@ import {
   getSearchJitterPct,
   getWorkerStaggerSec
 } from "../utils/env.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 import { buildAnalytics, analyzeNote } from "./analysis.js";
 import { markAuthDisconnected } from "./authState.js";
 import { normalizeAuthor, normalizeAuthorPosts, normalizeComments, normalizeNote, normalizeSearchResults } from "./normalizers.js";

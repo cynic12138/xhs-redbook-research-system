@@ -157,7 +157,7 @@ describe("AI goal run API routes", () => {
       planAiGoalRun: vi.fn(async () => ({ goalRun })),
       retryAiGoalRun: vi.fn(async () => ({ ...goalRun, status: "running" }))
     }));
-    vi.doMock("../src/server/storage/localStore.js", () => ({
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
         read: vi.fn(async (name: string) => name === "aiArtifacts" ? [artifact] : []),
         write: vi.fn(async () => undefined),
@@ -206,7 +206,7 @@ describe("browser auth API routes", () => {
       getCookieString: vi.fn(async () => "a1=old; web_session=old"),
       saveCookieString: vi.fn()
     }));
-    vi.doMock("../src/server/storage/localStore.js", () => ({
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
         read: vi.fn(async (name: string) => {
           if (name === "authStatus") {
@@ -238,7 +238,7 @@ describe("browser auth API routes", () => {
       getCookieString: vi.fn(async () => undefined),
       saveCookieString: vi.fn()
     }));
-    vi.doMock("../src/server/storage/localStore.js", () => ({
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
         read: vi.fn(async () => ({ connected: false, configured: false })),
         write: storeWrite,
@@ -317,7 +317,7 @@ describe("browser auth API routes", () => {
       getCookieString: vi.fn(async () => undefined),
       saveCookieString
     }));
-    vi.doMock("../src/server/storage/localStore.js", () => ({
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
         read: vi.fn(async () => ({ connected: false, configured: false })),
         write: storeWrite,
@@ -407,7 +407,7 @@ describe("browser bridge API routes", () => {
   });
 
   it("returns browser bridge status", async () => {
-    vi.doMock("../src/server/storage/localStore.js", () => ({
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
         read: vi.fn(async (name: string) =>
           name === "browserBridgeStatus"
@@ -436,7 +436,7 @@ describe("browser bridge API routes", () => {
       getCookieString: vi.fn(async () => undefined),
       saveCookieString
     }));
-    vi.doMock("../src/server/storage/localStore.js", () => ({
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
         read: vi.fn(async () => ({ connected: false, configured: false })),
         write: storeWrite,

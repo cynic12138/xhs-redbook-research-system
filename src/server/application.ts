@@ -6,6 +6,7 @@ import express from "express";
 import { getRuntimePaths } from "./runtime/runtimePaths.js";
 import { api } from "./routes/api.js";
 import { jobs } from "./services/jobService.js";
+import { closeRuntimeStorage, getRuntimeStorage } from "./storage/runtimeStorage.js";
 import { getAutoResumeJobs, getPort } from "./utils/env.js";
 
 export interface RunningApplicationServer {
@@ -30,6 +31,26 @@ export function createApplication(options: { clientDist?: string } = {}): expres
 
   app.use(cors());
   app.use(express.json({ limit: "2mb" }));
+  app.use(async (req, res, next) => {
+    if (
+      ["GET", "HEAD", "OPTIONS"].includes(req.method) ||
+      req.path.startsWith("/api/system/storage-status") ||
+      req.path.startsWith("/api/system/legacy-import/")
+    ) {
+      next();
+      return;
+    }
+    try {
+      const status = await getRuntimeStorage().status();
+      if (status.migrationState === "legacy-import-required") {
+        res.status(409).json({ error: "检测到旧版 JSON 数据，请先在模型设置的数据存储栏目完成迁移。" });
+        return;
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
   app.use("/api", api);
 
   if (existsSync(clientDist)) {
@@ -77,7 +98,7 @@ export async function startApplicationServer(
     host,
     port,
     url: `http://${host}:${port}`,
-    close: () => closeServer(server)
+    close: () => closeApplication(server)
   };
 }
 
@@ -105,6 +126,14 @@ async function listen(server: Server, host: "127.0.0.1", port: number): Promise<
     server.once("listening", handleListening);
     server.listen(port, host);
   });
+}
+
+async function closeApplication(server: Server): Promise<void> {
+  try {
+    await closeServer(server);
+  } finally {
+    closeRuntimeStorage();
+  }
 }
 
 async function closeServer(server: Server): Promise<void> {

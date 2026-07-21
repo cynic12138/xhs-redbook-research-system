@@ -19,7 +19,7 @@ const store = vi.hoisted(() => ({
   })
 }));
 
-vi.mock("../src/server/storage/localStore.js", () => ({ store }));
+vi.mock("../src/server/storage/runtimeStorage.js", () => ({ store }));
 vi.mock("../src/server/services/redbookService.js", () => ({ redbook: {} }));
 vi.mock("../src/server/services/authState.js", () => ({ markAuthDisconnected: vi.fn(async () => undefined) }));
 vi.mock("../src/server/utils/env.js", () => ({

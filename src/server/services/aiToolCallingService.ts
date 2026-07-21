@@ -8,7 +8,7 @@ import type {
   SearchSort
 } from "../../shared/types.js";
 import { clamp, nowIso, unique } from "../../shared/utils.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 import { getEnvValue } from "../utils/env.js";
 import { createAiOrchestration } from "./aiOrchestratorService.js";
 

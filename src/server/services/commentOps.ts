@@ -6,7 +6,7 @@ import type {
   ReplyStrategy
 } from "../../shared/types.js";
 import { asRecord, createId, detectRiskSignal, nowIso, pickString } from "../../shared/utils.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 import { markAuthDisconnected } from "./authState.js";
 import { redbook } from "./redbookService.js";
 

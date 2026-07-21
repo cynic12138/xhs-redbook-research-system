@@ -1,6 +1,6 @@
 import type { HealthNoteDiagnostic, HealthReportRecord, NoteRecord } from "../../shared/types.js";
 import { asRecord, createId, nowIso, pickString } from "../../shared/utils.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 import { redbook } from "./redbookService.js";
 
 const sensitiveWords = ["最", "第一", "唯一", "永久", "保证", "包过", "私信", "微信", "VX", "加我", "返现", "引流"];
@@ -67,4 +67,3 @@ function levelMeta(level: number): { label: string; color: HealthNoteDiagnostic[
   if (level <= 2) return { label: "轻微限流", color: "yellow" };
   return { label: "高风险限流", color: "red" };
 }
-

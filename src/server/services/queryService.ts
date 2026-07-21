@@ -12,7 +12,7 @@ import type {
 import { clamp, nowIso } from "../../shared/utils.js";
 import { buildAnalytics } from "./analysis.js";
 import { jobs } from "./jobService.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 
 export async function listNotes(query: NotesQuery, localStore = store): Promise<NoteRecord[]> {
   const notes = await localStore.read("notes");

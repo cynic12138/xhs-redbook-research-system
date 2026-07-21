@@ -85,8 +85,6 @@ export class LocalStore implements StoreLike {
   }
 }
 
-export const store = new LocalStore();
-
 async function renameWithRetry(source: string, target: string): Promise<void> {
   for (let attempt = 0; attempt < 6; attempt += 1) {
     try {

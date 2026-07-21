@@ -33,7 +33,7 @@ import type {
   SearchJob
 } from "../../shared/types.js";
 import { clamp, createId, nowIso } from "../../shared/utils.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 import { getEnvValue, saveEnvValue } from "../utils/env.js";
 import {
   AI_ASSISTANT_PROMPT_VERSION,

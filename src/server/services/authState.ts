@@ -1,5 +1,5 @@
 import { nowIso } from "../../shared/utils.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 
 export async function markAuthDisconnected(reason: string): Promise<void> {
   if (!isAuthRisk(reason)) {

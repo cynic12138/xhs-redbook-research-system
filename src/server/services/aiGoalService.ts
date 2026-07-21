@@ -13,7 +13,7 @@ import type {
   SearchJobInput
 } from "../../shared/types.js";
 import { createId, nowIso, unique } from "../../shared/utils.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 import { jobs } from "./jobService.js";
 import { generateContentDraftBatch } from "./contentStudioService.js";
 

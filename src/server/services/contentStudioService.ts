@@ -39,7 +39,7 @@ import {
   WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION,
   WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY
 } from "../../shared/contentReviewPolicy.js";
-import { store } from "../storage/localStore.js";
+import { store } from "../storage/runtimeStorage.js";
 import { getEnvValue } from "../utils/env.js";
 
 type StoreLike = Pick<typeof store, "read" | "write" | "update">;

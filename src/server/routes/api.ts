@@ -2,7 +2,8 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import type { NotesQuery } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
-import { store } from "../storage/localStore.js";
+import { getRuntimePaths } from "../runtime/runtimePaths.js";
+import { getRuntimeStorage, store } from "../storage/runtimeStorage.js";
 import { saveCookieString, getCookieString } from "../utils/env.js";
 import { jobs } from "../services/jobService.js";
 import { redbook } from "../services/redbookService.js";
@@ -105,6 +106,41 @@ export const api = Router();
 startReplyWorker();
 
 const serverStartedAt = nowIso();
+
+const legacyImportPreviewInput = z.object({
+  sourceDir: z.string().min(1).optional()
+});
+
+const legacyImportExecuteInput = z.object({
+  sourceDir: z.string().min(1),
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/)
+});
+
+api.get("/system/storage-status", async (_req, res, next) => {
+  try {
+    res.json(await getRuntimeStorage().status());
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/system/legacy-import/preview", async (req, res, next) => {
+  try {
+    const input = legacyImportPreviewInput.parse(req.body ?? {});
+    res.json(await getRuntimeStorage().legacyImport.preview(input.sourceDir ?? getRuntimePaths().dataDir));
+  } catch (error) {
+    next(error);
+  }
+});
+
+api.post("/system/legacy-import/execute", async (req, res, next) => {
+  try {
+    const input = legacyImportExecuteInput.parse(req.body);
+    res.json(await getRuntimeStorage().legacyImport.execute(input));
+  } catch (error) {
+    next(error);
+  }
+});
 
 const jobInput = z.object({
   keywords: z.array(z.string()).min(1),
