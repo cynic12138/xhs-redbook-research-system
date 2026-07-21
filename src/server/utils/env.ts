@@ -34,23 +34,6 @@ export function getPort(): number {
   return Number(process.env.PORT ?? 8787);
 }
 
-export async function getCookieString(): Promise<string | undefined> {
-  const fromEnv = process.env.XHS_COOKIE_STRING;
-  if (fromEnv) {
-    return stripQuotes(fromEnv);
-  }
-  if (!existsSync(envPath)) {
-    return undefined;
-  }
-  const raw = await readFile(envPath, "utf8");
-  const match = raw.match(/^XHS_COOKIE_STRING=(.*)$/m);
-  return match ? stripQuotes(match[1]) : undefined;
-}
-
-export async function saveCookieString(cookieString: string): Promise<void> {
-  await saveEnvValue("XHS_COOKIE_STRING", cookieString);
-}
-
 export async function saveEnvValue(key: string, value: string): Promise<void> {
   const existing = existsSync(envPath) ? await readFile(envPath, "utf8") : "";
   const safe = JSON.stringify(value);

@@ -8,8 +8,9 @@ import type {
   SearchSort
 } from "../../shared/types.js";
 import { clamp, nowIso, unique } from "../../shared/utils.js";
+import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { modelCredentialKey } from "../storage/credentialKeys.js";
 import { store } from "../storage/runtimeStorage.js";
-import { getEnvValue } from "../utils/env.js";
 import { createAiOrchestration } from "./aiOrchestratorService.js";
 
 type StoreLike = Pick<typeof store, "read" | "update">;
@@ -29,12 +30,12 @@ type FetchLike = (
 
 interface ToolCallingOptions extends ControlledOptions {
   fetchImpl?: FetchLike;
-  getApiKey?: (model: AiModelConfig) => string | undefined;
+  getApiKey?: (model: AiModelConfig) => string | undefined | Promise<string | undefined>;
 }
 
 interface ToolsProbeOptions {
   fetchImpl?: FetchLike;
-  getApiKey?: (model: AiModelConfig) => string | undefined;
+  getApiKey?: (model: AiModelConfig) => string | undefined | Promise<string | undefined>;
 }
 
 export type AiToolName =
@@ -264,14 +265,16 @@ async function buildToolPlan(
 async function resolveModel(
   modelId: string | undefined,
   storage: StoreLike,
-  getApiKey?: (model: AiModelConfig) => string | undefined
+  getApiKey?: (model: AiModelConfig) => string | undefined | Promise<string | undefined>
 ): Promise<{ model: AiModelConfig; apiKey: string }> {
   const models = await storage.read("aiModels");
   const model = (modelId ? models.find((item) => item.id === modelId) : undefined) ?? models.find((item) => item.isDefault) ?? models[0];
   if (!model) {
     throw new Error("No AI model configured.");
   }
-  const apiKey = getApiKey?.(model) ?? getEnvValue(keyNameForModel(model.id));
+  const injectedApiKey = getApiKey ? await getApiKey(model) : undefined;
+  const apiKey = injectedApiKey
+    ?? await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
   if (!apiKey) {
     throw new Error("AI model API key is not configured.");
   }
@@ -399,10 +402,6 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
     throw new Error(`${label} must be an object.`);
   }
   return value as Record<string, unknown>;
-}
-
-function keyNameForModel(id: string): string {
-  return `AI_MODEL_${id.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}_KEY`;
 }
 
 export function sanitizeToolSearchArgs(args: Record<string, unknown>): {

@@ -33,8 +33,9 @@ import type {
   SearchJob
 } from "../../shared/types.js";
 import { clamp, createId, nowIso } from "../../shared/utils.js";
+import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { modelCredentialKey } from "../storage/credentialKeys.js";
 import { store } from "../storage/runtimeStorage.js";
-import { getEnvValue, saveEnvValue } from "../utils/env.js";
 import {
   AI_ASSISTANT_PROMPT_VERSION,
   buildAiWorkflowPrompt,
@@ -138,7 +139,12 @@ const workflowDefinitions: AiWorkflowDefinition[] = [
 ];
 
 export async function listAiModels(): Promise<AiModelConfig[]> {
-  return store.read("aiModels");
+  const models = await store.read("aiModels");
+  if (models.some((model) => model.hasApiKey || model.apiKeyMasked)) {
+    await store.update("aiModels", (items) => items.map(sanitizeStoredModel));
+  }
+  const vault = await resolveRuntimeCredentialVault();
+  return Promise.all(models.map((model) => withDerivedCredentialMetadata(sanitizeStoredModel(model), vault)));
 }
 
 export function listAiWorkflows(): AiWorkflowDefinition[] {
@@ -579,8 +585,9 @@ export async function saveAiModel(input: AiModelInput): Promise<AiModelConfig> {
   const now = nowIso();
   const id = createId("model");
   const apiKey = input.apiKey?.trim();
+  const vault = await resolveRuntimeCredentialVault();
   if (apiKey) {
-    await saveEnvValue(keyNameForModel(id), apiKey);
+    await vault.set(modelCredentialKey(id), apiKey);
   }
 
   const model: AiModelConfig = {
@@ -589,8 +596,8 @@ export async function saveAiModel(input: AiModelInput): Promise<AiModelConfig> {
     provider: input.provider.trim() || "OpenAI-compatible",
     baseUrl: normalizeBaseUrl(input.baseUrl),
     model: input.model.trim(),
-    apiKeyMasked: apiKey ? maskKey(apiKey) : "",
-    hasApiKey: Boolean(apiKey),
+    apiKeyMasked: "",
+    hasApiKey: false,
     isDefault: Boolean(input.isDefault),
     temperature: clamp(Number(input.temperature ?? 0.4), 0, 2),
     maxTokens: clamp(Number(input.maxTokens ?? 4000), 256, 32_000),
@@ -599,10 +606,12 @@ export async function saveAiModel(input: AiModelInput): Promise<AiModelConfig> {
   };
 
   await store.update("aiModels", (models) => {
-    const next = model.isDefault ? models.map((item) => ({ ...item, isDefault: false })) : models;
+    const next = models.map((item) => sanitizeStoredModel(
+      model.isDefault ? { ...item, isDefault: false } : item
+    ));
     return [model, ...next];
   });
-  return model;
+  return withDerivedCredentialMetadata(model, vault);
 }
 
 export async function updateAiModel(modelId: string, input: Partial<AiModelInput>): Promise<AiModelConfig> {
@@ -613,8 +622,9 @@ export async function updateAiModel(modelId: string, input: Partial<AiModelInput
   }
 
   const apiKey = input.apiKey?.trim();
+  const vault = await resolveRuntimeCredentialVault();
   if (apiKey) {
-    await saveEnvValue(keyNameForModel(modelId), apiKey);
+    await vault.set(modelCredentialKey(modelId), apiKey);
   }
 
   const updated: AiModelConfig = {
@@ -623,8 +633,8 @@ export async function updateAiModel(modelId: string, input: Partial<AiModelInput
     provider: input.provider?.trim() || current.provider,
     baseUrl: input.baseUrl ? normalizeBaseUrl(input.baseUrl) : current.baseUrl,
     model: input.model?.trim() || current.model,
-    apiKeyMasked: apiKey ? maskKey(apiKey) : current.apiKeyMasked,
-    hasApiKey: apiKey ? true : current.hasApiKey,
+    apiKeyMasked: "",
+    hasApiKey: false,
     isDefault: input.isDefault ?? current.isDefault,
     temperature: input.temperature !== undefined ? clamp(Number(input.temperature), 0, 2) : current.temperature,
     maxTokens: input.maxTokens !== undefined ? clamp(Number(input.maxTokens), 256, 32_000) : current.maxTokens,
@@ -632,9 +642,11 @@ export async function updateAiModel(modelId: string, input: Partial<AiModelInput
   };
 
   await store.update("aiModels", (items) =>
-    items.map((item) => (item.id === modelId ? updated : updated.isDefault ? { ...item, isDefault: false } : item))
+    items.map((item) => sanitizeStoredModel(
+      item.id === modelId ? updated : updated.isDefault ? { ...item, isDefault: false } : item
+    ))
   );
-  return updated;
+  return withDerivedCredentialMetadata(updated, vault);
 }
 
 export async function deleteAiModel(modelId: string): Promise<{ deleted: number }> {
@@ -644,8 +656,9 @@ export async function deleteAiModel(modelId: string): Promise<{ deleted: number 
     return { deleted: 0 };
   }
 
+  await (await resolveRuntimeCredentialVault()).delete(modelCredentialKey(modelId));
   await store.update("aiModels", (items) => {
-    const remaining = items.filter((item) => item.id !== modelId);
+    const remaining = items.filter((item) => item.id !== modelId).map(sanitizeStoredModel);
     if (current.isDefault && remaining.length && !remaining.some((item) => item.isDefault)) {
       return remaining.map((item, index) => ({ ...item, isDefault: index === 0 }));
     }
@@ -661,9 +674,11 @@ export async function setDefaultAiModel(modelId: string): Promise<AiModelConfig>
     throw new Error("AI model not found.");
   }
 
-  const updated = { ...target, isDefault: true, updatedAt: nowIso() };
-  await store.update("aiModels", (items) => items.map((item) => (item.id === modelId ? updated : { ...item, isDefault: false })));
-  return updated;
+  const updated = sanitizeStoredModel({ ...target, isDefault: true, updatedAt: nowIso() });
+  await store.update("aiModels", (items) => items.map((item) => sanitizeStoredModel(
+    item.id === modelId ? updated : { ...item, isDefault: false }
+  )));
+  return withDerivedCredentialMetadata(updated, await resolveRuntimeCredentialVault());
 }
 
 export async function testAiModel(modelId: string): Promise<{ ok: boolean; message: string }> {
@@ -671,7 +686,7 @@ export async function testAiModel(modelId: string): Promise<{ ok: boolean; messa
   if (!model) {
     throw new Error("AI model not found.");
   }
-  const apiKey = getEnvValue(keyNameForModel(model.id));
+  const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
   if (!apiKey) {
     return { ok: false, message: "未配置 API Key。" };
   }
@@ -702,7 +717,7 @@ export async function createAiReport(input: ReportInput): Promise<AiReport> {
   let error: string | undefined;
 
   if (model) {
-    const apiKey = getEnvValue(keyNameForModel(model.id));
+    const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
     if (apiKey) {
       try {
         markdown = await callModel(model, apiKey, buildReportPrompt(title, analytics, notes, relatedComments, input.focus));
@@ -1070,7 +1085,7 @@ async function createArtifact(input: {
   let error: string | undefined;
 
   if (model) {
-    const apiKey = getEnvValue(keyNameForModel(model.id));
+    const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
     if (apiKey) {
       try {
         markdown = await callModel(model, apiKey, input.prompt);
@@ -1320,13 +1335,14 @@ function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "") || "https://api.openai.com/v1";
 }
 
-function keyNameForModel(id: string): string {
-  return `AI_MODEL_${id.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}_KEY`;
+function sanitizeStoredModel(model: AiModelConfig): AiModelConfig {
+  return { ...model, apiKeyMasked: "", hasApiKey: false };
 }
 
-function maskKey(value: string): string {
-  if (value.length <= 8) {
-    return "****";
-  }
-  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+async function withDerivedCredentialMetadata(
+  model: AiModelConfig,
+  vault: Awaited<ReturnType<typeof resolveRuntimeCredentialVault>>
+): Promise<AiModelConfig> {
+  const hasApiKey = Boolean(await vault.get(modelCredentialKey(model.id)));
+  return { ...model, apiKeyMasked: hasApiKey ? "••••••••" : "", hasApiKey };
 }

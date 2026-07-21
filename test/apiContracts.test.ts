@@ -589,9 +589,11 @@ function mockRouteDependencies(overrides: {
   vi.doMock("../src/server/services/healthService.js", () => ({ buildHealthCheck: vi.fn() }));
   vi.doMock("../src/server/services/mediaService.js", () => ({ proxyMedia: vi.fn(), refreshNoteMedia: vi.fn() }));
   vi.doMock("../src/server/services/capabilities.js", () => ({ redbookCapabilities: [] }));
-  vi.doMock("../src/server/utils/env.js", () => ({
-    getCookieString: vi.fn(async () => undefined),
-    saveCookieString: vi.fn()
+  vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+    resolveRuntimeCredentialVault: vi.fn(async () => ({
+      get: vi.fn(async () => undefined),
+      set: vi.fn()
+    }))
   }));
   vi.doMock("../src/server/storage/localStore.js", () => ({
     store: {

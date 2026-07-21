@@ -1,7 +1,7 @@
 import type { CredentialSecurityStatus } from "../../shared/types.js";
 import { getRuntimePaths } from "./runtimePaths.js";
 import { closeRuntimeStorage, getRuntimeStorage, type ApplicationStorage } from "../storage/runtimeStorage.js";
-import { isLegacyModelCredentialKey } from "../storage/credentialKeys.js";
+import { COOKIE_CREDENTIAL_KEY, isLegacyModelCredentialKey } from "../storage/credentialKeys.js";
 import {
   SqliteCredentialVault,
   type CredentialCipher,
@@ -46,6 +46,11 @@ export function prepareRuntimeCredentials(): Promise<CredentialSecurityStatus> {
 export function getRuntimeCredentialVault(): CredentialVault {
   if (!runtimeVault) throw new Error("Runtime credentials have not been prepared.");
   return runtimeVault;
+}
+
+export async function resolveRuntimeCredentialVault(): Promise<CredentialVault> {
+  if (!runtimeVault) await prepareRuntimeCredentials();
+  return getRuntimeCredentialVault();
 }
 
 export function disposeRuntimeCredentials(): void {
@@ -93,7 +98,7 @@ class DevelopmentEnvCredentialVault implements CredentialVault {
   }
 
   async getStatus(): Promise<CredentialSecurityStatus> {
-    const cookieConfigured = Boolean(getEnvValue("XHS_COOKIE_STRING"));
+    const cookieConfigured = Boolean(getEnvValue(COOKIE_CREDENTIAL_KEY));
     const modelKeyCount = Object.keys(process.env)
       .filter((key) => isLegacyModelCredentialKey(key) && Boolean(getEnvValue(key)))
       .length;

@@ -2,6 +2,7 @@ import http from "node:http";
 import express, { type Express } from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiArtifact, AiCustomPrompt, AiCustomPromptInput, AiCustomPromptRunInput, AiGoalRun } from "../src/shared/types.js";
+import { COOKIE_CREDENTIAL_KEY } from "../src/server/storage/credentialKeys.js";
 
 describe("AI API routes", () => {
   afterEach(() => {
@@ -202,9 +203,11 @@ describe("browser auth API routes", () => {
   });
 
   it("marks stored auth as needing verification after server start", async () => {
-    vi.doMock("../src/server/utils/env.js", () => ({
-      getCookieString: vi.fn(async () => "a1=old; web_session=old"),
-      saveCookieString: vi.fn()
+    vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      resolveRuntimeCredentialVault: vi.fn(async () => ({
+        get: vi.fn(async () => "a1=old; web_session=old"),
+        set: vi.fn()
+      }))
     }));
     vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
@@ -234,9 +237,11 @@ describe("browser auth API routes", () => {
 
   it("verifies auth as unconfigured when no local cookie exists", async () => {
     const storeWrite = vi.fn();
-    vi.doMock("../src/server/utils/env.js", () => ({
-      getCookieString: vi.fn(async () => undefined),
-      saveCookieString: vi.fn()
+    vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      resolveRuntimeCredentialVault: vi.fn(async () => ({
+        get: vi.fn(async () => undefined),
+        set: vi.fn()
+      }))
     }));
     vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
@@ -311,11 +316,13 @@ describe("browser auth API routes", () => {
   });
 
   it("saves verified capture result as auth status without returning cookie string", async () => {
-    const saveCookieString = vi.fn();
+    const setCredential = vi.fn();
     const storeWrite = vi.fn();
-    vi.doMock("../src/server/utils/env.js", () => ({
-      getCookieString: vi.fn(async () => undefined),
-      saveCookieString
+    vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      resolveRuntimeCredentialVault: vi.fn(async () => ({
+        get: vi.fn(async () => undefined),
+        set: setCredential
+      }))
     }));
     vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
@@ -347,7 +354,7 @@ describe("browser auth API routes", () => {
     const response = await requestJson(app, "/api/auth/browser-session/browser_auth_test/capture", { method: "POST" });
 
     expect(response.status).toBe(200);
-    expect(saveCookieString).toHaveBeenCalledWith("a1=cookieSecret; web_session=sessionSecret");
+    expect(setCredential).toHaveBeenCalledWith(COOKIE_CREDENTIAL_KEY, "a1=cookieSecret; web_session=sessionSecret");
     expect(storeWrite).toHaveBeenCalledWith("authStatus", expect.objectContaining({ connected: true, configured: true }));
     expect(JSON.stringify(response.body)).not.toContain("cookieSecret");
     expect(response.body).toMatchObject({
@@ -430,11 +437,13 @@ describe("browser bridge API routes", () => {
   });
 
   it("saves extension cookie sync without returning cookie values", async () => {
-    const saveCookieString = vi.fn();
+    const setCredential = vi.fn();
     const storeWrite = vi.fn();
-    vi.doMock("../src/server/utils/env.js", () => ({
-      getCookieString: vi.fn(async () => undefined),
-      saveCookieString
+    vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      resolveRuntimeCredentialVault: vi.fn(async () => ({
+        get: vi.fn(async () => undefined),
+        set: setCredential
+      }))
     }));
     vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       store: {
@@ -462,7 +471,7 @@ describe("browser bridge API routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(saveCookieString).toHaveBeenCalledWith("a1=a1Secret; web_session=sessionSecret; webId=webIdSecret");
+    expect(setCredential).toHaveBeenCalledWith(COOKIE_CREDENTIAL_KEY, "a1=a1Secret; web_session=sessionSecret; webId=webIdSecret");
     expect(storeWrite).toHaveBeenCalledWith("authStatus", expect.objectContaining({ connected: true, configured: true }));
     expect(storeWrite).toHaveBeenCalledWith("browserBridgeStatus", expect.objectContaining({ connected: true, browser: "edge" }));
     expect(JSON.stringify(response.body)).not.toContain("Secret");

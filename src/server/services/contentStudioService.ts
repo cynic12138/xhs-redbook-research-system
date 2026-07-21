@@ -39,8 +39,9 @@ import {
   WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION,
   WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY
 } from "../../shared/contentReviewPolicy.js";
+import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { modelCredentialKey } from "../storage/credentialKeys.js";
 import { store } from "../storage/runtimeStorage.js";
-import { getEnvValue } from "../utils/env.js";
 
 type StoreLike = Pick<typeof store, "read" | "write" | "update">;
 
@@ -846,7 +847,7 @@ async function callJsonModel<T>(
   if (!model) {
     return { value: input.fallback, source: "local", status: "completed" };
   }
-  const apiKey = getEnvValue(keyNameForModel(model.id));
+  const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
   if (!apiKey) {
     return { value: input.fallback, source: "local", status: "completed", modelId: model.id };
   }
@@ -1377,8 +1378,4 @@ function summarizeContentContext(playbook: ContentPlaybook, context: ContentCont
     `笔记：${context.notes.length}`,
     `评论：${context.comments.length}`
   ].join(" · ");
-}
-
-function keyNameForModel(id: string): string {
-  return `AI_MODEL_${id.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}_KEY`;
 }

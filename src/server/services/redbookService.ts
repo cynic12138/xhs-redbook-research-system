@@ -2,7 +2,8 @@ import { XhsClient } from "@lucasygu/redbook";
 import { cookiesToString, extractCookies, parseCookieString } from "@lucasygu/redbook/cookies";
 import type { NoteTypeFilter, SearchSort, UserSummary } from "../../shared/types.js";
 import { asRecord, pickString } from "../../shared/utils.js";
-import { getCookieString } from "../utils/env.js";
+import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { COOKIE_CREDENTIAL_KEY } from "../storage/credentialKeys.js";
 import { enrichWithWebUrl, parseNoteUrl } from "./url.js";
 
 type RedbookSort = "general" | "popularity_descending" | "time_descending";
@@ -242,7 +243,7 @@ export class RedbookService {
   }
 
   private async userProfileFromHtml(userId: string, includeNotes = false): Promise<unknown | undefined> {
-    const cookie = await getCookieString();
+    const cookie = await (await resolveRuntimeCredentialVault()).get(COOKIE_CREDENTIAL_KEY);
     if (!cookie) {
       return undefined;
     }
@@ -277,7 +278,7 @@ export class RedbookService {
   }
 
   private async getClient(cookieString?: string): Promise<XhsClient> {
-    const cookie = cookieString ?? (await getCookieString());
+    const cookie = cookieString ?? (await (await resolveRuntimeCredentialVault()).get(COOKIE_CREDENTIAL_KEY));
     if (!cookie) {
       throw new Error("Missing XHS_COOKIE_STRING. Paste cookies in the login panel first.");
     }

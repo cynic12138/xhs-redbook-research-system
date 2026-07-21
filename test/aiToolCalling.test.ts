@@ -198,14 +198,17 @@ describe("AI tool calling compatibility layer", () => {
     expect(failed.keywords).toEqual(["接口失败"]);
   });
 
-  it("probes model tool support without creating jobs or artifacts", async () => {
+  it("probes model tool support with an async credential callback without creating jobs or artifacts", async () => {
     const { probeAiModelTools } = await import("../src/server/services/aiToolCallingService.js");
     const store = new LocalStore(await createTempDataDir());
     await store.write("aiModels", [model()]);
 
+    let authorization = "";
     const supported = await probeAiModelTools("model1", store, {
-      getApiKey: () => "test-key",
-      fetchImpl: async () => jsonResponse({
+      getApiKey: async () => "test-key",
+      fetchImpl: async (_url, init) => {
+        authorization = init.headers.Authorization;
+        return jsonResponse({
         choices: [
           {
             message: {
@@ -222,10 +225,12 @@ describe("AI tool calling compatibility layer", () => {
             }
           }
         ]
-      })
+        });
+      }
     });
     expect(supported.ok).toBe(true);
     expect(supported.supportsTools).toBe(true);
+    expect(authorization).toBe("Bearer test-key");
     expect(await store.read("searchJobs")).toEqual([]);
 
     const unsupported = await probeAiModelTools("model1", store, {
