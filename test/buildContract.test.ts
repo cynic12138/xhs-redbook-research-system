@@ -13,4 +13,17 @@ describe("production build contract", () => {
       .replaceAll("\\", "/");
     expect(packageJson.scripts.start).toBe(`node ${emittedEntry}`);
   });
+
+  it("emits both the web entry and reusable application server", async () => {
+    const tsconfig = JSON.parse(await readFile("tsconfig.server.json", "utf8")) as {
+      compilerOptions: { rootDir: string; outDir: string };
+      include: string[];
+    };
+    const emittedApplication = path
+      .join(tsconfig.compilerOptions.outDir, path.relative(tsconfig.compilerOptions.rootDir, "src/server/application.js"))
+      .replaceAll("\\", "/");
+
+    expect(tsconfig.include).toContain("src/server");
+    expect(emittedApplication).toBe("dist/server/server/application.js");
+  });
 });
