@@ -16,13 +16,14 @@ describe("desktop build contract", () => {
     };
 
     expect(packageJson.productName).toBe("小红书运营台");
-    expect((packageJson as { version?: string }).version).toBe("0.2.0");
+    expect((packageJson as { version?: string }).version).toBe("0.3.0");
     expect(packageJson.author).toBeTruthy();
     expect(packageJson.description).toBeTruthy();
     expect(packageJson.main).toBe("dist/server/electron/main.js");
     expect(packageJson.scripts["desktop:start"]).toContain("electron .");
     expect(packageJson.scripts["desktop:package"]).toContain("--platform=win32 --arch=x64");
     expect(packageJson.scripts["desktop:make"]).toContain("--platform=win32 --arch=x64");
+    expect(packageJson.scripts["desktop:credential-smoke"]).toContain("securitySmoke.js");
     expect(packageJson.devDependencies).toHaveProperty("electron");
     expect(packageJson.devDependencies).toHaveProperty("@electron-forge/cli");
     expect(packageJson.devDependencies).toHaveProperty("@electron-forge/maker-squirrel");
@@ -56,10 +57,22 @@ describe("desktop build contract", () => {
     expect(source).toContain("@electron-forge/maker-squirrel");
     expect(source).not.toContain("@electron-forge/plugin-auto-unpack-natives");
     expect(source).toContain("checksums: electronChecksums");
-    expect(source).toContain("setupExe: \"小红书运营台-0.2.0-Setup.exe\"");
+    expect(source).toContain("setupExe: \"小红书运营台-0.3.0-Setup.exe\"");
     for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
     }
+  });
+
+  it("runs the credential smoke only through asynchronous safeStorage APIs", async () => {
+    const source = await readFile("src/electron/securitySmoke.ts", "utf8");
+
+    expect(source).toContain("isAsyncEncryptionAvailable");
+    expect(source).toContain("encryptStringAsync");
+    expect(source).toContain("decryptStringAsync");
+    expect(source).toContain("CREDENTIAL_SMOKE_OK=true");
+    expect(source).not.toMatch(/console\.(?:log|error)\([^)]*(?:encrypted|decrypted|value)/i);
+    expect(source).not.toContain("encryptString(");
+    expect(source).not.toContain("decryptString(");
   });
 
   it("routes the login-card xiaohongshu link through the existing browser opener", async () => {
