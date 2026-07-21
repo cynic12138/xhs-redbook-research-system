@@ -8,6 +8,10 @@ const resumeActiveJobs = vi.fn(async () => undefined);
 vi.mock("../src/server/routes/api.js", () => {
   const api = express.Router();
   api.get("/health", (_req, res) => res.json({ ok: true }));
+  api.get("/stream", (_req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write("event: ready\ndata: {}\n\n");
+  });
   api.use((_req, res) => res.status(404).json({ error: "API route not found" }));
   return { api };
 });
@@ -57,6 +61,23 @@ describe("application server", () => {
     } finally {
       await running.close();
     }
+  });
+
+  it("closes active streaming connections during desktop shutdown", async () => {
+    const { startApplicationServer } = await import("../src/server/application.js");
+    const running = await startApplicationServer({ port: 0, resumeJobs: false });
+    const response = await fetch(`${running.url}/api/stream`);
+    const closing = running.close();
+    const result = await Promise.race([
+      closing.then(() => "closed" as const),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 100))
+    ]);
+
+    if (result === "timeout") {
+      await response.body?.cancel();
+      await closing;
+    }
+    expect(result).toBe("closed");
   });
 
   it("explains a port conflict in Chinese while preserving EADDRINUSE as the cause", async () => {
