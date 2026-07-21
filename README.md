@@ -123,9 +123,9 @@ npm run build
 npm start
 ```
 
-## Windows 桌面试用版（D-002）
+## Windows 桌面试用版（D-003）
 
-D-002 使用 Electron 包装现有 React 和 Express 应用，复用相同 HTTP API 和业务逻辑，并使用 Node 24 内置 `node:sqlite` 保存业务数据。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。
+D-003 使用 Electron 包装现有 React 和 Express 应用，复用相同 HTTP API 和业务逻辑，并使用 Node 24 内置 `node:sqlite` 保存业务数据。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。小红书 Cookie 和 AI 模型 Key 通过 Electron `safeStorage` 使用当前 Windows 用户的保护能力加密后写入 SQLite。
 
 本机调试桌面壳：
 
@@ -149,7 +149,7 @@ npm run desktop:make
 
 ```text
 out/小红书运营台-win32-x64/
-out/make/squirrel.windows/x64/小红书运营台-0.2.0-Setup.exe
+out/make/squirrel.windows/x64/小红书运营台-0.3.0-Setup.exe
 ```
 
 如果 Electron 官方 GitHub 下载在中国网络中断，可以仅对当前 PowerShell 会话使用 Electron README 推荐的镜像，不需要写入项目配置：
@@ -163,7 +163,9 @@ npm run desktop:make
 
 - 当前安装包没有 Windows 代码签名，只用于少量内部工程验收；SmartScreen 可能显示未知发布者提示。
 - 安装版运行数据位于 `%APPDATA%\小红书运营台`，其中包含 `data/app.db`、`output/`、`media-cache/`、`browser-profile/` 和 `.env.local`。
-- D-002 已将业务数据切换到 SQLite；Cookie 与模型 Key 仍使用明文 `.env.local`，尚未接入 Electron `safeStorage`，不要把该目录共享给其他人。
+- D-003 安装版会把 Cookie 和模型 Key 加密写入 `data/app.db`；`.env.local` 仅保留端口等非敏感设置。开发模式仍由 `.env.local` 管理凭证。
+- `safeStorage` 主要防止凭证以明文文件保存，不能防御以同一 Windows 用户权限运行的恶意程序。
+- 将 `app.db` 复制到另一台电脑或另一个 Windows 用户后，业务数据仍可使用，但 Cookie 和模型 Key 需要重新填写。
 - 应用使用单实例锁。再次启动会聚焦已有窗口，不会打开第二套 Store 或 HTTP 服务。
 - 如果 `127.0.0.1:8787` 被开发服务器或其他程序占用，桌面版会显示中文启动失败信息；先正常关闭占用进程再重试。
 - 关闭应用时如有抓取任务，会先要求确认并把任务安全暂停；下次启动后可以恢复。
@@ -183,9 +185,19 @@ npm run desktop:make
 
 如果界面提示“旧数据与当前数据库发生冲突”，应用会继续阻止业务写入，也不会允许直接覆盖导入。请先完整备份 `%APPDATA%\小红书运营台\data`，再联系维护人员处理，不要手工删除旧 JSON。
 
+### 从 0.2.0 升级并加密凭证
+
+1. 关闭 `0.2.0`，覆盖安装 `0.3.0` 后启动应用。
+2. 安装版会在 HTTP 服务和后台任务启动前扫描本机 `.env.local` 中的 Cookie 与模型 Key。
+3. 全部加密并回读验证成功后，应用只移除对应明文行，注释、空行和非敏感配置保持不变。
+4. 打开“模型设置 → 凭证安全”，确认显示“Cookie 和 AI Key 已使用 Windows 加密保护”。
+5. 如显示“需要清理旧凭证”，点击“重新检查并清理”；如显示“需要重新配置凭证”，重新连接小红书或填写相应模型 Key。
+
+迁移失败时应用不会删除原明文；若密文已可用但清理失败，安装版仍只使用密文，不会回退读取明文。
+
 ## 登录小红书
 
-本项目使用浏览器 Cookie 登录态，不需要小红书官方 API Key。后端启动后会把历史 Cookie 标记为“待验证”，前端会自动调用 `POST /api/auth/verify` 重新验证 `.env.local` 中的 Cookie。
+本项目使用浏览器 Cookie 登录态，不需要小红书官方 API Key。后端启动后会把历史 Cookie 标记为“待验证”，前端会自动调用 `POST /api/auth/verify` 重新验证当前凭证仓库中的 Cookie；安装版使用 Windows 加密仓库，开发模式使用 `.env.local`。
 
 推荐顺序：
 
@@ -505,7 +517,7 @@ GET /api/ai/orchestrations/:id/events
 | `data/media-cache/` | 媒体代理缓存 |
 | `data/xhs-login-edge-profile/` | 专用 Edge 登录窗口 profile |
 
-这些目录和文件都不应提交到 Git。`0.2.0` 正式运行只写 `data/app.db`；上表中的 JSON 文件仅作为 `0.1.1` 旧数据来源保留。
+这些目录和文件都不应提交到 Git。`0.3.0` 正式运行只写 `data/app.db`；上表中的 JSON 文件仅作为 `0.1.1` 旧数据来源保留。
 
 以上路径适用于浏览器开发模式。Electron 安装版使用 `%APPDATA%\小红书运营台` 作为根目录，避免把数据库、媒体、Edge Profile 或 `.env.local` 写入只读安装目录。
 

@@ -19,10 +19,10 @@
 
 - Active milestone: `D-003` encrypted local credentials and version `0.3.0`.
 - Production services now use SQLite only; `LocalStore` is retained solely as a legacy JSON reader for compatibility tests and import support, with no JSON/SQLite dual write.
-- The `0.2.0` installer remains unsigned and restricted to internal engineering validation.
+- The `0.3.0` installer remains unsigned and restricted to internal engineering validation.
 - Runtime paths, reusable Express lifecycle, graceful job shutdown, Electron single-instance shell, Forge packaging, and Squirrel installer configuration are implemented.
 - Automated verification currently covers the desktop path boundary, server lifecycle, shutdown persistence, renderer security policy, packaging exclusions, and build contracts.
-- The D-002 desktop pilot is version `0.2.0`; the login-card Xiaohongshu link continues to use the existing browser Bridge with the dedicated Edge fallback.
+- The D-003 desktop pilot release candidate is version `0.3.0`; the login-card Xiaohongshu link continues to use the existing browser Bridge with the dedicated Edge fallback.
 - SQLite schema v1, WAL, foreign keys, busy timeout, 30-collection row storage, one-source transactional JSON import, fingerprint validation, and the settings migration workflow are implemented.
 - A read-only dry run imported the current 23 legacy files and 8,575 records into a temporary database with `foreign_key_check` and `quick_check` passing.
 - The external `better-sqlite3` gate was rejected because Electron 43 ABI 148 required an unavailable C++ rebuild; the user approved the built-in Node 24 `node:sqlite` replacement.
@@ -33,5 +33,7 @@
 - The unsigned Windows x64 `小红书运营台-0.2.0-Setup.exe` was generated successfully; SHA-256 is `A641B7F1D694BE3293A07286C3D1A7BAA8F795A6B276B984D7A17C0A0C703DEC`.
 - Package inspection found no `.env.local`, `app.db`, legacy JSON data, output, project docs, or `PROJECT_CONTEXT.md`; the sandboxed CommonJS preload is present in the ASAR.
 - D-002 installed acceptance is complete and its commit is present on remote `main`.
-- D-003 will add SQLite Schema v2, Electron `safeStorage`, automatic plaintext credential migration, a single credential vault, and credential-security status in model settings.
+- D-003 now includes SQLite Schema v2, asynchronous Electron `safeStorage`, automatic and idempotent plaintext credential migration, a single credential vault used by Cookie and model flows, key rotation, security-status APIs, and a credential-security card in model settings.
+- Credential metadata APIs expose only booleans and counts. Unreadable copied credentials remain stored but are treated as unconfigured until the user reconnects Xiaohongshu or replaces the model Key.
+- The independent Electron credential smoke prints only a success boolean and has passed on the current Windows user. Full test, package, installer inspection, and installed upgrade acceptance remain release gates.
 - Extension pairing, backup/restore, signing, and fleet distribution remain later milestones.
