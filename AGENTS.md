@@ -70,11 +70,12 @@ Existing bugs and unusual behavior are part of the current behavior baseline unl
 
 ## Approved SQLite Storage Track
 
-- `D-002` is explicitly approved to add `better-sqlite3`, versioned migrations, domain repositories, the Electron native-module unpack configuration, legacy JSON import, and the minimal storage-migration UI/API required by the approved plan.
+- `D-002` is explicitly approved to use the Node 24 built-in `node:sqlite`, add versioned migrations, domain repositories, legacy JSON import, and the minimal storage-migration UI/API required by the approved plan.
 - `D-002` must preserve existing business API paths, request/response contracts, status codes, business rules, and the Windows-only local deployment model.
 - Production storage must cut over once from JSON to SQLite; long-term JSON/SQLite dual writes and silent fallback to JSON are prohibited.
 - `LocalStore` may remain only as the read-only legacy importer after cutover. Legacy JSON, `.env.local`, browser profiles, and user output must never be deleted or packaged.
 - Credential encryption, extension pairing, general backup/restore, automatic updates, signing, accounts, cloud sync, and multi-source data merging remain outside `D-002`.
+- External SQLite native modules and machine-wide C++ build tools are not part of `D-002`; Node and packaged Electron must both pass the built-in SQLite runtime gate.
 
 ## Completion Standards
 

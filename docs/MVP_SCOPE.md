@@ -10,7 +10,7 @@
 - Domain repositories for all existing JSON-backed business data.
 - Transactional import of one legacy JSON data directory without modifying its files.
 - A minimal migration status, preview, and execute workflow in the existing settings surface.
-- Electron native-module rebuilding/unpacking and Windows x64 installer validation.
+- Built-in `node:sqlite` runtime validation in Node and packaged Electron, plus Windows x64 installer validation.
 - Existing browser development and production server commands remain available.
 
 ## Out of Scope

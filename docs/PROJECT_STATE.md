@@ -22,5 +22,6 @@
 - Automated verification currently covers the desktop path boundary, server lifecycle, shutdown persistence, renderer security policy, packaging exclusions, and build contracts.
 - The desktop pilot is now version `0.1.1`; the login-card Xiaohongshu link uses the existing browser Bridge with the dedicated Edge fallback instead of a blocked renderer popup.
 - A Windows x64 package and unsigned `小红书运营台-0.1.1-Setup.exe` have been generated on the development computer.
-- D-002 begins with a native `better-sqlite3` Node/Electron x64 smoke gate before schema development.
+- The external `better-sqlite3` gate was rejected because Electron 43 ABI 148 required an unavailable C++ rebuild; the user approved the built-in Node 24 `node:sqlite` replacement.
+- Built-in SQLite passed in-memory create/write/read/close smoke checks in both Node 24.15 and Electron 43.1.1 / Node 24.18, without native dependencies.
 - Credential encryption, backup/restore, signing, and fleet distribution remain later milestones.

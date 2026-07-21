@@ -32,10 +32,14 @@ function escapeRegExp(value) {
 }
 
 const projectRootPattern = escapeRegExp(__dirname);
+const electronChecksums = require("./node_modules/electron/checksums.json");
 
 module.exports = {
   packagerConfig: {
     asar: true,
+    download: {
+      checksums: electronChecksums
+    },
     ignore: excludedRoots.map((root) =>
       new RegExp(`^(?:${projectRootPattern})?[\\\\/]${escapeRegExp(root)}(?:[\\\\/]|$)`, "i")
     )

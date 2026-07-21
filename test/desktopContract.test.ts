@@ -27,6 +27,9 @@ describe("desktop build contract", () => {
     expect(packageJson.devDependencies).toHaveProperty("@electron-forge/cli");
     expect(packageJson.devDependencies).toHaveProperty("@electron-forge/maker-squirrel");
     expect(packageJson.dependencies).toHaveProperty("electron-squirrel-startup");
+    expect(packageJson.dependencies).not.toHaveProperty("better-sqlite3");
+    expect(packageJson.devDependencies).not.toHaveProperty("@electron-forge/plugin-auto-unpack-natives");
+    expect(packageJson.devDependencies).not.toHaveProperty("@types/better-sqlite3");
   });
 
   it("emits the Electron main process from the server TypeScript build", async () => {
@@ -38,6 +41,8 @@ describe("desktop build contract", () => {
     const source = await readFile("forge.config.cjs", "utf8");
 
     expect(source).toContain("@electron-forge/maker-squirrel");
+    expect(source).not.toContain("@electron-forge/plugin-auto-unpack-natives");
+    expect(source).toContain("checksums: electronChecksums");
     expect(source).toContain("setupExe: \"小红书运营台-0.1.1-Setup.exe\"");
     for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
