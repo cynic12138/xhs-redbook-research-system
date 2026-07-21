@@ -84,7 +84,9 @@ import type {
   ReplyPlanRecord,
   ReplyStrategy,
   SearchJob,
-  SearchSort
+  SearchSort,
+  StorageStatus,
+  LegacyImportPreview
 } from "../shared/types.js";
 import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProviderKey } from "../shared/modelProviders.js";
 import { WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY } from "../shared/contentReviewPolicy.js";
@@ -494,6 +496,9 @@ export function App() {
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [selectedReportId, setSelectedReportId] = useState("");
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [legacyImportPreview, setLegacyImportPreview] = useState<LegacyImportPreview | null>(null);
+  const [legacyImportSourceDir, setLegacyImportSourceDir] = useState("");
   const [modelEditorOpen, setModelEditorOpen] = useState(false);
   const [editingModelId, setEditingModelId] = useState("");
   const [query, setQuery] = useState("");
@@ -540,6 +545,13 @@ export function App() {
   const defaultModel = aiModels.find((model) => model.isDefault) ?? aiModels[0];
   const selectedModel = aiModels.find((model) => model.id === selectedModelId) ?? defaultModel;
   const selectedContentPlaybook = selectedContentPlaybookId ? contentPlaybooks.find((playbook) => playbook.id === selectedContentPlaybookId) : undefined;
+
+  const loadStorageStatus = useCallback(async () => {
+    const status = await api.storageStatus();
+    setStorageStatus(status);
+    if (status.migrationState === "legacy-import-required") setModelSettingsOpen(true);
+    return status;
+  }, []);
 
   const refreshCore = useCallback(async () => {
     const [authStatus, allJobs, caps, models, workflows, prompts, customPrompts, scopes, bridgeStatus, projects, playbooks, drafts, reviews] = await Promise.all([
@@ -713,6 +725,10 @@ export function App() {
     const visibleNoteIds = new Set(notes.map((note) => note.id));
     setSelectedNoteIds((ids) => ids.filter((id) => visibleNoteIds.has(id)));
   }, [notes]);
+
+  useEffect(() => {
+    void loadStorageStatus().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, [loadStorageStatus]);
 
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
@@ -1542,6 +1558,33 @@ export function App() {
     setModelEditorOpen(true);
   }
 
+  async function selectLegacyDataDirectory() {
+    const selected = await window.desktopStorage?.selectLegacyDataDirectory();
+    if (selected) {
+      setLegacyImportSourceDir(selected);
+      setLegacyImportPreview(null);
+    }
+  }
+
+  async function previewLegacyImport() {
+    await run("storage-preview", async () => {
+      const preview = await api.previewLegacyImport(legacyImportSourceDir.trim() || undefined);
+      setLegacyImportSourceDir(preview.sourceDir);
+      setLegacyImportPreview(preview);
+    });
+  }
+
+  async function executeLegacyImport() {
+    if (!legacyImportPreview) return;
+    await run("storage-import", async () => {
+      await api.executeLegacyImport(legacyImportPreview.sourceDir, legacyImportPreview.fingerprint);
+      setLegacyImportPreview(null);
+      await loadStorageStatus();
+      await refreshCore();
+      await loadOperations();
+    });
+  }
+
   async function saveModel() {
     await run("model", async () => {
       const { providerKey: _providerKey, ...modelInput } = modelForm;
@@ -2315,6 +2358,16 @@ export function App() {
       {modelSettingsOpen && (
         <ModelSettingsDrawer
           models={aiModels}
+          storageStatus={storageStatus}
+          legacyImportPreview={legacyImportPreview}
+          legacyImportSourceDir={legacyImportSourceDir}
+          setLegacyImportSourceDir={(value) => {
+            setLegacyImportSourceDir(value);
+            setLegacyImportPreview(null);
+          }}
+          selectLegacyDataDirectory={selectLegacyDataDirectory}
+          previewLegacyImport={previewLegacyImport}
+          executeLegacyImport={executeLegacyImport}
           modelForm={modelForm}
           setModelForm={setModelForm}
           editorOpen={modelEditorOpen}
@@ -6301,6 +6354,13 @@ function BulkDeleteNotesDialog(props: {
 
 function ModelSettingsDrawer(props: {
   models: AiModelConfig[];
+  storageStatus: StorageStatus | null;
+  legacyImportPreview: LegacyImportPreview | null;
+  legacyImportSourceDir: string;
+  setLegacyImportSourceDir: (value: string) => void;
+  selectLegacyDataDirectory: () => Promise<void>;
+  previewLegacyImport: () => Promise<void>;
+  executeLegacyImport: () => Promise<void>;
   modelForm: ModelForm;
   setModelForm: (value: ModelForm) => void;
   editorOpen: boolean;
@@ -6319,6 +6379,9 @@ function ModelSettingsDrawer(props: {
 }) {
   const defaultModel = props.models.find((model) => model.isDefault) ?? props.models[0];
   const selectedPreset = AI_MODEL_PROVIDER_PRESETS.find((preset) => preset.key === props.modelForm.providerKey) ?? AI_MODEL_PROVIDER_PRESETS[0];
+  const previewCount = props.legacyImportPreview
+    ? Object.values(props.legacyImportPreview.counts).reduce((sum, count) => sum + count, 0)
+    : 0;
   const update = (key: keyof ModelForm, value: string) => props.setModelForm({ ...props.modelForm, [key]: value });
   const selectProvider = (providerKey: AiModelProviderKey) => {
     const preset = AI_MODEL_PROVIDER_PRESETS.find((item) => item.key === providerKey) ?? AI_MODEL_PROVIDER_PRESETS[0];
@@ -6348,6 +6411,62 @@ function ModelSettingsDrawer(props: {
           <strong>{defaultModel ? `${defaultModel.name} · ${defaultModel.model}` : "未配置"}</strong>
           <small>{defaultModel ? `${findModelProviderPreset(defaultModel.provider, defaultModel.baseUrl, defaultModel.model).name} · ${defaultModel.apiKeyMasked || "未配置 Key"}` : "新增模型后即可用于 AI 助手、AI 工作流和报告生成。"}</small>
         </div>
+        <section className="drawer-section storage-settings-section">
+          <SectionTitle icon={<Database size={16} />} title="数据存储" />
+          <div className={props.storageStatus?.migrationState === "legacy-import-required" ? "storage-status-card warning" : "storage-status-card"}>
+            <strong>
+              {props.storageStatus?.migrationState === "legacy-import-required"
+                ? "需要迁移旧版数据"
+                : props.storageStatus?.migrationState === "imported"
+                  ? "旧版数据已迁入 SQLite"
+                  : "SQLite 数据库可用"}
+            </strong>
+            <span>
+              {props.storageStatus
+                ? `SQLite Schema v${props.storageStatus.schemaVersion}`
+                : "正在读取存储状态…"}
+            </span>
+            {props.storageStatus?.migrationState === "legacy-import-required" && (
+              <small>完成迁移前，应用不会向空数据库写入新业务数据。原 JSON 文件不会被删除或修改。</small>
+            )}
+            {props.storageStatus?.importedAt && <small>迁移时间：{formatDateTime(props.storageStatus.importedAt)}</small>}
+          </div>
+          {props.storageStatus?.migrationState !== "imported" && (
+            <div className="storage-import-controls">
+              <label className="field-stack compact-field">
+                <span>旧版 data 文件夹</span>
+                <input
+                  value={props.legacyImportSourceDir}
+                  onChange={(event) => props.setLegacyImportSourceDir(event.target.value)}
+                  placeholder="留空使用当前默认 data 目录"
+                />
+              </label>
+              <div className="drawer-toolbar">
+                {window.desktopStorage && (
+                  <button className="ghost-button compact" onClick={() => void props.selectLegacyDataDirectory()}>
+                    <Library size={14} />
+                    选择文件夹
+                  </button>
+                )}
+                <button className="ghost-button compact" onClick={() => void props.previewLegacyImport()} disabled={props.busy === "storage-preview" || props.busy === "storage-import"}>
+                  {props.busy === "storage-preview" ? <Loader2 className="spin" size={14} /> : <Eye size={14} />}
+                  预检旧数据
+                </button>
+              </div>
+              {props.legacyImportPreview && (
+                <div className="storage-preview-card">
+                  <strong>预检完成：{previewCount} 条记录</strong>
+                  <small>识别到 {props.legacyImportPreview.detectedFiles.length} 个允许的 JSON 文件。</small>
+                  {props.legacyImportPreview.warnings.map((warning) => <small key={warning}>{warning}</small>)}
+                  <button className="primary-button full" onClick={() => void props.executeLegacyImport()} disabled={props.busy === "storage-import"}>
+                    {props.busy === "storage-import" ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
+                    确认迁入 SQLite
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
         <div className="drawer-toolbar">
           <button className="primary-button compact" onClick={props.openNewModel}>
             <KeyRound size={14} />

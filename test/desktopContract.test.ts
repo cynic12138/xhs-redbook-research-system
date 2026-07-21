@@ -37,6 +37,19 @@ describe("desktop build contract", () => {
     expect(tsconfig.include).toContain("src/electron");
   });
 
+  it("exposes only a narrow legacy data directory picker to the renderer", async () => {
+    const [mainSource, preloadSource] = await Promise.all([
+      readFile("src/electron/main.ts", "utf8"),
+      readFile("src/electron/preload.ts", "utf8")
+    ]);
+    expect(mainSource).toContain('ipcMain.handle("storage:select-legacy-data-directory"');
+    expect(mainSource).toContain("preload:");
+    expect(preloadSource).toContain('contextBridge.exposeInMainWorld("desktopStorage"');
+    expect(preloadSource).toContain('ipcRenderer.invoke("storage:select-legacy-data-directory")');
+    expect(preloadSource).not.toContain("shell");
+    expect(preloadSource).not.toContain("fs");
+  });
+
   it("configures an unsigned Squirrel installer without packaging local runtime data", async () => {
     const source = await readFile("forge.config.cjs", "utf8");
 

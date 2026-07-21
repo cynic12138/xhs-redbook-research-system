@@ -2655,6 +2655,38 @@ body {
   flex-direction: column;
 }
 
+.storage-settings-section {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.storage-status-card,
+.storage-preview-card,
+.storage-import-controls {
+  display: grid;
+  gap: 7px;
+}
+
+.storage-status-card,
+.storage-preview-card {
+  padding: 10px;
+  border: 1px solid #dfe5ec;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.storage-status-card.warning {
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.storage-status-card span,
+.storage-status-card small,
+.storage-preview-card small {
+  color: #687386;
+  font-size: 12px;
+}
+
 .drawer-model-list {
   display: grid;
   align-content: start;

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { app, BrowserWindow, dialog, type MessageBoxOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type MessageBoxOptions, type OpenDialogOptions } from "electron";
 import { finishStartupFailure } from "./lifecycle.js";
 import { desktopWebPreferences, isAllowedAppNavigation } from "./windowPolicy.js";
 
@@ -81,6 +81,16 @@ async function bootDesktop(): Promise<void> {
   ]);
   jobService = jobs;
   browserAuthService = browserAuth;
+  ipcMain.handle("storage:select-legacy-data-directory", async () => {
+    const options: OpenDialogOptions = {
+      title: "选择旧版 data 文件夹",
+      properties: ["openDirectory"]
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? undefined : result.filePaths[0];
+  });
   runningServer = await startApplicationServer({
     host: "127.0.0.1",
     port: 8787,
@@ -96,7 +106,10 @@ function createMainWindow(appUrl: string): BrowserWindow {
     minWidth: 1080,
     minHeight: 720,
     show: false,
-    webPreferences: desktopWebPreferences
+    webPreferences: {
+      ...desktopWebPreferences,
+      preload: path.join(import.meta.dirname, "preload.js")
+    }
   });
 
   window.once("ready-to-show", () => window.show());

@@ -65,7 +65,10 @@ import type {
   ReplyPlanRecord,
   ReplyStrategy,
   SearchJob,
-  SearchJobInput
+  SearchJobInput,
+  StorageStatus,
+  LegacyImportPreview,
+  LegacyImportResult
 } from "../../shared/types.js";
 
 export interface CookieFields {
@@ -101,6 +104,11 @@ export async function apiDelete<T>(path: string): Promise<T> {
 }
 
 export const api = {
+  storageStatus: () => apiGet<StorageStatus>("/api/system/storage-status"),
+  previewLegacyImport: (sourceDir?: string) =>
+    apiPost<LegacyImportPreview>("/api/system/legacy-import/preview", sourceDir ? { sourceDir } : {}),
+  executeLegacyImport: (sourceDir: string, fingerprint: string) =>
+    apiPost<LegacyImportResult>("/api/system/legacy-import/execute", { sourceDir, fingerprint }),
   authStatus: () => apiGet<AuthStatus>("/api/auth/status"),
   verifyAuth: () => apiPost<AuthStatus>("/api/auth/verify"),
   browserBridgeStatus: () => apiGet<BrowserBridgeStatus>("/api/auth/extension/status"),
