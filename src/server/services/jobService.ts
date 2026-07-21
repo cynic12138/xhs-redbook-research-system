@@ -30,6 +30,7 @@ import { redbook } from "./redbookService.js";
 const activeTimers = new Map<string, Set<NodeJS.Timeout>>();
 const activeWorkers = new Map<string, number>();
 const queueKinds: QueueKind[] = ["read", "comments", "user", "user-posts", "analyze"];
+const shutdownPauseReason = "应用退出时已安全暂停，可在下次启动后恢复。";
 
 function reportJobBackgroundError(scope: string, error: unknown): void {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -41,7 +42,10 @@ function errorMessage(error: unknown): string {
 }
 
 export class JobService {
+  private shuttingDown = false;
+
   async createJob(input: SearchJobInput): Promise<SearchJob> {
+    this.assertAcceptingWork();
     const job: SearchJob = {
       id: createId("job"),
       keywords: input.keywords.map((keyword) => keyword.trim()).filter(Boolean),
@@ -97,6 +101,7 @@ export class JobService {
   }
 
   async resume(jobId: string): Promise<SearchJob | undefined> {
+    this.assertAcceptingWork();
     await this.requeueRunningItems(jobId);
     await this.requeueRecoverableAuthorItems(jobId);
     await this.requeueTransientStorageItems(jobId);
@@ -124,10 +129,16 @@ export class JobService {
   }
 
   start(jobId: string, delayMs = 0): void {
+    if (this.shuttingDown) {
+      return;
+    }
     void this.ensureWorkers(jobId, delayMs).catch((error) => reportJobBackgroundError("ensureWorkers", error));
   }
 
   private async ensureWorkers(jobId: string, delayMs = 0): Promise<void> {
+    if (this.shuttingDown) {
+      return;
+    }
     const job = await this.getJob(jobId);
     if (!job || job.status !== "running") {
       return;
@@ -144,6 +155,9 @@ export class JobService {
   }
 
   private scheduleWorker(jobId: string, delayMs: number): void {
+    if (this.shuttingDown) {
+      return;
+    }
     const timer = setTimeout(() => {
       const timers = activeTimers.get(jobId);
       timers?.delete(timer);
@@ -229,6 +243,53 @@ export class JobService {
           : job
       )
     );
+  }
+
+  async hasRunningJobs(): Promise<boolean> {
+    if ([...activeWorkers.values()].some((count) => count > 0) || [...activeTimers.values()].some((timers) => timers.size > 0)) {
+      return true;
+    }
+    const currentJobs = await store.read("searchJobs");
+    return currentJobs.some((job) => job.status === "running");
+  }
+
+  async prepareForShutdown(timeoutMs = 15_000): Promise<void> {
+    this.shuttingDown = true;
+    for (const jobId of [...activeTimers.keys()]) {
+      this.clearTimers(jobId);
+    }
+
+    const workersStopped = await this.waitForActiveWorkers(Math.max(0, timeoutMs));
+    await store.update("queueItems", (items) =>
+      items.map((item) =>
+        item.status === "running"
+          ? {
+              ...item,
+              status: "pending",
+              updatedAt: nowIso()
+            }
+          : item
+      )
+    );
+
+    const [queueItems, notes] = await Promise.all([store.read("queueItems"), store.read("notes")]);
+    await store.update("searchJobs", (currentJobs) =>
+      currentJobs.map((job) =>
+        job.status === "running"
+          ? {
+              ...job,
+              status: "paused",
+              breakerReason: shutdownPauseReason,
+              progress: this.buildProgress(job.id, queueItems, notes),
+              updatedAt: nowIso()
+            }
+          : job
+      )
+    );
+
+    if (!workersStopped) {
+      throw new Error(`等待后台任务停止超时（${Math.max(0, timeoutMs)}ms），任务状态已安全保存。`);
+    }
   }
 
   private async seedJob(job: SearchJob): Promise<void> {
@@ -753,6 +814,24 @@ export class JobService {
       clearTimeout(timer);
     }
     activeTimers.delete(jobId);
+  }
+
+  private async waitForActiveWorkers(timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while ([...activeWorkers.values()].some((count) => count > 0)) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        return false;
+      }
+      await sleep(Math.min(50, remaining));
+    }
+    return true;
+  }
+
+  private assertAcceptingWork(): void {
+    if (this.shuttingDown) {
+      throw new Error("应用正在退出，暂时不能启动新的抓取任务。");
+    }
   }
 }
 
