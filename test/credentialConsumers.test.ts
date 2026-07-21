@@ -205,7 +205,7 @@ describe("credential consumer boundaries", () => {
     const credentialKey = modelCredentialKey(existing.id);
     const fixture = await loadAiService([existing], new Map([[credentialKey, "old-sensitive-token"]]));
     fixture.failNextModelUpdate();
-    fixture.failSetFor("old-sensitive-token");
+    fixture.failRollback();
 
     const error = await fixture.service.updateAiModel(existing.id, { apiKey: "new-sensitive-token" })
       .then(() => undefined, (caught: unknown) => caught);
@@ -216,23 +216,73 @@ describe("credential consumer boundaries", () => {
     expect(String(error)).not.toContain("metadata-write-detail");
     expect(fixture.models).toEqual([existing]);
   });
+
+  it("rolls back unreadable opaque credentials after failed update and delete metadata writes", async () => {
+    const existing = model();
+    const credentialKey = modelCredentialKey(existing.id);
+    const fixture = await loadAiService([existing], new Map());
+    fixture.setOpaqueCredential(credentialKey, "opaque-original-row");
+    fixture.setUnreadable(true);
+
+    fixture.failNextModelUpdate();
+    await expect(fixture.service.updateAiModel(existing.id, { apiKey: "replacement-token" }))
+      .rejects.toThrow("AI model credential operation failed.");
+    expect(fixture.getOpaqueCredential(credentialKey)).toBe("opaque-original-row");
+    expect(fixture.vaultValues.has(credentialKey)).toBe(false);
+    expect(fixture.models).toEqual([existing]);
+
+    fixture.failNextModelUpdate();
+    await expect(fixture.service.deleteAiModel(existing.id))
+      .rejects.toThrow("AI model credential operation failed.");
+    expect(fixture.getOpaqueCredential(credentialKey)).toBe("opaque-original-row");
+    expect(fixture.vaultValues.has(credentialKey)).toBe(false);
+    expect(fixture.models).toEqual([existing]);
+  });
 });
 
 async function loadAiService(initialModels: AiModelConfig[], initialVaultValues: Map<string, string>) {
   vi.resetModules();
   let models = structuredClone(initialModels);
   let failModelUpdate = false;
-  let failSetValue: string | undefined;
+  let rollbackFails = false;
   let unreadable = false;
   const vaultValues = new Map(initialVaultValues);
+  const opaqueCredentials = new Map<string, string>();
   const vault = {
     get: vi.fn(async (key: string) => vaultValues.get(key)),
     set: vi.fn(async (key: string, value: string) => {
-      if (value === failSetValue) throw new Error("compensation-set-detail");
       vaultValues.set(key, value);
+      opaqueCredentials.delete(key);
     }),
     delete: vi.fn(async (key: string) => {
       vaultValues.delete(key);
+      opaqueCredentials.delete(key);
+    }),
+    stageSet: vi.fn(async (key: string, value: string) => {
+      const previousValue = vaultValues.get(key);
+      const previousOpaque = opaqueCredentials.get(key);
+      await vault.set(key, value);
+      return {
+        rollback: vi.fn(async () => {
+          if (rollbackFails) throw new Error("rollback-detail");
+          vaultValues.delete(key);
+          opaqueCredentials.delete(key);
+          if (previousValue !== undefined) vaultValues.set(key, previousValue);
+          if (previousOpaque !== undefined) opaqueCredentials.set(key, previousOpaque);
+        })
+      };
+    }),
+    stageDelete: vi.fn(async (key: string) => {
+      const previousValue = vaultValues.get(key);
+      const previousOpaque = opaqueCredentials.get(key);
+      await vault.delete(key);
+      return {
+        rollback: vi.fn(async () => {
+          if (rollbackFails) throw new Error("rollback-detail");
+          if (previousValue !== undefined) vaultValues.set(key, previousValue);
+          if (previousOpaque !== undefined) opaqueCredentials.set(key, previousOpaque);
+        })
+      };
     })
   };
   const store = {
@@ -266,11 +316,18 @@ async function loadAiService(initialModels: AiModelConfig[], initialVaultValues:
     failNextModelUpdate() {
       failModelUpdate = true;
     },
-    failSetFor(value: string) {
-      failSetValue = value;
+    failRollback() {
+      rollbackFails = true;
     },
     setUnreadable(value: boolean) {
       unreadable = value;
+    },
+    setOpaqueCredential(key: string, value: string) {
+      opaqueCredentials.set(key, value);
+      vaultValues.delete(key);
+    },
+    getOpaqueCredential(key: string) {
+      return opaqueCredentials.get(key);
     },
     get models() {
       return models;

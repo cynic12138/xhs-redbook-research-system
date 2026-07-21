@@ -204,6 +204,7 @@ describe("browser auth API routes", () => {
 
   it("marks stored auth as needing verification after server start", async () => {
     vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      readRuntimeCredential: vi.fn(async () => "a1=old; web_session=old"),
       resolveRuntimeCredentialVault: vi.fn(async () => ({
         get: vi.fn(async () => "a1=old; web_session=old"),
         set: vi.fn()
@@ -238,6 +239,7 @@ describe("browser auth API routes", () => {
   it("verifies auth as unconfigured when no local cookie exists", async () => {
     const storeWrite = vi.fn();
     vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      readRuntimeCredential: vi.fn(async () => undefined),
       resolveRuntimeCredentialVault: vi.fn(async () => ({
         get: vi.fn(async () => undefined),
         set: vi.fn()
@@ -319,6 +321,7 @@ describe("browser auth API routes", () => {
     const setCredential = vi.fn();
     const storeWrite = vi.fn();
     vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      readRuntimeCredential: vi.fn(async () => undefined),
       resolveRuntimeCredentialVault: vi.fn(async () => ({
         get: vi.fn(async () => undefined),
         set: setCredential
@@ -440,6 +443,7 @@ describe("browser bridge API routes", () => {
     const setCredential = vi.fn();
     const storeWrite = vi.fn();
     vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      readRuntimeCredential: vi.fn(async () => undefined),
       resolveRuntimeCredentialVault: vi.fn(async () => ({
         get: vi.fn(async () => undefined),
         set: setCredential

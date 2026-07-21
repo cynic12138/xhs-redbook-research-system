@@ -590,6 +590,7 @@ function mockRouteDependencies(overrides: {
   vi.doMock("../src/server/services/mediaService.js", () => ({ proxyMedia: vi.fn(), refreshNoteMedia: vi.fn() }));
   vi.doMock("../src/server/services/capabilities.js", () => ({ redbookCapabilities: [] }));
   vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+    readRuntimeCredential: vi.fn(async () => undefined),
     resolveRuntimeCredentialVault: vi.fn(async () => ({
       get: vi.fn(async () => undefined),
       set: vi.fn()

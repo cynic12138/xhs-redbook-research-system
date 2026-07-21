@@ -96,6 +96,35 @@ describe("SQLite credential vault", () => {
     fixture.database.close();
   });
 
+  it("rolls back staged set and delete from opaque raw rows without decrypting them", async () => {
+    const fixture = await createFixture();
+    await fixture.vault.set("credential-opaque", "original-value");
+    const before = readRawCredentialRow(fixture.database, "credential-opaque");
+    fixture.cipher.failDecrypt = true;
+
+    const stagedSet = await fixture.vault.stageSet("credential-opaque", "replacement-value");
+    await expect(fixture.vault.get("credential-opaque")).resolves.toBeUndefined();
+    await stagedSet.rollback();
+    expect(readRawCredentialRow(fixture.database, "credential-opaque")).toEqual(before);
+
+    const stagedDelete = await fixture.vault.stageDelete("credential-opaque");
+    expect(readRawCredentialRow(fixture.database, "credential-opaque")).toBeUndefined();
+    await stagedDelete.rollback();
+    expect(readRawCredentialRow(fixture.database, "credential-opaque")).toEqual(before);
+    fixture.database.close();
+  });
+
+  it("removes a staged credential on rollback when the original row was missing", async () => {
+    const fixture = await createFixture();
+
+    const mutation = await fixture.vault.stageSet("credential-new", "temporary-value");
+    expect(readRawCredentialRow(fixture.database, "credential-new")).toBeDefined();
+    await mutation.rollback();
+
+    expect(readRawCredentialRow(fixture.database, "credential-new")).toBeUndefined();
+    fixture.database.close();
+  });
+
   it("sanitizes encryption failures and preserves the existing row", async () => {
     const fixture = await createFixture();
     await fixture.vault.set("credential-six", "vault-value");
@@ -144,6 +173,19 @@ async function createFixture() {
     store: new SqliteStore(database),
     vault: new SqliteCredentialVault(database, cipher)
   };
+}
+
+function readRawCredentialRow(database: Awaited<ReturnType<typeof createFixture>>["database"], key: string) {
+  const row = database.connection.prepare(`
+    SELECT encrypted_value, provider, created_at, updated_at
+    FROM secure_credentials WHERE credential_key = ?
+  `).get(key) as {
+    encrypted_value: Uint8Array;
+    provider: string;
+    created_at: string;
+    updated_at: string;
+  } | undefined;
+  return row ? { ...row, encrypted_value: Buffer.from(row.encrypted_value) } : undefined;
 }
 
 class TestCipher implements CredentialCipher {

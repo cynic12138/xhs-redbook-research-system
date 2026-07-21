@@ -585,9 +585,9 @@ export async function saveAiModel(input: AiModelInput): Promise<AiModelConfig> {
   const id = createId("model");
   const apiKey = input.apiKey?.trim();
   const vault = await resolveRuntimeCredentialVault();
-  if (apiKey) {
-    await vault.set(modelCredentialKey(id), apiKey);
-  }
+  const credentialMutation = apiKey
+    ? await vault.stageSet(modelCredentialKey(id), apiKey)
+    : undefined;
 
   const model: AiModelConfig = {
     id,
@@ -612,8 +612,8 @@ export async function saveAiModel(input: AiModelInput): Promise<AiModelConfig> {
       return [model, ...next];
     });
   } catch (error) {
-    if (!apiKey) throw error;
-    return failAfterCredentialCompensation(() => vault.delete(modelCredentialKey(id)));
+    if (!credentialMutation) throw error;
+    return failAfterCredentialCompensation(() => credentialMutation.rollback());
   }
   return withDerivedCredentialMetadata(model);
 }
@@ -628,10 +628,9 @@ export async function updateAiModel(modelId: string, input: Partial<AiModelInput
   const apiKey = input.apiKey?.trim();
   const vault = await resolveRuntimeCredentialVault();
   const credentialKey = modelCredentialKey(modelId);
-  const previousApiKey = apiKey ? await readRuntimeCredential(credentialKey) : undefined;
-  if (apiKey) {
-    await vault.set(credentialKey, apiKey);
-  }
+  const credentialMutation = apiKey
+    ? await vault.stageSet(credentialKey, apiKey)
+    : undefined;
 
   const updated: AiModelConfig = {
     ...current,
@@ -654,10 +653,8 @@ export async function updateAiModel(modelId: string, input: Partial<AiModelInput
       ))
     );
   } catch (error) {
-    if (!apiKey) throw error;
-    return failAfterCredentialCompensation(() => previousApiKey === undefined
-      ? vault.delete(credentialKey)
-      : vault.set(credentialKey, previousApiKey));
+    if (!credentialMutation) throw error;
+    return failAfterCredentialCompensation(() => credentialMutation.rollback());
   }
   return withDerivedCredentialMetadata(updated);
 }
@@ -670,9 +667,8 @@ export async function deleteAiModel(modelId: string): Promise<{ deleted: number 
   }
 
   const credentialKey = modelCredentialKey(modelId);
-  const previousApiKey = await readRuntimeCredential(credentialKey);
   const vault = await resolveRuntimeCredentialVault();
-  await vault.delete(credentialKey);
+  const credentialMutation = await vault.stageDelete(credentialKey);
   try {
     await store.update("aiModels", (items) => {
       const remaining = items.filter((item) => item.id !== modelId).map(sanitizeStoredModel);
@@ -682,9 +678,7 @@ export async function deleteAiModel(modelId: string): Promise<{ deleted: number 
       return remaining;
     });
   } catch {
-    return failAfterCredentialCompensation(() => previousApiKey === undefined
-      ? Promise.resolve()
-      : vault.set(credentialKey, previousApiKey));
+    return failAfterCredentialCompensation(() => credentialMutation.rollback());
   }
   return { deleted: 1 };
 }

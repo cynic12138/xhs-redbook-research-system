@@ -14,8 +14,14 @@ export interface CredentialVault {
   get(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
+  stageSet(key: string, value: string): Promise<ReversibleCredentialMutation>;
+  stageDelete(key: string): Promise<ReversibleCredentialMutation>;
   getStatus(): Promise<CredentialSecurityStatus>;
   migrateLegacyPlaintext(): Promise<CredentialSecurityStatus>;
+}
+
+export interface ReversibleCredentialMutation {
+  rollback(): Promise<void>;
 }
 
 export type CredentialReadResult =
@@ -112,6 +118,62 @@ export class SqliteCredentialVault implements CredentialVault {
     this.database.connection.prepare(
       "DELETE FROM secure_credentials WHERE credential_key = ?"
     ).run(key);
+  }
+
+  async stageSet(key: string, value: string): Promise<ReversibleCredentialMutation> {
+    const snapshot = this.captureRawRow(key);
+    await this.set(key, value);
+    return { rollback: () => this.restoreRawRow(key, snapshot) };
+  }
+
+  async stageDelete(key: string): Promise<ReversibleCredentialMutation> {
+    const snapshot = this.captureRawRow(key);
+    await this.delete(key);
+    return { rollback: () => this.restoreRawRow(key, snapshot) };
+  }
+
+  private captureRawRow(key: string): RawCredentialRow | undefined {
+    const row = this.database.connection.prepare(`
+      SELECT encrypted_value, provider, created_at, updated_at
+      FROM secure_credentials WHERE credential_key = ?
+    `).get(key) as {
+      encrypted_value: Uint8Array;
+      provider: string;
+      created_at: string;
+      updated_at: string;
+    } | undefined;
+    return row ? { ...row, encryptedValue: Buffer.from(row.encrypted_value) } : undefined;
+  }
+
+  private async restoreRawRow(key: string, snapshot: RawCredentialRow | undefined): Promise<void> {
+    const connection = this.database.connection;
+    connection.exec("BEGIN IMMEDIATE");
+    try {
+      if (snapshot) {
+        connection.prepare(`
+          INSERT INTO secure_credentials (
+            credential_key, encrypted_value, provider, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(credential_key) DO UPDATE SET
+            encrypted_value = excluded.encrypted_value,
+            provider = excluded.provider,
+            created_at = excluded.created_at,
+            updated_at = excluded.updated_at
+        `).run(
+          key,
+          snapshot.encryptedValue,
+          snapshot.provider,
+          snapshot.created_at,
+          snapshot.updated_at
+        );
+      } else {
+        connection.prepare("DELETE FROM secure_credentials WHERE credential_key = ?").run(key);
+      }
+      connection.exec("COMMIT");
+    } catch (error) {
+      connection.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   private async rotateIfUnchanged(key: string, value: string, originalEncryptedValue: Buffer): Promise<void> {
@@ -281,6 +343,13 @@ export class SqliteCredentialVault implements CredentialVault {
 interface LegacyPlaintextLine {
   key?: string;
   raw: string;
+}
+
+interface RawCredentialRow {
+  encryptedValue: Buffer;
+  provider: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface LegacyPlaintextSource {

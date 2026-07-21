@@ -105,6 +105,22 @@ class DevelopmentEnvCredentialVault implements CredentialVault {
     delete process.env[key];
   }
 
+  async stageSet(key: string, value: string): Promise<import("../storage/credentialVault.js").ReversibleCredentialMutation> {
+    const previousValue = getEnvValue(key);
+    await this.set(key, value);
+    return {
+      rollback: () => previousValue === undefined ? this.delete(key) : this.set(key, previousValue)
+    };
+  }
+
+  async stageDelete(key: string): Promise<import("../storage/credentialVault.js").ReversibleCredentialMutation> {
+    const previousValue = getEnvValue(key);
+    await this.delete(key);
+    return {
+      rollback: () => previousValue === undefined ? Promise.resolve() : this.set(key, previousValue)
+    };
+  }
+
   async getStatus(): Promise<CredentialSecurityStatus> {
     const cookieConfigured = Boolean(getEnvValue(COOKIE_CREDENTIAL_KEY));
     const modelKeyCount = Object.keys(process.env)
