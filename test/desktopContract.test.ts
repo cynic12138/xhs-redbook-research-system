@@ -1,0 +1,107 @@
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
+
+describe("desktop build contract", () => {
+  it("declares the Electron entry, Forge commands and Windows packaging dependencies", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+      main?: string;
+      productName?: string;
+      author?: string;
+      description?: string;
+      scripts: Record<string, string>;
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+
+    expect(packageJson.productName).toBe("小红书运营台");
+    expect(packageJson.author).toBeTruthy();
+    expect(packageJson.description).toBeTruthy();
+    expect(packageJson.main).toBe("dist/server/electron/main.js");
+    expect(packageJson.scripts["desktop:start"]).toContain("electron .");
+    expect(packageJson.scripts["desktop:package"]).toContain("--platform=win32 --arch=x64");
+    expect(packageJson.scripts["desktop:make"]).toContain("--platform=win32 --arch=x64");
+    expect(packageJson.devDependencies).toHaveProperty("electron");
+    expect(packageJson.devDependencies).toHaveProperty("@electron-forge/cli");
+    expect(packageJson.devDependencies).toHaveProperty("@electron-forge/maker-squirrel");
+    expect(packageJson.dependencies).toHaveProperty("electron-squirrel-startup");
+  });
+
+  it("emits the Electron main process from the server TypeScript build", async () => {
+    const tsconfig = JSON.parse(await readFile("tsconfig.server.json", "utf8")) as { include: string[] };
+    expect(tsconfig.include).toContain("src/electron");
+  });
+
+  it("configures an unsigned Squirrel installer without packaging local runtime data", async () => {
+    const source = await readFile("forge.config.cjs", "utf8");
+
+    expect(source).toContain("@electron-forge/maker-squirrel");
+    expect(source).toContain("setupExe: \"小红书运营台-0.1.0-Setup.exe\"");
+    for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
+      expect(source).toContain(`\"${excluded}\"`);
+    }
+  });
+
+  it("ignores development roots without removing built client files with the same name", () => {
+    const require = createRequire(import.meta.url);
+    const config = require("../forge.config.cjs") as { packagerConfig: { ignore: RegExp[] } };
+    const ignored = (filePath: string) => config.packagerConfig.ignore.some((pattern) => pattern.test(filePath));
+
+    expect(ignored(path.join(process.cwd(), "index.html"))).toBe(true);
+    expect(ignored(path.join(process.cwd(), "data", "searchJobs.json"))).toBe(true);
+    expect(ignored(path.join(process.cwd(), "dist", "client", "index.html"))).toBe(false);
+    expect(ignored(path.join(process.cwd(), "node_modules", "some-package", "test", "fixture.js"))).toBe(false);
+    expect(ignored(`${path.sep}index.html`)).toBe(true);
+    expect(ignored(`${path.sep}${path.join("data", "searchJobs.json")}`)).toBe(true);
+    expect(ignored(`${path.sep}${path.join("dist", "client", "index.html")}`)).toBe(false);
+    expect(ignored(`${path.sep}${path.join("node_modules", "some-package", "test", "fixture.js")}`)).toBe(false);
+  });
+
+  it("handles Squirrel install events so Windows shortcuts are created and removed", async () => {
+    const source = await readFile("src/electron/main.ts", "utf8");
+    expect(source).toContain("electron-squirrel-startup");
+    expect(source).toContain("if (squirrelStartup)");
+  });
+
+  it("keeps Forge output outside Git", async () => {
+    const gitignore = await readFile(".gitignore", "utf8");
+    expect(gitignore.split(/\r?\n/)).toContain("out/");
+  });
+});
+
+describe("desktop renderer security policy", () => {
+  it("uses an isolated sandbox without Node integration", async () => {
+    const { desktopWebPreferences } = await import("../src/electron/windowPolicy.js");
+    expect(desktopWebPreferences).toEqual({
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
+    });
+  });
+
+  it("allows navigation only inside the local application origin", async () => {
+    const { isAllowedAppNavigation } = await import("../src/electron/windowPolicy.js");
+    const appUrl = "http://127.0.0.1:8787";
+
+    expect(isAllowedAppNavigation(`${appUrl}/content`, appUrl)).toBe(true);
+    expect(isAllowedAppNavigation("https://www.xiaohongshu.com/", appUrl)).toBe(false);
+    expect(isAllowedAppNavigation("file:///C:/Windows/System32/calc.exe", appUrl)).toBe(false);
+    expect(isAllowedAppNavigation("not a url", appUrl)).toBe(false);
+  });
+});
+
+describe("desktop startup failure cleanup", () => {
+  it("always quits even when no server was created or server close fails", async () => {
+    const { finishStartupFailure } = await import("../src/electron/lifecycle.js");
+    const quitWithoutServer = vi.fn();
+    await finishStartupFailure(undefined, quitWithoutServer);
+    expect(quitWithoutServer).toHaveBeenCalledOnce();
+
+    const quitAfterCloseFailure = vi.fn();
+    await finishStartupFailure(async () => {
+      throw new Error("close failed");
+    }, quitAfterCloseFailure);
+    expect(quitAfterCloseFailure).toHaveBeenCalledOnce();
+  });
+});

@@ -1,0 +1,174 @@
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { app, BrowserWindow, dialog, type MessageBoxOptions } from "electron";
+import { finishStartupFailure } from "./lifecycle.js";
+import { desktopWebPreferences, isAllowedAppNavigation } from "./windowPolicy.js";
+
+type RunningApplicationServer = import("../server/application.js").RunningApplicationServer;
+type JobService = import("../server/services/jobService.js").JobService;
+type BrowserAuthService = import("../server/services/browserAuthService.js").BrowserAuthService;
+
+const require = createRequire(import.meta.url);
+const squirrelStartup = require("electron-squirrel-startup") as boolean;
+
+let mainWindow: BrowserWindow | undefined;
+let runningServer: RunningApplicationServer | undefined;
+let jobService: JobService | undefined;
+let browserAuthService: BrowserAuthService | undefined;
+let shutdownInProgress = false;
+let isQuitting = false;
+
+if (squirrelStartup) {
+  app.quit();
+} else {
+  startDesktopLifecycle();
+}
+
+function startDesktopLifecycle(): void {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+    return;
+  }
+
+  app.on("second-instance", () => {
+    focusMainWindow();
+  });
+
+  app.on("before-quit", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    void requestShutdown();
+  });
+
+  app.on("activate", () => {
+    if (mainWindow) {
+      focusMainWindow();
+    } else if (runningServer) {
+      mainWindow = createMainWindow(runningServer.url);
+    }
+  });
+
+  void app.whenReady().then(bootDesktop).catch(showStartupFailure);
+}
+
+async function bootDesktop(): Promise<void> {
+  app.setName("小红书运营台");
+  const runtime = await import("../server/runtime/runtimePaths.js");
+  const runtimePaths = runtime.createDesktopRuntimePaths({
+    userDataDir: app.getPath("userData"),
+    appPath: app.getAppPath()
+  });
+  runtime.configureRuntimePaths(runtimePaths);
+
+  await Promise.all([
+    mkdir(runtimePaths.dataDir, { recursive: true }),
+    mkdir(runtimePaths.outputDir, { recursive: true }),
+    mkdir(runtimePaths.mediaCacheDir, { recursive: true }),
+    mkdir(runtimePaths.browserProfileDir, { recursive: true })
+  ]);
+
+  const clientIndex = path.join(runtimePaths.clientDist, "index.html");
+  if (!existsSync(clientIndex)) {
+    throw new Error(`未找到桌面页面文件：${clientIndex}`);
+  }
+
+  const [{ startApplicationServer }, { jobs }, { browserAuth }] = await Promise.all([
+    import("../server/application.js"),
+    import("../server/services/jobService.js"),
+    import("../server/services/browserAuthService.js")
+  ]);
+  jobService = jobs;
+  browserAuthService = browserAuth;
+  runningServer = await startApplicationServer({
+    host: "127.0.0.1",
+    port: 8787,
+    clientDist: runtimePaths.clientDist
+  });
+  mainWindow = createMainWindow(runningServer.url);
+}
+
+function createMainWindow(appUrl: string): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 1440,
+    height: 960,
+    minWidth: 1080,
+    minHeight: 720,
+    show: false,
+    webPreferences: desktopWebPreferences
+  });
+
+  window.once("ready-to-show", () => window.show());
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = undefined;
+  });
+  window.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    void requestShutdown();
+  });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, targetUrl) => {
+    if (!isAllowedAppNavigation(targetUrl, appUrl)) event.preventDefault();
+  });
+  void window.loadURL(appUrl).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    dialog.showErrorBox("页面加载失败", `本地应用页面无法加载：${message}`);
+  });
+  return window;
+}
+
+async function requestShutdown(): Promise<void> {
+  if (shutdownInProgress || isQuitting) return;
+  shutdownInProgress = true;
+
+  try {
+    const hasRunningJobs = await jobService?.hasRunningJobs() ?? false;
+    if (hasRunningJobs) {
+      const messageBoxOptions: MessageBoxOptions = {
+        type: "warning",
+        title: "仍有任务正在运行",
+        message: "退出前需要安全暂停当前任务。",
+        detail: "暂停后可在下次启动应用时继续恢复任务。",
+        buttons: ["取消", "安全暂停并退出"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      };
+      const result = mainWindow
+        ? await dialog.showMessageBox(mainWindow, messageBoxOptions)
+        : await dialog.showMessageBox(messageBoxOptions);
+      if (result.response === 0) {
+        shutdownInProgress = false;
+        return;
+      }
+      await jobService?.prepareForShutdown(15_000);
+    }
+
+    browserAuthService?.closeAll();
+    await runningServer?.close();
+    isQuitting = true;
+    app.quit();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    dialog.showErrorBox("无法安全退出", `${message}\n\n应用仍在运行，请稍后重试。`);
+    shutdownInProgress = false;
+  }
+}
+
+function focusMainWindow(): void {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function showStartupFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  dialog.showErrorBox("小红书运营台启动失败", message);
+  void finishStartupFailure(runningServer ? () => runningServer!.close() : undefined, () => {
+    isQuitting = true;
+    app.quit();
+  });
+}
