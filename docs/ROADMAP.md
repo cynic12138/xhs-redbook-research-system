@@ -2,7 +2,7 @@
 
 | Milestone | Status | Outcome |
 | --- | --- | --- |
-| `D-001` | In progress | Windows x64 Electron shell, user-profile runtime paths, graceful shutdown, and unsigned installer. |
+| `D-001` | In validation | Windows x64 Electron shell, user-profile runtime paths, graceful shutdown, and unsigned installer are built; clean-machine acceptance remains. |
 | `D-002` | Pending separate approval | SQLite schema, repositories, and complete JSON import. |
 | `D-003` | Pending separate approval | Electron safeStorage for Cookie and model credentials. |
 | `D-004` | Pending separate approval | One-time browser-extension pairing and local API hardening. |

@@ -123,6 +123,54 @@ npm run build
 npm start
 ```
 
+## Windows 桌面试用版（D-001）
+
+D-001 使用 Electron 包装现有 React 和 Express 应用，仍然复用相同 HTTP API、业务逻辑和 JSON Store。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。
+
+本机调试桌面壳：
+
+```powershell
+npm run desktop:start
+```
+
+生成未安装的 Windows x64 应用目录：
+
+```powershell
+npm run desktop:package
+```
+
+生成未签名的 Squirrel 安装包：
+
+```powershell
+npm run desktop:make
+```
+
+产物位于：
+
+```text
+out/小红书运营台-win32-x64/
+out/make/squirrel.windows/x64/小红书运营台-0.1.0-Setup.exe
+```
+
+如果 Electron 官方 GitHub 下载在中国网络中断，可以仅对当前 PowerShell 会话使用 Electron README 推荐的镜像，不需要写入项目配置：
+
+```powershell
+$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
+npm run desktop:make
+```
+
+安装和使用限制：
+
+- 当前安装包没有 Windows 代码签名，只用于少量内部工程验收；SmartScreen 可能显示未知发布者提示。
+- 安装版运行数据位于 `%APPDATA%\小红书运营台`，其中包含 `data/`、`output/`、`media-cache/`、`browser-profile/` 和 `.env.local`。
+- D-001 仍使用 JSON 和明文 `.env.local`；Cookie 与模型 Key 尚未接入 Electron `safeStorage`，不要把该目录共享给其他人。
+- 应用使用单实例锁。再次启动会聚焦已有窗口，不会打开第二套 Store 或 HTTP 服务。
+- 如果 `127.0.0.1:8787` 被开发服务器或其他程序占用，桌面版会显示中文启动失败信息；先正常关闭占用进程再重试。
+- 关闭应用时如有抓取任务，会先要求确认并把任务安全暂停；下次启动后可以恢复。
+- 当前版本不包含 SQLite、自动备份、自动更新、正式图标和代码签名，这些属于后续里程碑。
+
+双击 `Setup.exe` 可以按当前 Windows 用户安装，不要求管理员权限。覆盖安装不得依赖或写入程序目录；用户数据与安装目录相互分离。
+
 ## 登录小红书
 
 本项目使用浏览器 Cookie 登录态，不需要小红书官方 API Key。后端启动后会把历史 Cookie 标记为“待验证”，前端会自动调用 `POST /api/auth/verify` 重新验证 `.env.local` 中的 Cookie。
@@ -410,7 +458,10 @@ GET /api/ai/orchestrations/:id/events
 | `npm test` | 运行 Vitest 测试 |
 | `npm run typecheck` | 运行客户端和服务端 TypeScript 检查 |
 | `npm run build` | 构建服务端和前端 |
-| `npm start` | 从 `dist/server/index.js` 启动生产服务 |
+| `npm start` | 从 `dist/server/server/index.js` 启动生产服务 |
+| `npm run desktop:start` | 构建后启动 Electron 桌面壳 |
+| `npm run desktop:package` | 生成 Windows x64 未安装应用目录 |
+| `npm run desktop:make` | 生成未签名 Windows x64 Setup.exe |
 
 ## 运行数据
 
@@ -443,6 +494,8 @@ GET /api/ai/orchestrations/:id/events
 | `data/xhs-login-edge-profile/` | 专用 Edge 登录窗口 profile |
 
 这些目录和文件都不应提交到 Git。
+
+以上路径适用于浏览器开发模式。Electron 安装版使用 `%APPDATA%\小红书运营台` 作为根目录，避免把 JSON、媒体、Edge Profile 或 `.env.local` 写入只读安装目录。
 
 ## 常用 API
 
