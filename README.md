@@ -145,6 +145,8 @@ npm run desktop:package
 npm run desktop:make
 ```
 
+首次生成安装包时，构建脚本会从 Microsoft 官方地址下载固定版本 NuGet `7.6.0`，校验内置 SHA-256 后写入 Git 忽略的 `.cache/squirrel-vendor`。这是为了绕过 Squirrel 自带 NuGet 2.8 无法压缩 Electron 43 `dxcompiler.dll` 的问题；后续构建会复用已校验缓存，不修改 `node_modules`。
+
 产物位于：
 
 ```text
