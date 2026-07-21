@@ -4,7 +4,7 @@ import type { NotesQuery } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
 import { getRuntimePaths } from "../runtime/runtimePaths.js";
 import { activateApplicationRuntime } from "../runtime/applicationRuntime.js";
-import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { readRuntimeCredential, resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
 import { COOKIE_CREDENTIAL_KEY } from "../storage/credentialKeys.js";
 import { getRuntimeStorage, store } from "../storage/runtimeStorage.js";
 import { jobs } from "../services/jobService.js";
@@ -522,7 +522,7 @@ api.post("/browser/open-url", async (req, res, next) => {
 
 api.get("/auth/status", async (_req, res) => {
   const stored = await store.read("authStatus");
-  const configured = Boolean(await (await resolveRuntimeCredentialVault()).get(COOKIE_CREDENTIAL_KEY));
+  const configured = Boolean(await readRuntimeCredential(COOKIE_CREDENTIAL_KEY));
   const latestAuthRisk = await latestAuthRiskAfter(stored.checkedAt);
   const error = latestAuthRisk ?? stored.error;
   const needsVerification = Boolean(configured && (!stored.checkedAt || stored.checkedAt < serverStartedAt));
@@ -541,7 +541,7 @@ api.get("/auth/status", async (_req, res) => {
 });
 
 api.post("/auth/verify", async (_req, res) => {
-  const cookieString = await (await resolveRuntimeCredentialVault()).get(COOKIE_CREDENTIAL_KEY);
+  const cookieString = await readRuntimeCredential(COOKIE_CREDENTIAL_KEY);
   if (!cookieString) {
     const status = {
       connected: false,

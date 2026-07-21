@@ -39,7 +39,7 @@ import {
   WEEK_FIFTEEN_HONEY_DEW_PROMPT_VERSION,
   WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY
 } from "../../shared/contentReviewPolicy.js";
-import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { readRuntimeCredential } from "../runtime/runtimeCredentialVault.js";
 import { modelCredentialKey } from "../storage/credentialKeys.js";
 import { store } from "../storage/runtimeStorage.js";
 
@@ -847,7 +847,7 @@ async function callJsonModel<T>(
   if (!model) {
     return { value: input.fallback, source: "local", status: "completed" };
   }
-  const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
+  const apiKey = await readRuntimeCredential(modelCredentialKey(model.id));
   if (!apiKey) {
     return { value: input.fallback, source: "local", status: "completed", modelId: model.id };
   }

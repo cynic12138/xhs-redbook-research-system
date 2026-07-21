@@ -8,7 +8,7 @@ import type {
   SearchSort
 } from "../../shared/types.js";
 import { clamp, nowIso, unique } from "../../shared/utils.js";
-import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { readRuntimeCredential } from "../runtime/runtimeCredentialVault.js";
 import { modelCredentialKey } from "../storage/credentialKeys.js";
 import { store } from "../storage/runtimeStorage.js";
 import { createAiOrchestration } from "./aiOrchestratorService.js";
@@ -274,7 +274,7 @@ async function resolveModel(
   }
   const injectedApiKey = getApiKey ? await getApiKey(model) : undefined;
   const apiKey = injectedApiKey
-    ?? await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
+    ?? await readRuntimeCredential(modelCredentialKey(model.id));
   if (!apiKey) {
     throw new Error("AI model API key is not configured.");
   }

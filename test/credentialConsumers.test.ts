@@ -23,6 +23,7 @@ describe("credential consumer boundaries", () => {
       const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
       expect(source, relativePath).not.toMatch(/from ["'][^"']*utils\/env\.js["']/);
       expect(source, relativePath).not.toMatch(/function keyNameForModel\s*\(/);
+      expect(source, relativePath).not.toMatch(/resolveRuntimeCredentialVault\(\)\)\.get\(/);
     }
     const envSource = readFileSync(new URL("../src/server/utils/env.ts", import.meta.url), "utf8");
     expect(envSource).not.toMatch(/export async function (?:getCookieString|saveCookieString)\s*\(/);
@@ -31,9 +32,11 @@ describe("credential consumer boundaries", () => {
   it("falls back to the vault only when an async tool credential callback has no value", async () => {
     const configured = model();
     const vault = {
-      get: vi.fn(async () => "vault-token")
+      get: vi.fn(async (_key: string) => "vault-token")
     };
+    const readRuntimeCredential = vi.fn(async (key: string) => vault.get(key));
     vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      readRuntimeCredential,
       resolveRuntimeCredentialVault: vi.fn(async () => vault)
     }));
     const { probeAiModelTools } = await import("../src/server/services/aiToolCallingService.js");
@@ -61,15 +64,15 @@ describe("credential consumer boundaries", () => {
       getApiKey: async () => undefined,
       fetchImpl
     })).resolves.toMatchObject({ ok: true, supportsTools: true });
-    expect(vault.get).toHaveBeenCalledWith(modelCredentialKey(configured.id));
+    expect(readRuntimeCredential).toHaveBeenCalledWith(modelCredentialKey(configured.id));
     expect(authorizations).toEqual(["Bearer vault-token"]);
 
-    vault.get.mockClear();
+    readRuntimeCredential.mockClear();
     await expect(probeAiModelTools(configured.id, storage, {
       getApiKey: async () => "injected-token",
       fetchImpl
     })).resolves.toMatchObject({ ok: true, supportsTools: true });
-    expect(vault.get).not.toHaveBeenCalled();
+    expect(readRuntimeCredential).not.toHaveBeenCalled();
     expect(authorizations.at(-1)).toBe("Bearer injected-token");
   });
 
@@ -127,14 +130,105 @@ describe("credential consumer boundaries", () => {
     fixture.vaultValues.delete(modelCredentialKey(configured.id));
     await expect(fixture.service.testAiModel(configured.id)).resolves.toEqual({ ok: false, message: "未配置 API Key。" });
   });
+
+  it("keeps unreadable model list, connectivity, and workflow artifact reads on sanitized fallbacks", async () => {
+    const configured = model({ apiKeyMasked: "historical-fragment", hasApiKey: true });
+    const fixture = await loadAiService([configured], new Map());
+    fixture.setUnreadable(true);
+
+    await expect(fixture.service.listAiModels()).resolves.toEqual([
+      expect.objectContaining({ apiKeyMasked: "", hasApiKey: false })
+    ]);
+    await expect(fixture.service.testAiModel(configured.id)).resolves.toEqual({ ok: false, message: "未配置 API Key。" });
+    await expect(fixture.service.runAiWorkflow({ workflowKey: "content-planning", modelId: configured.id }))
+      .resolves.toMatchObject({ source: "local", status: "completed" });
+  });
+
+  it("keeps unreadable tool, content, Cookie status, and Redbook reads on sanitized fallbacks", async () => {
+    vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      readRuntimeCredential: vi.fn(async () => undefined),
+      resolveRuntimeCredentialVault: vi.fn(async () => ({ set: vi.fn(), delete: vi.fn() }))
+    }));
+    const [{ probeAiModelTools }, { reviewContentDraft }, { RedbookService }] = await Promise.all([
+      import("../src/server/services/aiToolCallingService.js"),
+      import("../src/server/services/contentStudioService.js"),
+      import("../src/server/services/redbookService.js")
+    ]);
+    const storage = createConsumerStore([model()]);
+
+    await expect(probeAiModelTools("model-vault", storage as Parameters<typeof probeAiModelTools>[1]))
+      .resolves.toMatchObject({ ok: false, supportsTools: false, message: expect.not.stringContaining("decrypt") });
+    await expect(reviewContentDraft({ body: "普通体验记录。" }, storage as Parameters<typeof reviewContentDraft>[1]))
+      .resolves.toMatchObject({ review: { source: "local" } });
+    await expect(new RedbookService().verifyCookie()).rejects.toThrow("Missing XHS_COOKIE_STRING");
+  });
+
+  it("compensates model credential changes when metadata persistence fails", async () => {
+    const existing = model();
+    const credentialKey = modelCredentialKey(existing.id);
+    const fixture = await loadAiService([existing], new Map([[credentialKey, "old-token"]]));
+    const originalModels = structuredClone(fixture.models);
+
+    fixture.failNextModelUpdate();
+    await expect(fixture.service.updateAiModel(existing.id, { apiKey: "new-token" }))
+      .rejects.toThrow("AI model credential operation failed.");
+    expect(fixture.vaultValues.get(credentialKey)).toBe("old-token");
+    expect(fixture.models).toEqual(originalModels);
+
+    fixture.failNextModelUpdate();
+    await expect(fixture.service.deleteAiModel(existing.id))
+      .rejects.toThrow("AI model credential operation failed.");
+    expect(fixture.vaultValues.get(credentialKey)).toBe("old-token");
+    expect(fixture.models).toEqual(originalModels);
+  });
+
+  it("deletes orphaned new credentials and restores missing values after metadata failures", async () => {
+    const fixture = await loadAiService([], new Map());
+    fixture.failNextModelUpdate();
+    const saveError = await fixture.service.saveAiModel(modelInput({ apiKey: "new-save-token" }))
+      .then(() => undefined, (error: unknown) => error);
+    expect(saveError).toEqual(new Error("AI model credential operation failed."));
+    expect(fixture.vaultValues.size).toBe(0);
+    expect(fixture.models).toEqual([]);
+
+    const existing = model();
+    const missingFixture = await loadAiService([existing], new Map());
+    missingFixture.failNextModelUpdate();
+    await expect(missingFixture.service.updateAiModel(existing.id, { apiKey: "new-missing-token" }))
+      .rejects.toThrow("AI model credential operation failed.");
+    expect(missingFixture.vaultValues.size).toBe(0);
+    expect(missingFixture.models).toEqual([existing]);
+  });
+
+  it("uses only a fixed sanitized error when credential compensation itself fails", async () => {
+    const existing = model();
+    const credentialKey = modelCredentialKey(existing.id);
+    const fixture = await loadAiService([existing], new Map([[credentialKey, "old-sensitive-token"]]));
+    fixture.failNextModelUpdate();
+    fixture.failSetFor("old-sensitive-token");
+
+    const error = await fixture.service.updateAiModel(existing.id, { apiKey: "new-sensitive-token" })
+      .then(() => undefined, (caught: unknown) => caught);
+
+    expect(error).toEqual(new Error("AI model credential operation failed."));
+    expect(String(error)).not.toContain("old-sensitive-token");
+    expect(String(error)).not.toContain("new-sensitive-token");
+    expect(String(error)).not.toContain("metadata-write-detail");
+    expect(fixture.models).toEqual([existing]);
+  });
 });
 
 async function loadAiService(initialModels: AiModelConfig[], initialVaultValues: Map<string, string>) {
+  vi.resetModules();
   let models = structuredClone(initialModels);
+  let failModelUpdate = false;
+  let failSetValue: string | undefined;
+  let unreadable = false;
   const vaultValues = new Map(initialVaultValues);
   const vault = {
     get: vi.fn(async (key: string) => vaultValues.get(key)),
     set: vi.fn(async (key: string, value: string) => {
+      if (value === failSetValue) throw new Error("compensation-set-detail");
       vaultValues.set(key, value);
     }),
     delete: vi.fn(async (key: string) => {
@@ -145,6 +239,10 @@ async function loadAiService(initialModels: AiModelConfig[], initialVaultValues:
     read: vi.fn(async (name: string) => name === "aiModels" ? structuredClone(models) : []),
     update: vi.fn(async (name: string, updater: (value: unknown) => unknown | Promise<unknown>) => {
       if (name !== "aiModels") return updater([]);
+      if (failModelUpdate) {
+        failModelUpdate = false;
+        throw new Error("metadata-write-detail");
+      }
       models = await updater(structuredClone(models)) as AiModelConfig[];
       return structuredClone(models);
     }),
@@ -152,6 +250,7 @@ async function loadAiService(initialModels: AiModelConfig[], initialVaultValues:
   };
   vi.doMock("../src/server/storage/runtimeStorage.js", () => ({ store }));
   vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+    readRuntimeCredential: vi.fn(async (key: string) => unreadable ? undefined : vaultValues.get(key)),
     resolveRuntimeCredentialVault: vi.fn(async () => vault)
   }));
   vi.doMock("../src/server/utils/env.js", () => ({
@@ -164,8 +263,40 @@ async function loadAiService(initialModels: AiModelConfig[], initialVaultValues:
     store,
     vault,
     vaultValues,
+    failNextModelUpdate() {
+      failModelUpdate = true;
+    },
+    failSetFor(value: string) {
+      failSetValue = value;
+    },
+    setUnreadable(value: boolean) {
+      unreadable = value;
+    },
     get models() {
       return models;
+    }
+  };
+}
+
+function createConsumerStore(models: AiModelConfig[]) {
+  const values = new Map<string, unknown>([
+    ["aiModels", structuredClone(models)],
+    ["contentPlaybooks", []],
+    ["contentReviews", []],
+    ["contentDrafts", []],
+    ["aiArtifacts", []],
+    ["aiMessages", []],
+    ["notes", []],
+    ["comments", []],
+    ["searchJobs", []]
+  ]);
+  return {
+    read: async (name: string) => structuredClone(values.get(name) ?? []),
+    write: async (name: string, value: unknown) => { values.set(name, structuredClone(value)); },
+    update: async (name: string, updater: (value: unknown) => unknown | Promise<unknown>) => {
+      const next = await updater(structuredClone(values.get(name) ?? []));
+      values.set(name, structuredClone(next));
+      return structuredClone(next);
     }
   };
 }

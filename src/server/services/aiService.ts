@@ -33,7 +33,7 @@ import type {
   SearchJob
 } from "../../shared/types.js";
 import { clamp, createId, nowIso } from "../../shared/utils.js";
-import { resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
+import { readRuntimeCredential, resolveRuntimeCredentialVault } from "../runtime/runtimeCredentialVault.js";
 import { modelCredentialKey } from "../storage/credentialKeys.js";
 import { store } from "../storage/runtimeStorage.js";
 import {
@@ -143,8 +143,7 @@ export async function listAiModels(): Promise<AiModelConfig[]> {
   if (models.some((model) => model.hasApiKey || model.apiKeyMasked)) {
     await store.update("aiModels", (items) => items.map(sanitizeStoredModel));
   }
-  const vault = await resolveRuntimeCredentialVault();
-  return Promise.all(models.map((model) => withDerivedCredentialMetadata(sanitizeStoredModel(model), vault)));
+  return Promise.all(models.map((model) => withDerivedCredentialMetadata(sanitizeStoredModel(model))));
 }
 
 export function listAiWorkflows(): AiWorkflowDefinition[] {
@@ -605,13 +604,18 @@ export async function saveAiModel(input: AiModelInput): Promise<AiModelConfig> {
     updatedAt: now
   };
 
-  await store.update("aiModels", (models) => {
-    const next = models.map((item) => sanitizeStoredModel(
-      model.isDefault ? { ...item, isDefault: false } : item
-    ));
-    return [model, ...next];
-  });
-  return withDerivedCredentialMetadata(model, vault);
+  try {
+    await store.update("aiModels", (models) => {
+      const next = models.map((item) => sanitizeStoredModel(
+        model.isDefault ? { ...item, isDefault: false } : item
+      ));
+      return [model, ...next];
+    });
+  } catch (error) {
+    if (!apiKey) throw error;
+    return failAfterCredentialCompensation(() => vault.delete(modelCredentialKey(id)));
+  }
+  return withDerivedCredentialMetadata(model);
 }
 
 export async function updateAiModel(modelId: string, input: Partial<AiModelInput>): Promise<AiModelConfig> {
@@ -623,8 +627,10 @@ export async function updateAiModel(modelId: string, input: Partial<AiModelInput
 
   const apiKey = input.apiKey?.trim();
   const vault = await resolveRuntimeCredentialVault();
+  const credentialKey = modelCredentialKey(modelId);
+  const previousApiKey = apiKey ? await readRuntimeCredential(credentialKey) : undefined;
   if (apiKey) {
-    await vault.set(modelCredentialKey(modelId), apiKey);
+    await vault.set(credentialKey, apiKey);
   }
 
   const updated: AiModelConfig = {
@@ -641,12 +647,19 @@ export async function updateAiModel(modelId: string, input: Partial<AiModelInput
     updatedAt: nowIso()
   };
 
-  await store.update("aiModels", (items) =>
-    items.map((item) => sanitizeStoredModel(
-      item.id === modelId ? updated : updated.isDefault ? { ...item, isDefault: false } : item
-    ))
-  );
-  return withDerivedCredentialMetadata(updated, vault);
+  try {
+    await store.update("aiModels", (items) =>
+      items.map((item) => sanitizeStoredModel(
+        item.id === modelId ? updated : updated.isDefault ? { ...item, isDefault: false } : item
+      ))
+    );
+  } catch (error) {
+    if (!apiKey) throw error;
+    return failAfterCredentialCompensation(() => previousApiKey === undefined
+      ? vault.delete(credentialKey)
+      : vault.set(credentialKey, previousApiKey));
+  }
+  return withDerivedCredentialMetadata(updated);
 }
 
 export async function deleteAiModel(modelId: string): Promise<{ deleted: number }> {
@@ -656,14 +669,23 @@ export async function deleteAiModel(modelId: string): Promise<{ deleted: number 
     return { deleted: 0 };
   }
 
-  await (await resolveRuntimeCredentialVault()).delete(modelCredentialKey(modelId));
-  await store.update("aiModels", (items) => {
-    const remaining = items.filter((item) => item.id !== modelId).map(sanitizeStoredModel);
-    if (current.isDefault && remaining.length && !remaining.some((item) => item.isDefault)) {
-      return remaining.map((item, index) => ({ ...item, isDefault: index === 0 }));
-    }
-    return remaining;
-  });
+  const credentialKey = modelCredentialKey(modelId);
+  const previousApiKey = await readRuntimeCredential(credentialKey);
+  const vault = await resolveRuntimeCredentialVault();
+  await vault.delete(credentialKey);
+  try {
+    await store.update("aiModels", (items) => {
+      const remaining = items.filter((item) => item.id !== modelId).map(sanitizeStoredModel);
+      if (current.isDefault && remaining.length && !remaining.some((item) => item.isDefault)) {
+        return remaining.map((item, index) => ({ ...item, isDefault: index === 0 }));
+      }
+      return remaining;
+    });
+  } catch {
+    return failAfterCredentialCompensation(() => previousApiKey === undefined
+      ? Promise.resolve()
+      : vault.set(credentialKey, previousApiKey));
+  }
   return { deleted: 1 };
 }
 
@@ -678,7 +700,7 @@ export async function setDefaultAiModel(modelId: string): Promise<AiModelConfig>
   await store.update("aiModels", (items) => items.map((item) => sanitizeStoredModel(
     item.id === modelId ? updated : { ...item, isDefault: false }
   )));
-  return withDerivedCredentialMetadata(updated, await resolveRuntimeCredentialVault());
+  return withDerivedCredentialMetadata(updated);
 }
 
 export async function testAiModel(modelId: string): Promise<{ ok: boolean; message: string }> {
@@ -686,7 +708,7 @@ export async function testAiModel(modelId: string): Promise<{ ok: boolean; messa
   if (!model) {
     throw new Error("AI model not found.");
   }
-  const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
+  const apiKey = await readRuntimeCredential(modelCredentialKey(model.id));
   if (!apiKey) {
     return { ok: false, message: "未配置 API Key。" };
   }
@@ -717,7 +739,7 @@ export async function createAiReport(input: ReportInput): Promise<AiReport> {
   let error: string | undefined;
 
   if (model) {
-    const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
+    const apiKey = await readRuntimeCredential(modelCredentialKey(model.id));
     if (apiKey) {
       try {
         markdown = await callModel(model, apiKey, buildReportPrompt(title, analytics, notes, relatedComments, input.focus));
@@ -1085,7 +1107,7 @@ async function createArtifact(input: {
   let error: string | undefined;
 
   if (model) {
-    const apiKey = await (await resolveRuntimeCredentialVault()).get(modelCredentialKey(model.id));
+    const apiKey = await readRuntimeCredential(modelCredentialKey(model.id));
     if (apiKey) {
       try {
         markdown = await callModel(model, apiKey, input.prompt);
@@ -1339,10 +1361,16 @@ function sanitizeStoredModel(model: AiModelConfig): AiModelConfig {
   return { ...model, apiKeyMasked: "", hasApiKey: false };
 }
 
-async function withDerivedCredentialMetadata(
-  model: AiModelConfig,
-  vault: Awaited<ReturnType<typeof resolveRuntimeCredentialVault>>
-): Promise<AiModelConfig> {
-  const hasApiKey = Boolean(await vault.get(modelCredentialKey(model.id)));
+async function withDerivedCredentialMetadata(model: AiModelConfig): Promise<AiModelConfig> {
+  const hasApiKey = Boolean(await readRuntimeCredential(modelCredentialKey(model.id)));
   return { ...model, apiKeyMasked: hasApiKey ? "••••••••" : "", hasApiKey };
+}
+
+async function failAfterCredentialCompensation(compensate: () => Promise<void>): Promise<never> {
+  try {
+    await compensate();
+  } catch {
+    // The caller receives only the fixed error below.
+  }
+  throw new Error("AI model credential operation failed.");
 }

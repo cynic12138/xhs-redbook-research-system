@@ -26,6 +26,16 @@ describe("runtime credential boundary", () => {
     expect(runtime.getRuntimeCredentialVault()).toBeDefined();
   });
 
+  it("returns undefined when runtime credential resolution or decryption rejects", async () => {
+    vi.resetModules();
+    const runtime = await import("../src/server/runtime/runtimeCredentialVault.js");
+    await runtime.prepareRuntimeCredentials();
+    const vault = runtime.getRuntimeCredentialVault();
+    vi.spyOn(vault, "get").mockRejectedValue(new Error("synthetic decrypt and rotation detail"));
+
+    await expect(runtime.readRuntimeCredential("synthetic-read-key")).resolves.toBeUndefined();
+  });
+
   it("requires one explicit cipher configuration in desktop mode and never falls back to plaintext", async () => {
     const userDataDir = await mkdtemp(path.join(os.tmpdir(), "xhs-runtime-credentials-"));
     tempDirs.push(userDataDir);

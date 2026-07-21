@@ -53,6 +53,14 @@ export async function resolveRuntimeCredentialVault(): Promise<CredentialVault> 
   return getRuntimeCredentialVault();
 }
 
+export async function readRuntimeCredential(key: string): Promise<string | undefined> {
+  try {
+    return await (await resolveRuntimeCredentialVault()).get(key);
+  } catch {
+    return undefined;
+  }
+}
+
 export function disposeRuntimeCredentials(): void {
   runtimeVault = undefined;
   runtimeVaultStorage = undefined;
