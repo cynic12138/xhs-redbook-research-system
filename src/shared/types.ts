@@ -59,6 +59,31 @@ export type ContentProjectStatus = "planning" | "writing" | "reviewing" | "final
 export type ContentProjectMaterialCategory = "pain" | "scenario" | "expression" | "competitor" | "general";
 export type ContentProjectMaterialSource = "note" | "manual";
 
+export interface StorageStatus {
+  engine: "sqlite";
+  schemaVersion: number;
+  migrationState: "ready" | "legacy-import-required" | "imported";
+  legacyDataDetected: boolean;
+  importedAt?: string;
+  counts: Record<string, number>;
+}
+
+export interface LegacyImportPreview {
+  sourceDir: string;
+  fingerprint: string;
+  detectedFiles: string[];
+  counts: Record<string, number>;
+  warnings: string[];
+}
+
+export interface LegacyImportResult {
+  imported: boolean;
+  fingerprint: string;
+  importedAt: string;
+  counts: Record<string, number>;
+  integrityCheck: "ok";
+}
+
 export interface AuthStatus {
   connected: boolean;
   configured: boolean;
