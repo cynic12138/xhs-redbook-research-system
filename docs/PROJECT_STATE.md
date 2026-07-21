@@ -27,7 +27,7 @@
 - A read-only dry run imported the current 23 legacy files and 8,575 records into a temporary database with `foreign_key_check` and `quick_check` passing.
 - The external `better-sqlite3` gate was rejected because Electron 43 ABI 148 required an unavailable C++ rebuild; the user approved the built-in Node 24 `node:sqlite` replacement.
 - Built-in SQLite passed in-memory create/write/read/close smoke checks in both Node 24.15 and Electron 43.1.1 / Node 24.18, without native dependencies.
-- D-003 automated verification currently has 39 Vitest files and 242 tests passing, plus TypeScript typecheck, production build, asynchronous safeStorage smoke, Windows x64 packaging, and Squirrel installer generation.
+- D-003 automated verification currently has 39 Vitest files and 243 tests passing, plus TypeScript typecheck, production build, asynchronous safeStorage smoke, Windows x64 packaging, and Squirrel installer generation.
 - Migration gating blocks every business API and background worker until import succeeds; migration completion safely pauses imported running jobs and activates the reply worker in the same process.
 - Startup rejects unsupported future Schema versions, and shutdown waits for any in-flight reply before closing SQLite.
 - The unsigned Windows x64 `小红书运营台-0.2.0-Setup.exe` was generated successfully; SHA-256 is `A641B7F1D694BE3293A07286C3D1A7BAA8F795A6B276B984D7A17C0A0C703DEC`.
