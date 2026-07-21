@@ -61,6 +61,13 @@ Existing bugs and unusual behavior are part of the current behavior baseline unl
 - Do not delete code without positive evidence that it is unreachable or unused.
 - After each completed task, inspect the full diff, run relevant tests, run type checks, run configured lint/build commands when available, compare public boundaries, update docs, and commit only that task.
 
+## Approved Desktop Productization Track
+
+- `D-001` is explicitly approved to add Electron/Forge dependencies, desktop entrypoints, Windows packaging scripts, runtime-path configuration, and the minimal server lifecycle changes required by the approved local EXE milestone.
+- `D-001` must preserve the existing HTTP API contracts, business rules, React interactions, JSON storage format, and browser development workflow.
+- Desktop runtime data must stay outside the installation directory and must never be committed or packaged.
+- SQLite, credential encryption, extension pairing, backup/restore, automatic updates, and code signing remain outside `D-001` and require their own approved tasks.
+
 ## Completion Standards
 
 The repository audit is complete only when:
