@@ -16,6 +16,7 @@ describe("desktop build contract", () => {
     };
 
     expect(packageJson.productName).toBe("小红书运营台");
+    expect((packageJson as { version?: string }).version).toBe("0.1.1");
     expect(packageJson.author).toBeTruthy();
     expect(packageJson.description).toBeTruthy();
     expect(packageJson.main).toBe("dist/server/electron/main.js");
@@ -37,10 +38,17 @@ describe("desktop build contract", () => {
     const source = await readFile("forge.config.cjs", "utf8");
 
     expect(source).toContain("@electron-forge/maker-squirrel");
-    expect(source).toContain("setupExe: \"小红书运营台-0.1.0-Setup.exe\"");
+    expect(source).toContain("setupExe: \"小红书运营台-0.1.1-Setup.exe\"");
     for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
     }
+  });
+
+  it("routes the login-card xiaohongshu link through the existing browser opener", async () => {
+    const source = await readFile("src/client/App.tsx", "utf8");
+
+    expect(source).not.toContain('window.open("https://www.xiaohongshu.com/", "_blank")');
+    expect(source).toContain('openOriginalUrl("https://www.xiaohongshu.com/")');
   });
 
   it("ignores development roots without removing built client files with the same name", () => {

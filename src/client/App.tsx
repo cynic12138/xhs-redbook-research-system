@@ -1067,15 +1067,17 @@ export function App() {
   }
 
   async function openOriginalUrl(url: string) {
-    try {
-      await callBrowserBridge("openUrl", { url }, 1500);
-      return;
-    } catch {
-      // Extension is optional. Fallback keeps original-post opening available.
-    }
-    await run("open-url", async () => {
-      await api.openBrowserUrl({ url, mode: "auto" });
-    });
+    await openUrlWithBrowserFallback(
+      url,
+      async (targetUrl) => {
+        await callBrowserBridge("openUrl", { url: targetUrl }, 1500);
+      },
+      async (targetUrl) => {
+        await run("open-url", async () => {
+          await api.openBrowserUrl({ url: targetUrl, mode: "auto" });
+        });
+      }
+    );
   }
 
   async function createJob() {
@@ -2082,6 +2084,7 @@ export function App() {
             autoReadCookie={autoReadCookie}
             refreshBrowserBridge={refreshBrowserBridge}
             syncBrowserBridgeCookie={syncBrowserBridgeCookie}
+            openOriginalUrl={openOriginalUrl}
             onResume={resumeJob}
             onStop={stopJob}
             busy={busy}
@@ -2588,6 +2591,7 @@ function OverviewPage({
   autoReadCookie,
   refreshBrowserBridge,
   syncBrowserBridgeCookie,
+  openOriginalUrl,
   onResume,
   onStop,
   busy
@@ -2604,6 +2608,7 @@ function OverviewPage({
   autoReadCookie: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
   syncBrowserBridgeCookie: () => Promise<void>;
+  openOriginalUrl: (url: string) => Promise<void>;
   onResume: () => Promise<void>;
   onStop: () => Promise<void>;
   busy: string;
@@ -2666,6 +2671,7 @@ function OverviewPage({
           autoReadCookie={autoReadCookie}
           refreshBrowserBridge={refreshBrowserBridge}
           syncBrowserBridgeCookie={syncBrowserBridgeCookie}
+          openOriginalUrl={openOriginalUrl}
           busy={busy}
         />
       </section>
@@ -6798,6 +6804,7 @@ function AuthPanel({
   autoReadCookie,
   refreshBrowserBridge,
   syncBrowserBridgeCookie,
+  openOriginalUrl,
   busy
 }: {
   auth: AuthStatus;
@@ -6808,6 +6815,7 @@ function AuthPanel({
   autoReadCookie: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
   syncBrowserBridgeCookie: () => Promise<void>;
+  openOriginalUrl: (url: string) => Promise<void>;
   busy: string;
 }) {
   return (
@@ -6840,7 +6848,7 @@ function AuthPanel({
       </div>
       <p className="muted-line">插件使用：在 Edge 扩展页加载 browser-extension/xhs-bridge，刷新本地运营台和小红书页面，再点击“检测助手”。</p>
       <div className="button-row">
-        <button className="ghost-button" onClick={() => window.open("https://www.xiaohongshu.com/", "_blank")}>
+        <button className="ghost-button" onClick={() => void openOriginalUrl("https://www.xiaohongshu.com/")}>
           <ExternalLink size={16} />
           打开小红书
         </button>
@@ -7349,6 +7357,18 @@ function callBrowserBridge<T = unknown>(action: string, payload?: unknown, timeo
     window.addEventListener("message", onMessage);
     window.postMessage({ source: "XHS_APP", type: "XHS_BRIDGE_REQUEST", requestId, action, payload }, window.location.origin);
   });
+}
+
+export async function openUrlWithBrowserFallback(
+  url: string,
+  openWithBridge: (url: string) => Promise<void>,
+  openWithServer: (url: string) => Promise<void>
+): Promise<void> {
+  try {
+    await openWithBridge(url);
+  } catch {
+    await openWithServer(url);
+  }
 }
 
 export function upsertById<T extends { id: string }>(items: T[], next: T): T[] {

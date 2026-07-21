@@ -149,7 +149,7 @@ npm run desktop:make
 
 ```text
 out/小红书运营台-win32-x64/
-out/make/squirrel.windows/x64/小红书运营台-0.1.0-Setup.exe
+out/make/squirrel.windows/x64/小红书运营台-0.1.1-Setup.exe
 ```
 
 如果 Electron 官方 GitHub 下载在中国网络中断，可以仅对当前 PowerShell 会话使用 Electron README 推荐的镜像，不需要写入项目配置：
