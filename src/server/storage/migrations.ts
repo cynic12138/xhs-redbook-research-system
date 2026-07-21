@@ -299,5 +299,18 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
       CREATE INDEX idx_content_drafts_project_created ON content_drafts(project_id, created_at DESC);
       CREATE INDEX idx_content_reviews_project_created ON content_reviews(project_id, created_at DESC);
     `
+  },
+  {
+    version: 2,
+    name: "secure-credential-storage",
+    sql: `
+      CREATE TABLE secure_credentials (
+        credential_key TEXT PRIMARY KEY,
+        encrypted_value BLOB NOT NULL,
+        provider TEXT NOT NULL CHECK (provider = 'electron-safe-storage'),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `
   }
 ];

@@ -20,7 +20,7 @@ describe("application database", () => {
     expect(database.connection.prepare("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" });
     expect(database.connection.prepare("PRAGMA foreign_keys").get()).toMatchObject({ foreign_keys: 1 });
     expect(database.connection.prepare("PRAGMA busy_timeout").get()).toMatchObject({ timeout: 5000 });
-    expect(database.schemaVersion).toBe(1);
+    expect(database.schemaVersion).toBe(2);
 
     const tableNames = database.connection.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
@@ -31,8 +31,29 @@ describe("application database", () => {
       "ai_models", "ai_reports", "ai_artifacts", "ai_prompt_configs", "ai_custom_prompts", "ai_custom_prompt_revisions",
       "ai_orchestrations", "ai_goal_runs", "ai_messages", "reply_plans", "reply_actions", "health_reports", "boards",
       "favorite_notes", "content_playbooks", "content_playbook_revisions", "content_projects", "content_project_materials",
-      "content_drafts", "content_reviews"
+      "content_drafts", "content_reviews", "secure_credentials"
     ]));
+
+    expect(database.connection.prepare("PRAGMA table_info(secure_credentials)").all().map((row) => {
+      const column = row as { name: unknown; type: unknown; notnull: unknown; pk: unknown };
+      return {
+        name: String(column.name),
+        type: String(column.type),
+        notnull: Number(column.notnull),
+        pk: Number(column.pk)
+      };
+    })).toEqual([
+      { name: "credential_key", type: "TEXT", notnull: 0, pk: 1 },
+      { name: "encrypted_value", type: "BLOB", notnull: 1, pk: 0 },
+      { name: "provider", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "created_at", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "updated_at", type: "TEXT", notnull: 1, pk: 0 }
+    ]);
+    expect(() => database.connection.prepare(`
+      INSERT INTO secure_credentials (
+        credential_key, encrypted_value, provider, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run("schema-contract", Buffer.from([1]), "unsupported-provider", "created", "updated")).toThrow();
 
     database.close();
   });
@@ -46,9 +67,49 @@ describe("application database", () => {
     openApplicationDatabase(file).close();
     const reopened = openApplicationDatabase(file);
 
-    expect(reopened.connection.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()).toMatchObject({ count: 1 });
-    expect(reopened.schemaVersion).toBe(1);
+    expect(reopened.connection.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()).toMatchObject({ count: 2 });
+    expect(reopened.schemaVersion).toBe(2);
     reopened.close();
+  });
+
+  it("upgrades an existing schema v1 database to v2 without changing business data", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "xhs-database-upgrade-"));
+    tempDirs.push(dir);
+    const file = path.join(dir, "app.db");
+    const legacy = new DatabaseSync(file);
+    const { databaseMigrations } = await import("../src/server/storage/migrations.js");
+    const versionOne = databaseMigrations.find((migration) => migration.version === 1);
+    if (!versionOne) throw new Error("Schema v1 fixture migration is missing.");
+    legacy.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+      ${versionOne.sql}
+    `);
+    legacy.prepare(
+      "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)"
+    ).run(versionOne.version, versionOne.name, "2026-07-21T00:00:00.000Z");
+    legacy.prepare(
+      "INSERT INTO app_state (key, value_json, updated_at) VALUES (?, ?, ?)"
+    ).run("authStatus", JSON.stringify({ connected: false, configured: false }), "2026-07-21T00:00:00.000Z");
+    legacy.close();
+
+    const { openApplicationDatabase } = await import("../src/server/storage/database.js");
+    const upgraded = openApplicationDatabase(file);
+
+    expect(upgraded.schemaVersion).toBe(2);
+    expect(upgraded.connection.prepare(
+      "SELECT version FROM schema_migrations ORDER BY version"
+    ).all()).toEqual([{ version: 1 }, { version: 2 }]);
+    expect(upgraded.connection.prepare(
+      "SELECT value_json FROM app_state WHERE key = ?"
+    ).get("authStatus")).toEqual({ value_json: JSON.stringify({ connected: false, configured: false }) });
+    expect(upgraded.connection.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'secure_credentials'"
+    ).get()).toEqual({ name: "secure_credentials" });
+    upgraded.close();
   });
 
   it("refuses to open a database created by a newer schema version", async () => {
