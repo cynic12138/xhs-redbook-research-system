@@ -3,6 +3,7 @@ import path from "node:path";
 export interface RuntimePaths {
   mode: "development" | "desktop";
   dataDir: string;
+  databaseFile: string;
   outputDir: string;
   mediaCacheDir: string;
   browserProfileDir: string;
@@ -16,6 +17,7 @@ export function createDevelopmentRuntimePaths(cwd = process.cwd()): RuntimePaths
   return {
     mode: "development",
     dataDir: path.join(cwd, "data"),
+    databaseFile: path.join(cwd, "data", "app.db"),
     outputDir: path.join(cwd, "output"),
     mediaCacheDir: path.join(cwd, "data", "media-cache"),
     browserProfileDir: path.join(cwd, "data", "xhs-login-edge-profile"),
@@ -31,6 +33,7 @@ export function createDesktopRuntimePaths(input: {
   return {
     mode: "desktop",
     dataDir: path.join(input.userDataDir, "data"),
+    databaseFile: path.join(input.userDataDir, "data", "app.db"),
     outputDir: path.join(input.userDataDir, "output"),
     mediaCacheDir: path.join(input.userDataDir, "media-cache"),
     browserProfileDir: path.join(input.userDataDir, "browser-profile"),
