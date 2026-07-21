@@ -1,3 +1,5 @@
+const path = require("node:path");
+
 const excludedRoots = [
   ".git",
   ".env",
@@ -51,6 +53,7 @@ module.exports = {
       config: {
         name: "xiaohongshu-yunyingtai",
         setupExe: "小红书运营台-0.3.0-Setup.exe",
+        vendorDirectory: path.join(__dirname, ".cache", "squirrel-vendor"),
         noMsi: true
       }
     }

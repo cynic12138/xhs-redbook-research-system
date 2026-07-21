@@ -23,6 +23,7 @@ describe("desktop build contract", () => {
     expect(packageJson.scripts["desktop:start"]).toContain("electron .");
     expect(packageJson.scripts["desktop:package"]).toContain("--platform=win32 --arch=x64");
     expect(packageJson.scripts["desktop:make"]).toContain("--platform=win32 --arch=x64");
+    expect(packageJson.scripts["desktop:make"]).toContain("prepare-squirrel-vendor.mjs");
     expect(packageJson.scripts["desktop:credential-smoke"]).toContain("securitySmoke.js");
     expect(packageJson.devDependencies).toHaveProperty("electron");
     expect(packageJson.devDependencies).toHaveProperty("@electron-forge/cli");
@@ -58,9 +59,20 @@ describe("desktop build contract", () => {
     expect(source).not.toContain("@electron-forge/plugin-auto-unpack-natives");
     expect(source).toContain("checksums: electronChecksums");
     expect(source).toContain("setupExe: \"小红书运营台-0.3.0-Setup.exe\"");
+    expect(source).toContain('vendorDirectory: path.join(__dirname, ".cache", "squirrel-vendor")');
     for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
     }
+  });
+
+  it("pins and verifies the modern NuGet used by the Squirrel maker", async () => {
+    const source = await readFile("scripts/prepare-squirrel-vendor.mjs", "utf8");
+
+    expect(source).toContain("https://dist.nuget.org/win-x86-commandline/v7.6.0/nuget.exe");
+    expect(source).toContain("751EE5E79481626A428C1241DC7F94BCA2739B32588E669715BC5FB54D8FB8A2");
+    expect(source).toContain('node_modules", "electron-winstaller", "vendor"');
+    expect(source).toContain("source !== sourceNuget");
+    expect(source).not.toContain("latest/nuget.exe");
   });
 
   it("runs the credential smoke only through asynchronous safeStorage APIs", async () => {

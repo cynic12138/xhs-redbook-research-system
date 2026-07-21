@@ -18,7 +18,7 @@
     "desktop:start": "npm run build && electron .",
     "desktop:credential-smoke": "npm run build && electron dist/server/electron/securitySmoke.js",
     "desktop:package": "npm run build && electron-forge package --platform=win32 --arch=x64",
-    "desktop:make": "npm run build && electron-forge make --platform=win32 --arch=x64"
+    "desktop:make": "npm run build && node scripts/prepare-squirrel-vendor.mjs && electron-forge make --platform=win32 --arch=x64"
   },
   "dependencies": {
     "@lucasygu/redbook": "^0.8.0",
