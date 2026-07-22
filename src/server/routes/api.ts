@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { NotesQuery } from "../../shared/types.js";
 import { nowIso } from "../../shared/utils.js";
 import { getRuntimePaths } from "../runtime/runtimePaths.js";
+import { DataRestoreError } from "../storage/dataRestoreService.js";
+import { BackupServiceError } from "../storage/backupService.js";
 import { activateApplicationRuntime } from "../runtime/applicationRuntime.js";
 import { readRuntimeCredential, resolveRuntimeCredentialVault, retryRuntimeCredentialCleanup } from "../runtime/runtimeCredentialVault.js";
 import { COOKIE_CREDENTIAL_KEY } from "../storage/credentialKeys.js";
@@ -117,6 +119,20 @@ const legacyImportExecuteInput = z.object({
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/)
 });
 
+const migrationPackageExportInput = z.object({
+  destinationPath: z.string().min(1)
+});
+
+const dataRestoreSourceInput = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("backup"), backupId: z.string().min(1) }),
+  z.object({ kind: z.literal("migration-package"), filePath: z.string().min(1) })
+]);
+
+const dataRestorePrepareInput = z.object({
+  source: dataRestoreSourceInput,
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/)
+});
+
 api.get("/system/storage-status", async (_req, res, next) => {
   try {
     res.json(await getRuntimeStorage().status());
@@ -162,6 +178,49 @@ api.post("/system/legacy-import/execute", async (req, res, next) => {
     res.json(result);
   } catch (error) {
     next(error);
+  }
+});
+
+api.get("/system/backups", async (_req, res, next) => {
+  try {
+    res.json(await getRuntimeStorage().backups.getStatus());
+  } catch (error) {
+    sendBackupServiceError(error, res, next);
+  }
+});
+
+api.post("/system/backups", async (_req, res, next) => {
+  try {
+    res.status(201).json(await getRuntimeStorage().backups.createBackup("manual"));
+  } catch (error) {
+    sendBackupServiceError(error, res, next);
+  }
+});
+
+api.post("/system/migration-package/export", async (req, res, next) => {
+  try {
+    const input = migrationPackageExportInput.parse(req.body);
+    res.status(201).json(await getRuntimeStorage().backups.exportMigrationPackage(input.destinationPath));
+  } catch (error) {
+    sendBackupServiceError(error, res, next);
+  }
+});
+
+api.post("/system/data-restore/preview", async (req, res, next) => {
+  try {
+    const input = dataRestoreSourceInput.parse(req.body);
+    res.json(await getRuntimeStorage().restores.preview(input));
+  } catch (error) {
+    sendDataRestoreError(error, res, next);
+  }
+});
+
+api.post("/system/data-restore/prepare", async (req, res, next) => {
+  try {
+    const input = dataRestorePrepareInput.parse(req.body);
+    res.status(201).json(await getRuntimeStorage().restores.prepare(input));
+  } catch (error) {
+    sendDataRestoreError(error, res, next);
   }
 });
 
@@ -1655,6 +1714,30 @@ function sendPairingError(
   next: import("express").NextFunction
 ): void {
   if (error instanceof BrowserExtensionPairingError) {
+    res.status(error.statusCode).json({ error: error.message });
+    return;
+  }
+  next(error);
+}
+
+function sendDataRestoreError(
+  error: unknown,
+  res: Response,
+  next: (error?: unknown) => void
+): void {
+  if (error instanceof DataRestoreError) {
+    res.status(error.statusCode).json({ error: error.message });
+    return;
+  }
+  next(error);
+}
+
+function sendBackupServiceError(
+  error: unknown,
+  res: Response,
+  next: (error?: unknown) => void
+): void {
+  if (error instanceof BackupServiceError) {
     res.status(error.statusCode).json({ error: error.message });
     return;
   }

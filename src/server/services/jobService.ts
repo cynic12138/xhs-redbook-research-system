@@ -292,6 +292,10 @@ export class JobService {
     }
   }
 
+  resumeAfterCancelledShutdown(): void {
+    this.shuttingDown = false;
+  }
+
   private async seedJob(job: SearchJob): Promise<void> {
     let searched = false;
     for (const keyword of job.keywords) {

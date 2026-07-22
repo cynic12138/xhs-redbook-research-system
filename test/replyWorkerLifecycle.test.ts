@@ -67,4 +67,38 @@ describe("reply worker lifecycle", () => {
     expect(stopped).toBe(true);
     expect(actions[0]?.status).toBe("sent");
   });
+
+  it("times out instead of waiting forever for an in-flight reply", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
+    let finishReply!: () => void;
+    reply.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishReply = resolve;
+    }));
+    actions = [{
+      id: "reply-action-timeout",
+      planId: "reply-plan-timeout",
+      noteId: "note-timeout",
+      webUrl: "https://www.xiaohongshu.com/explore/note-timeout",
+      commentId: "comment-timeout",
+      content: "测试超时",
+      status: "queued",
+      approvedAt: "2026-07-21T00:00:00.000Z",
+      createdAt: "2026-07-21T00:00:00.000Z",
+      updatedAt: "2026-07-21T00:00:00.000Z"
+    }];
+    plans = [{ id: "reply-plan-timeout", status: "queued", updatedAt: "2026-07-21T00:00:00.000Z" }];
+
+    const { startReplyWorker, stopReplyWorker } = await import("../src/server/services/commentOps.js");
+    startReplyWorker();
+    vi.advanceTimersByTime(30_000);
+    await vi.waitFor(() => expect(reply).toHaveBeenCalledOnce());
+
+    const stopping = stopReplyWorker(100);
+    const timedOut = expect(stopping).rejects.toThrow("等待回复任务停止超时");
+    await vi.advanceTimersByTimeAsync(100);
+    await timedOut;
+    finishReply();
+    await Promise.resolve();
+  });
 });

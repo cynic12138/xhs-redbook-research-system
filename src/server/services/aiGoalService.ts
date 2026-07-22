@@ -14,6 +14,7 @@ import type {
 } from "../../shared/types.js";
 import { createId, nowIso, unique } from "../../shared/utils.js";
 import { store } from "../storage/runtimeStorage.js";
+import { BackgroundRunGate } from "../runtime/backgroundRunGate.js";
 import { jobs } from "./jobService.js";
 import { generateContentDraftBatch } from "./contentStudioService.js";
 
@@ -45,7 +46,7 @@ export type GoalToolName =
   | "review_note_batch"
   | "save_campaign_artifacts";
 
-const activeRuns = new Set<string>();
+const goalRunGate = new BackgroundRunGate("应用正在准备数据恢复，暂不能启动 AI Goal");
 const stepTitles: Record<GoalRunStepKey, string> = {
   "understand-goal": "理解目标",
   "plan-research": "制定研究计划",
@@ -109,16 +110,20 @@ export async function getAiGoalRun(id: string, localStore: StoreLike = store): P
 export async function confirmAiGoalRun(id: string, localStore: StoreLike = store, options: GoalOptions = {}): Promise<AiGoalRun> {
   const run = await requireRun(id, localStore);
   if (run.status !== "waiting_confirmation" && run.status !== "failed") return run;
+  const autoStart = options.autoStart ?? true;
+  if (autoStart) goalRunGate.ensureAccepting();
   const updated = await patchRun(id, localStore, (item) => ({ ...item, status: "running", error: undefined }));
-  if (options.autoStart ?? true) startAiGoalRun(id, localStore, options);
+  if (autoStart) startAiGoalRun(id, localStore, options);
   return updated;
 }
 
 export async function retryAiGoalRun(id: string, localStore: StoreLike = store, options: GoalOptions = {}): Promise<AiGoalRun> {
   const run = await requireRun(id, localStore);
   if (run.status !== "failed" && run.status !== "waiting") throw new Error("当前目标任务不需要重试。");
+  const autoStart = options.autoStart ?? true;
+  if (autoStart) goalRunGate.ensureAccepting();
   const updated = await patchRun(id, localStore, (item) => ({ ...item, status: "running", error: undefined }));
-  if (options.autoStart ?? true) startAiGoalRun(id, localStore, options);
+  if (autoStart) startAiGoalRun(id, localStore, options);
   return updated;
 }
 
@@ -149,16 +154,20 @@ export async function addAiGoalRunSources(id: string, input: AiGoalRunSourceInpu
 }
 
 export function startAiGoalRun(id: string, localStore: StoreLike = store, options: GoalOptions = {}): void {
-  if (activeRuns.has(id)) return;
-  activeRuns.add(id);
-  void runAiGoalRun(id, localStore, options)
+  goalRunGate.ensureAccepting();
+  if (goalRunGate.has(id)) return;
+  const work = runAiGoalRun(id, localStore, options)
     .catch(async (error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[ai-goal:${id}] ${message}`);
       await patchRun(id, localStore, (item) => ({ ...item, status: "failed", error: message })).catch(() => undefined);
     })
-    .finally(() => activeRuns.delete(id));
+    .then(() => undefined);
+  goalRunGate.track(id, work);
 }
+
+export const quiesceAiGoalRuns = (timeoutMs: number) => goalRunGate.quiesce(timeoutMs);
+export const resumeAiGoalRunScheduling = () => goalRunGate.resume();
 
 export async function runAiGoalRun(id: string, localStore: StoreLike = store, options: GoalOptions = {}): Promise<AiGoalRun> {
   const runtime = createRuntime(options);

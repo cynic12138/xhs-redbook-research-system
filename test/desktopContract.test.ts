@@ -16,7 +16,7 @@ describe("desktop build contract", () => {
     };
 
     expect(packageJson.productName).toBe("小红书运营台");
-    expect((packageJson as { version?: string }).version).toBe("0.4.1");
+    expect((packageJson as { version?: string }).version).toBe("0.5.0");
     expect(packageJson.author).toBeTruthy();
     expect(packageJson.description).toBeTruthy();
     expect(packageJson.main).toBe("dist/server/electron/main.js");
@@ -48,6 +48,21 @@ describe("desktop build contract", () => {
     expect(mainSource).toContain("preload:");
     expect(preloadSource).toContain('contextBridge.exposeInMainWorld("desktopStorage"');
     expect(preloadSource).toContain('ipcRenderer.invoke("storage:select-legacy-data-directory")');
+    expect(mainSource).toContain('ipcMain.handle("storage:select-migration-package-destination"');
+    expect(mainSource).toContain('ipcMain.handle("storage:select-migration-package-file"');
+    expect(mainSource).toContain('ipcMain.handle("storage:open-backups-directory"');
+    expect(mainSource).toContain('ipcMain.handle("storage:apply-prepared-restore"');
+    expect(mainSource).toContain("discardPreparedRestore(restoreId)");
+    expect(mainSource).toContain("prepareApplicationRuntimeForDataRestore");
+    expect(mainSource).toContain("closeAfterRuntimePrepared");
+    expect(mainSource).toContain("resumeApplicationRuntimeAfterCancelledRestore");
+    expect(mainSource).toContain("dataRestoreCompleted");
+    expect(mainSource).toContain("filterRestoreCompletionArgs");
+    expect(mainSource.indexOf("prepareApplicationRuntimeForDataRestore")).toBeLessThan(mainSource.indexOf('createBackup("pre-restore")'));
+    expect(preloadSource).toContain('ipcRenderer.invoke("storage:select-migration-package-destination")');
+    expect(preloadSource).toContain('ipcRenderer.invoke("storage:select-migration-package-file")');
+    expect(preloadSource).toContain('ipcRenderer.invoke("storage:open-backups-directory")');
+    expect(preloadSource).toContain('ipcRenderer.invoke("storage:apply-prepared-restore"');
     expect(preloadSource).not.toContain("shell");
     expect(preloadSource).not.toContain("fs");
     expect(mainSource).toContain('ipcMain.handle("extension:open-install-directory"');
@@ -55,6 +70,12 @@ describe("desktop build contract", () => {
     expect(preloadSource).toContain('contextBridge.exposeInMainWorld("desktopExtension"');
     expect(preloadSource).toContain('ipcRenderer.invoke("extension:open-install-directory")');
     expect(preloadSource).not.toContain("openPath");
+  });
+
+  it("shows a credential reconfiguration notice after importing a migration package", async () => {
+    const source = await readFile("src/client/App.tsx", "utf8");
+    expect(source).toContain('searchParams.get("dataRestoreCompleted")');
+    expect(source).toContain("业务数据已迁入，请重新连接小红书并填写需要使用的模型 Key");
   });
 
   it("configures an unsigned Squirrel installer without packaging local runtime data", async () => {
@@ -66,11 +87,11 @@ describe("desktop build contract", () => {
     expect(source).toContain("@electron-forge/maker-squirrel");
     expect(source).not.toContain("@electron-forge/plugin-auto-unpack-natives");
     expect(source).toContain("checksums: electronChecksums");
-    expect(source).toContain("setupExe: \"小红书运营台-0.4.1-Setup.exe\"");
+    expect(source).toContain("setupExe: \"小红书运营台-0.5.0-Setup.exe\"");
     expect(source).toContain('vendorDirectory: path.join(__dirname, ".cache", "squirrel-vendor")');
     expect(source).toContain('extraResource: ["browser-extension/xhs-bridge"]');
     expect(mainSource).toContain('path.join(process.resourcesPath, "xhs-bridge")');
-    for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
+    for (const excluded of [".git", ".env.local", ".vite", ".superpowers", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
     }
   });

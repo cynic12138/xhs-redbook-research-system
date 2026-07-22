@@ -4,11 +4,13 @@ import path from "node:path";
 import express from "express";
 import { disposeRuntimeCredentials, prepareRuntimeCredentials } from "./runtime/runtimeCredentialVault.js";
 import { getRuntimePaths } from "./runtime/runtimePaths.js";
-import { activateApplicationRuntime, deactivateApplicationRuntime } from "./runtime/applicationRuntime.js";
+import { activateApplicationRuntime, deactivateApplicationRuntime, resumeApplicationRuntimeAfterCancelledRestore } from "./runtime/applicationRuntime.js";
 import { api } from "./routes/api.js";
-import { closeRuntimeStorage, getRuntimeStorage } from "./storage/runtimeStorage.js";
+import { closeRuntimeStorage, configureRuntimeStorage, getRuntimeStorage } from "./storage/runtimeStorage.js";
+import { prepareDatabaseStartup } from "./storage/startupDataProtection.js";
 import { getAutoResumeJobs, getPort } from "./utils/env.js";
 import { createLocalApiSecurityMiddleware } from "./security/localApiSecurity.js";
+import { createApiMutationActivityMiddleware } from "./runtime/apiMutationActivity.js";
 
 export interface RunningApplicationServer {
   app: express.Express;
@@ -17,6 +19,7 @@ export interface RunningApplicationServer {
   port: number;
   url: string;
   close(): Promise<void>;
+  closeAfterRuntimePrepared(): Promise<void>;
 }
 
 export interface StartApplicationServerOptions {
@@ -24,6 +27,8 @@ export interface StartApplicationServerOptions {
   port?: number;
   clientDist?: string;
   resumeJobs?: boolean;
+  appVersion?: string;
+  startupPrepared?: boolean;
 }
 
 export function createApplication(options: { clientDist?: string } = {}): express.Express {
@@ -32,13 +37,18 @@ export function createApplication(options: { clientDist?: string } = {}): expres
 
   app.use(createLocalApiSecurityMiddleware());
   app.use(express.json({ limit: "2mb" }));
+  app.use(createApiMutationActivityMiddleware());
   app.use(async (req, res, next) => {
     const migrationRoutes = new Set([
       "/api/system/storage-status",
       "/api/system/credential-security",
       "/api/system/credential-security/retry",
       "/api/system/legacy-import/preview",
-      "/api/system/legacy-import/execute"
+      "/api/system/legacy-import/execute",
+      "/api/system/backups",
+      "/api/system/migration-package/export",
+      "/api/system/data-restore/preview",
+      "/api/system/data-restore/prepare"
     ]);
     if (!req.path.startsWith("/api/") || req.method === "OPTIONS" || migrationRoutes.has(req.path)) {
       next();
@@ -80,6 +90,18 @@ export async function startApplicationServer(
 ): Promise<RunningApplicationServer> {
   const host = options.host ?? "127.0.0.1";
   const requestedPort = options.port ?? getPort();
+  const runtimePaths = getRuntimePaths();
+  const appVersion = options.appVersion ?? process.env.npm_package_version ?? "development";
+  resumeApplicationRuntimeAfterCancelledRestore();
+  configureRuntimeStorage({ appVersion });
+  if (process.env.NODE_ENV !== "test" && !options.startupPrepared) {
+    await prepareDatabaseStartup({
+      databaseFile: runtimePaths.databaseFile,
+      backupsDir: runtimePaths.backupsDir,
+      stagingDir: runtimePaths.restoreStagingDir,
+      appVersion
+    });
+  }
   await prepareRuntimeCredentials();
   const storage = getRuntimeStorage();
   const app = createApplication({ clientDist: options.clientDist });
@@ -88,6 +110,7 @@ export async function startApplicationServer(
   try {
     await listen(server, host, requestedPort);
     if (!storage.requiresLegacyImport()) {
+      await storage.backups.ensureDailyBackup();
       await activateApplicationRuntime({ resumeJobs });
     }
   } catch (error) {
@@ -111,7 +134,8 @@ export async function startApplicationServer(
     host,
     port,
     url: `http://${host}:${port}`,
-    close: () => closeApplication(server)
+    close: () => closeApplication(server, true),
+    closeAfterRuntimePrepared: () => closeApplication(server, false)
   };
 }
 
@@ -141,9 +165,9 @@ async function listen(server: Server, host: "127.0.0.1", port: number): Promise<
   });
 }
 
-async function closeApplication(server: Server): Promise<void> {
+async function closeApplication(server: Server, prepareRuntime: boolean): Promise<void> {
   try {
-    await deactivateApplicationRuntime();
+    if (prepareRuntime) await deactivateApplicationRuntime();
     await closeServer(server);
   } finally {
     releaseRuntimeStorage();

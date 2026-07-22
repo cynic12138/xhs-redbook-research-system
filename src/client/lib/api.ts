@@ -70,6 +70,11 @@ import type {
   SearchJob,
   SearchJobInput,
   StorageStatus,
+  BackupRecord,
+  BackupStatus,
+  DataRestorePreview,
+  PreparedDataRestore,
+  MigrationPackageResult,
   LegacyImportPreview,
   LegacyImportResult
 } from "../../shared/types.js";
@@ -108,6 +113,16 @@ export async function apiDelete<T>(path: string): Promise<T> {
 
 export const api = {
   storageStatus: () => apiGet<StorageStatus>("/api/system/storage-status"),
+  backupStatus: () => apiGet<BackupStatus>("/api/system/backups"),
+  createBackup: () => apiPost<BackupRecord>("/api/system/backups"),
+  exportMigrationPackage: (destinationPath: string) =>
+    apiPost<MigrationPackageResult>("/api/system/migration-package/export", { destinationPath }),
+  previewDataRestore: (source: { kind: "backup"; backupId: string } | { kind: "migration-package"; filePath: string }) =>
+    apiPost<DataRestorePreview>("/api/system/data-restore/preview", source),
+  prepareDataRestore: (
+    source: { kind: "backup"; backupId: string } | { kind: "migration-package"; filePath: string },
+    fingerprint: string
+  ) => apiPost<PreparedDataRestore>("/api/system/data-restore/prepare", { source, fingerprint }),
   credentialSecurity: () => apiGet<CredentialSecurityStatus>("/api/system/credential-security"),
   retryCredentialSecurity: () => apiPost<CredentialSecurityStatus>("/api/system/credential-security/retry"),
   previewLegacyImport: (sourceDir?: string) =>

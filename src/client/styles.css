@@ -231,6 +231,18 @@ button:disabled {
   color: #c01842;
 }
 
+.notice-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 32%, var(--border));
+  border-radius: var(--radius-md);
+  color: var(--success);
+  background: var(--success-soft);
+}
+
 .page-grid,
 .notes-layout,
 .reports-layout,

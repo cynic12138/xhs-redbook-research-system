@@ -60,6 +60,7 @@ import type {
   AiWorkflowKey,
   AnalyticsReport,
   AuthStatus,
+  BackupStatus,
   BrowserBridgeStatus,
   ContentDraft,
   ContentDraftLength,
@@ -74,6 +75,7 @@ import type {
   ContentProjectStatus,
   ContentReviewRun,
   CredentialSecurityStatus,
+  DataRestorePreview,
   HealthReportRecord,
   NoteBulkDeletePreview,
   NoteScopeClearPreview,
@@ -119,6 +121,7 @@ type PromptScope = "system" | "custom";
 type CustomPromptTab = "guided" | "advanced" | "preview" | "versions";
 export type AiResourceScope = "all" | "current";
 type BatchReviewItem = { id: string; title: string; body: string; tags: string; selected: boolean };
+type DataRestoreSource = { kind: "backup"; backupId: string } | { kind: "migration-package"; filePath: string };
 type ContentProjectForm = {
   name: string;
   productName: string;
@@ -503,6 +506,9 @@ export function App() {
   const [selectedReportId, setSelectedReportId] = useState("");
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
+  const [dataRestorePreview, setDataRestorePreview] = useState<DataRestorePreview | null>(null);
+  const [dataRestoreSource, setDataRestoreSource] = useState<DataRestoreSource | null>(null);
   const [credentialSecurityStatus, setCredentialSecurityStatus] = useState<CredentialSecurityStatus | null>(null);
   const credentialSettingsAutoOpenedRef = useRef(false);
   const [legacyImportPreview, setLegacyImportPreview] = useState<LegacyImportPreview | null>(null);
@@ -524,6 +530,7 @@ export function App() {
   const [busy, setBusy] = useState("");
   const busyRef = useRef("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [assistantError, setAssistantError] = useState("");
   const setSelectedContentPlaybook = useCallback((value: string) => {
     selectedContentPlaybookIdRef.current = value;
@@ -558,6 +565,12 @@ export function App() {
     const status = await api.storageStatus();
     setStorageStatus(status);
     if (["legacy-import-required", "legacy-import-conflict"].includes(status.migrationState)) setModelSettingsOpen(true);
+    return status;
+  }, []);
+
+  const loadBackupStatus = useCallback(async () => {
+    const status = await api.backupStatus();
+    setBackupStatus(status);
     return status;
   }, []);
 
@@ -757,8 +770,24 @@ export function App() {
   }, [notes]);
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const completedRestore = searchParams.get("dataRestoreCompleted");
+    if (completedRestore === "migration-package") {
+      setNotice("业务数据已迁入，请重新连接小红书并填写需要使用的模型 Key。");
+      setModelSettingsOpen(true);
+    } else if (completedRestore === "backup") {
+      setNotice("本机备份已恢复，数据完整性校验通过。");
+    }
+    if (completedRestore) window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
+  useEffect(() => {
     void loadStorageStatus().catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [loadStorageStatus]);
+
+  useEffect(() => {
+    void loadBackupStatus().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, [loadBackupStatus]);
 
   useEffect(() => {
     void loadCredentialSecurityStatus().catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -1031,6 +1060,7 @@ export function App() {
     busyRef.current = key;
     setBusy(key);
     setError("");
+    setNotice("");
     try {
       return await task();
     } catch (err) {
@@ -1709,6 +1739,56 @@ export function App() {
     });
   }
 
+  async function createManualBackup() {
+    await run("backup-create", async () => {
+      await api.createBackup();
+      await loadBackupStatus();
+      setNotice("手动备份已完成并通过完整性校验。");
+    });
+  }
+
+  async function openBackupsDirectory() {
+    const result = await window.desktopStorage?.openBackupsDirectory();
+    if (!result?.ok) setError(result?.message ?? "请在桌面安装版中打开备份目录。");
+    else setNotice(result.message);
+  }
+
+  async function exportMigrationPackage() {
+    const destination = await window.desktopStorage?.selectMigrationPackageDestination();
+    if (!destination) return;
+    await run("migration-export", async () => {
+      const result = await api.exportMigrationPackage(destination);
+      setNotice(`脱敏迁移包已导出：${result.fileName}。文件未加密，请仅通过公司可信渠道传输。`);
+    });
+  }
+
+  async function previewBackupRestore(backupId: string) {
+    await previewDataRestore({ kind: "backup", backupId });
+  }
+
+  async function selectMigrationPackageForRestore() {
+    const filePath = await window.desktopStorage?.selectMigrationPackageFile();
+    if (!filePath) return;
+    await previewDataRestore({ kind: "migration-package", filePath });
+  }
+
+  async function previewDataRestore(source: DataRestoreSource) {
+    await run("restore-preview", async () => {
+      const preview = await api.previewDataRestore(source);
+      setDataRestoreSource(source);
+      setDataRestorePreview(preview);
+    });
+  }
+
+  async function applyDataRestore() {
+    if (!dataRestoreSource || !dataRestorePreview) return;
+    await run("restore-prepare", async () => {
+      const prepared = await api.prepareDataRestore(dataRestoreSource, dataRestorePreview.fingerprint);
+      const result = await window.desktopStorage?.applyPreparedRestore(prepared.restoreId);
+      if (!result?.ok) throw new Error(result?.message ?? "数据恢复只能在桌面安装版中执行。");
+    });
+  }
+
   async function saveModel() {
     await run("model", async () => {
       const { providerKey: _providerKey, ...modelInput } = modelForm;
@@ -2249,6 +2329,12 @@ export function App() {
             <span>{error}</span>
           </div>
         )}
+        {notice && (
+          <div className="notice-line">
+            <CheckCircle2 size={16} />
+            <span>{notice}</span>
+          </div>
+        )}
 
         {activeModule === "overview" && (
           <OverviewPage
@@ -2504,6 +2590,18 @@ export function App() {
         <ModelSettingsDrawer
           models={aiModels}
           storageStatus={storageStatus}
+          backupStatus={backupStatus}
+          dataRestorePreview={dataRestorePreview}
+          createManualBackup={createManualBackup}
+          openBackupsDirectory={openBackupsDirectory}
+          exportMigrationPackage={exportMigrationPackage}
+          selectMigrationPackageForRestore={selectMigrationPackageForRestore}
+          previewBackupRestore={previewBackupRestore}
+          applyDataRestore={applyDataRestore}
+          cancelDataRestore={() => {
+            setDataRestorePreview(null);
+            setDataRestoreSource(null);
+          }}
           credentialSecurityStatus={credentialSecurityStatus}
           retryCredentialSecurity={retryCredentialSecurity}
           legacyImportPreview={legacyImportPreview}
@@ -6526,6 +6624,15 @@ function BulkDeleteNotesDialog(props: {
 function ModelSettingsDrawer(props: {
   models: AiModelConfig[];
   storageStatus: StorageStatus | null;
+  backupStatus: BackupStatus | null;
+  dataRestorePreview: DataRestorePreview | null;
+  createManualBackup: () => Promise<void>;
+  openBackupsDirectory: () => Promise<void>;
+  exportMigrationPackage: () => Promise<void>;
+  selectMigrationPackageForRestore: () => Promise<void>;
+  previewBackupRestore: (backupId: string) => Promise<void>;
+  applyDataRestore: () => Promise<void>;
+  cancelDataRestore: () => void;
   credentialSecurityStatus: CredentialSecurityStatus | null;
   retryCredentialSecurity: () => Promise<void>;
   legacyImportPreview: LegacyImportPreview | null;
@@ -6671,6 +6778,79 @@ function ModelSettingsDrawer(props: {
                   )}
                 </div>
               )}
+            </div>
+          )}
+        </section>
+        <section className="drawer-section storage-settings-section">
+          <SectionTitle icon={<Download size={16} />} title="备份与迁移" />
+          <div className={props.backupStatus?.state === "warning" ? "storage-status-card warning" : "storage-status-card"}>
+            <strong>{props.backupStatus?.state === "warning" ? "备份需要处理" : "本地数据保护已启用"}</strong>
+            <span>
+              {props.backupStatus?.lastAutomaticBackupAt
+                ? `最近自动备份：${formatDateTime(props.backupStatus.lastAutomaticBackupAt)}`
+                : "尚未生成每日自动备份"}
+            </span>
+            <small>自动保留最近 7 个日备份和 3 个恢复/升级前安全备份；手动备份不会自动删除。</small>
+            {props.backupStatus?.warning && <small>{props.backupStatus.warning}</small>}
+          </div>
+          <div className="drawer-toolbar">
+            <button className="primary-button compact" onClick={() => void props.createManualBackup()} disabled={props.busy === "backup-create"}>
+              {props.busy === "backup-create" ? <Loader2 className="spin" size={14} /> : <Database size={14} />}
+              立即备份
+            </button>
+            {window.desktopStorage && (
+              <button className="ghost-button compact" onClick={() => void props.openBackupsDirectory()}>
+                <Library size={14} />
+                打开备份目录
+              </button>
+            )}
+          </div>
+          <div className="storage-preview-card">
+            <strong>本机备份</strong>
+            <small>完整备份包含 Windows 加密后的 Cookie 和模型 Key，适合同一 Windows 用户恢复。</small>
+            {(props.backupStatus?.backups ?? []).slice(0, 8).map((backup) => (
+              <div className="drawer-toolbar" key={backup.id}>
+                <small>{backupKindLabel(backup.kind)} · {formatDateTime(backup.createdAt)} · {formatFileSize(backup.sizeBytes)}</small>
+                {window.desktopStorage && (
+                  <button className="ghost-button compact" onClick={() => void props.previewBackupRestore(backup.id)} disabled={Boolean(props.busy)}>
+                    预览恢复
+                  </button>
+                )}
+              </div>
+            ))}
+            {!props.backupStatus?.backups.length && <small>暂无可恢复备份。</small>}
+          </div>
+          <div className="storage-preview-card">
+            <strong>跨电脑脱敏迁移</strong>
+            <small>迁移包不包含登录凭证，但包含业务正文和 AI 产物，文件本身未加密，请仅通过公司可信渠道传输。</small>
+            <div className="drawer-toolbar">
+              <button className="ghost-button compact" onClick={() => void props.exportMigrationPackage()} disabled={!window.desktopStorage || props.busy === "migration-export"}>
+                <Download size={14} />
+                导出迁移包
+              </button>
+              <button className="ghost-button compact" onClick={() => void props.selectMigrationPackageForRestore()} disabled={!window.desktopStorage || Boolean(props.busy)}>
+                <Library size={14} />
+                导入迁移包
+              </button>
+            </div>
+            {!window.desktopStorage && <small>迁移包导入和整库恢复只在桌面安装版开放。</small>}
+          </div>
+          {props.dataRestorePreview && (
+            <div className="storage-preview-card">
+              <strong>{props.dataRestorePreview.sourceKind === "backup" ? "确认恢复本机备份" : "确认导入脱敏迁移包"}</strong>
+              <small>创建时间：{formatDateTime(props.dataRestorePreview.createdAt)} · Schema v{props.dataRestorePreview.schemaVersion} · {formatFileSize(props.dataRestorePreview.sizeBytes)}</small>
+              {props.dataRestorePreview.warnings.map((warning) => <small key={warning}>{warning}</small>)}
+              <div className="dataset-warning">
+                <AlertTriangle size={16} />
+                <span>当前数据库将被完整替换。系统会先创建安全备份，然后重启应用。</span>
+              </div>
+              <div className="drawer-toolbar">
+                <button className="ghost-button compact" onClick={props.cancelDataRestore} disabled={props.busy === "restore-prepare"}>取消</button>
+                <button className="primary-button danger compact" onClick={() => void props.applyDataRestore()} disabled={props.busy === "restore-prepare"}>
+                  {props.busy === "restore-prepare" ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+                  备份当前数据并恢复
+                </button>
+              </div>
             </div>
           )}
         </section>
@@ -7368,6 +7548,19 @@ function formatNumber(value: number): string {
 function formatDateTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function backupKindLabel(kind: import("../shared/types.js").BackupKind): string {
+  if (kind === "daily") return "每日自动";
+  if (kind === "manual") return "手动";
+  if (kind === "pre-upgrade") return "升级前安全";
+  return "恢复前安全";
 }
 
 function readStoredNumber(key: string, fallback: number): number {

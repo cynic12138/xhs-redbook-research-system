@@ -130,12 +130,30 @@ export function startReplyWorker(): void {
   }, 30_000);
 }
 
-export async function stopReplyWorker(): Promise<void> {
+export async function stopReplyWorker(timeoutMs?: number): Promise<void> {
   if (workerTimer) {
     clearInterval(workerTimer);
     workerTimer = undefined;
   }
-  if (activeReplyWork) await activeReplyWork;
+  if (!activeReplyWork) return;
+  if (timeoutMs === undefined) {
+    await activeReplyWork;
+    return;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      activeReplyWork,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`等待回复任务停止超时（${Math.max(0, timeoutMs)}ms），请稍后重试数据恢复。`)),
+          Math.max(0, timeoutMs)
+        );
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function processReplyQueue(): Promise<ReplyActionRecord | undefined> {

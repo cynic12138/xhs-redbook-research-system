@@ -82,6 +82,81 @@ describe("storage migration API", () => {
     expect(status.status).toBe(200);
     expect(status.body).toMatchObject({ engine: "sqlite", migrationState: "imported" });
   });
+
+  it("creates backups and prepares a credential-free migration restore through stable contracts", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "xhs-backup-api-"));
+    tempDirs.push(root);
+    const migrationFile = path.join(root, "portable.xhsmigrate");
+    const { api } = await import("../src/server/routes/api.js");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", api);
+
+    const created = await request(app, "/api/system/backups", { method: "POST" });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ kind: "manual", credentialsIncluded: true });
+    const listed = await request(app, "/api/system/backups");
+    expect(listed.status).toBe(200);
+    expect(listed.body.backups).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: created.body.id })
+    ]));
+
+    const exported = await request(app, "/api/system/migration-package/export", {
+      method: "POST",
+      body: JSON.stringify({ destinationPath: migrationFile }),
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(exported.status).toBe(201);
+    expect(exported.body).toMatchObject({ credentialsIncluded: false });
+
+    const preview = await request(app, "/api/system/data-restore/preview", {
+      method: "POST",
+      body: JSON.stringify({ kind: "migration-package", filePath: migrationFile }),
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({ sourceKind: "migration-package", requiresRestart: true });
+    expect(JSON.stringify(preview.body)).not.toContain(root);
+
+    const prepared = await request(app, "/api/system/data-restore/prepare", {
+      method: "POST",
+      body: JSON.stringify({
+        source: { kind: "migration-package", filePath: migrationFile },
+        fingerprint: preview.body.fingerprint
+      }),
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(prepared.status).toBe(201);
+    expect(prepared.body.restoreId).toMatch(/^[a-f0-9-]{36}$/);
+
+    const conflict = await request(app, "/api/system/data-restore/prepare", {
+      method: "POST",
+      body: JSON.stringify({
+        source: { kind: "migration-package", filePath: migrationFile },
+        fingerprint: preview.body.fingerprint
+      }),
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(conflict.status).toBe(409);
+  });
+
+  it("rejects a damaged migration package with status 422", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "xhs-backup-api-damaged-"));
+    tempDirs.push(root);
+    const migrationFile = path.join(root, "damaged.xhsmigrate");
+    await writeFile(migrationFile, "not-a-data-package", "utf8");
+    const { api } = await import("../src/server/routes/api.js");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", api);
+
+    const response = await request(app, "/api/system/data-restore/preview", {
+      method: "POST",
+      body: JSON.stringify({ kind: "migration-package", filePath: migrationFile }),
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(response.status).toBe(422);
+  });
 });
 
 async function request(app: express.Express, requestPath: string, init: RequestInit = {}) {
