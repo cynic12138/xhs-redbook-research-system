@@ -7,11 +7,14 @@ import { openApplicationDatabase, type ApplicationDatabase } from "./database.js
 import { LegacyImportService } from "./legacyImportService.js";
 import { SqliteStore } from "./sqliteStore.js";
 import { collectionNames, type CollectionName, type CollectionValue, type StoreLike } from "./storageContract.js";
+import { BrowserExtensionPairingRepository } from "./browserExtensionPairingRepository.js";
+import { BrowserExtensionPairingService } from "../services/browserExtensionPairingService.js";
 
 export class ApplicationStorage {
   readonly database: ApplicationDatabase;
   readonly store: SqliteStore;
   readonly legacyImport: LegacyImportService;
+  readonly extensionPairing: BrowserExtensionPairingService;
 
   constructor(
     databaseFile: string,
@@ -20,6 +23,9 @@ export class ApplicationStorage {
     this.database = openApplicationDatabase(databaseFile);
     this.store = new SqliteStore(this.database);
     this.legacyImport = new LegacyImportService(this.database, this.store);
+    this.extensionPairing = new BrowserExtensionPairingService(
+      new BrowserExtensionPairingRepository(this.database)
+    );
   }
 
   async status(): Promise<StorageStatus> {

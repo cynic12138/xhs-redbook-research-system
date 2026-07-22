@@ -22,7 +22,7 @@ describe("application SQLite storage", () => {
     expect(storage.requiresLegacyImport()).toBe(true);
     expect(await storage.status()).toMatchObject({
       engine: "sqlite",
-      schemaVersion: 2,
+      schemaVersion: 3,
       migrationState: "legacy-import-required",
       legacyDataDetected: true
     });

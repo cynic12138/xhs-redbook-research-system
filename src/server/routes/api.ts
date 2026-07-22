@@ -26,6 +26,7 @@ import { buildHealthCheck } from "../services/healthService.js";
 import { proxyMedia, refreshNoteMedia } from "../services/mediaService.js";
 import { isAuthRisk, markAuthDisconnected } from "../services/authState.js";
 import { browserAuth } from "../services/browserAuthService.js";
+import { BrowserExtensionPairingError } from "../services/browserExtensionPairingService.js";
 import {
   approveReplyAction,
   createReplyPlan,
@@ -396,6 +397,18 @@ const extensionCookieInput = z.object({
   permissionStatus: z.enum(["granted", "missing", "unknown"]).default("granted")
 });
 
+const extensionPairingStartInput = z.object({
+  codeHash: z.string().regex(/^[a-f0-9]{64}$/)
+});
+
+const extensionPairingCompleteInput = z.object({
+  code: z.string().regex(/^\d{6}$/),
+  token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  extensionId: z.string().regex(/^[a-p]{32}$/),
+  browser: z.enum(["edge", "chrome", "unknown"]),
+  extensionVersion: z.string().max(64).optional()
+});
+
 const browserOpenInput = z.object({
   url: z.string().url(),
   mode: z.enum(["auto", "current-browser", "dedicated-edge"]).default("auto")
@@ -453,11 +466,68 @@ api.post("/auth/browser", async (_req, res, next) => {
 });
 
 api.get("/auth/extension/status", async (_req, res) => {
-  res.json(await store.read("browserBridgeStatus"));
+  res.json({
+    ...await store.read("browserBridgeStatus"),
+    pairing: getRuntimeStorage().extensionPairing.status()
+  });
+});
+
+api.post("/auth/extension/pairing/start", (req, res, next) => {
+  try {
+    const body = extensionPairingStartInput.parse(req.body);
+    res.status(201).json(getRuntimeStorage().extensionPairing.start(body));
+  } catch (error) {
+    sendPairingError(error, res, next);
+  }
+});
+
+api.post("/auth/extension/pairing/complete", (req, res, next) => {
+  try {
+    const body = extensionPairingCompleteInput.parse(req.body);
+    const originExtensionId = extensionIdFromOrigin(req.get("Origin"));
+    if (originExtensionId && originExtensionId !== body.extensionId) {
+      res.status(403).json({ error: "扩展来源与扩展 ID 不一致。" });
+      return;
+    }
+    res.status(201).json(getRuntimeStorage().extensionPairing.complete(body));
+  } catch (error) {
+    sendPairingError(error, res, next);
+  }
+});
+
+api.post("/auth/extension/pairing/cancel", (_req, res, next) => {
+  try {
+    res.json(getRuntimeStorage().extensionPairing.cancel());
+  } catch (error) {
+    sendPairingError(error, res, next);
+  }
+});
+
+api.delete("/auth/extension/pairing", (req, res, next) => {
+  try {
+    if (isExtensionOrigin(req.get("Origin")) && !authenticateExtensionRequest(req)) {
+      res.status(401).json({ error: "浏览器扩展配对无效，请重新配对。" });
+      return;
+    }
+    const status = getRuntimeStorage().extensionPairing.revoke();
+    void store.write("browserBridgeStatus", {
+      connected: false,
+      browser: "unknown",
+      permissionStatus: "unknown",
+      message: "浏览器扩展配对已解除。"
+    });
+    res.json(status);
+  } catch (error) {
+    sendPairingError(error, res, next);
+  }
 });
 
 api.post("/auth/extension-cookie", async (req, res, next) => {
   try {
+    if (!authenticateExtensionRequest(req)) {
+      res.status(401).json({ error: "浏览器扩展配对无效，请重新配对。" });
+      return;
+    }
     const body = extensionCookieInput.parse(req.body);
     const cookieString = buildCookieString(body);
     const user = await redbook.verifyCookie(cookieString);
@@ -476,6 +546,7 @@ api.post("/auth/extension-cookie", async (req, res, next) => {
         diagnostic: ""
       })
     ]);
+    getRuntimeStorage().extensionPairing.markSeen(true);
     res.json(status);
   } catch (error) {
     await markAuthDisconnected(error instanceof Error ? error.message : String(error));
@@ -1560,6 +1631,34 @@ function buildCookieString(input: { cookieString?: string; a1?: string; web_sess
     .filter(([, value]) => Boolean(value))
     .map(([key, value]) => `${key}=${value}`)
     .join("; ");
+}
+
+function authenticateExtensionRequest(req: import("express").Request): boolean {
+  const token = req.get("X-XHS-Bridge-Token") ?? "";
+  const extensionId = extensionIdFromOrigin(req.get("Origin"));
+  return getRuntimeStorage().extensionPairing.authenticate(token, extensionId);
+}
+
+function extensionIdFromOrigin(origin: string | undefined): string | undefined {
+  if (!origin) return undefined;
+  const match = origin.match(/^chrome-extension:\/\/([a-p]{32})$/);
+  return match?.[1];
+}
+
+function isExtensionOrigin(origin: string | undefined): boolean {
+  return extensionIdFromOrigin(origin) !== undefined;
+}
+
+function sendPairingError(
+  error: unknown,
+  res: import("express").Response,
+  next: import("express").NextFunction
+): void {
+  if (error instanceof BrowserExtensionPairingError) {
+    res.status(error.statusCode).json({ error: error.message });
+    return;
+  }
+  next(error);
 }
 
 async function sendArtifactMarkdown(artifactId: string, res: Response): Promise<void> {
