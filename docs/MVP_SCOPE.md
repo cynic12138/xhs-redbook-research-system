@@ -2,35 +2,30 @@
 
 ## Current Milestone
 
-`D-004.1` resolves the installed acceptance defects in D-004 by separating Electron status presentation from the browser-page Bridge, exposing the existing remaining-attempt feedback, and clarifying saved account status without changing pairing security or credential persistence.
+`D-005` adds automatic/manual SQLite backups, verified full-database restore, and credential-free migration packages to the accepted local Windows application without changing SQLite Schema v3.
 
 ## In Scope
 
-- SQLite Schema v3 single-extension pairing metadata with one-way token hashes.
-- One-time six-digit pairing sessions that live only in process memory.
-- Authentication of the existing extension Cookie sync route without changing its success response contract.
-- Removal of global open CORS and validation of local app, development, and extension origins.
-- Pairing and revocation controls in the existing login card and extension popup.
-- A stable packaged extension directory and one fixed, sender-validated Electron IPC operation to open it.
-- Windows x64 packaging, installer, upgrade, restart-persistence, and revocation validation.
-- Electron-mode status based on existing pairing and synchronization timestamps, while browser development mode retains content-script detection.
-- Remaining-attempt feedback in extension pairing errors and explicit saved-account labeling with manual re-verification.
+- Live SQLite backups through the built-in `node:sqlite.backup()` API.
+- One daily backup per local date, unlimited manual backups, and bounded daily/safety retention.
+- A versioned gzip data-package format with SHA-256, SQLite integrity, foreign-key, Schema, and count validation.
+- Full local restore that first creates a safety backup, stops background work, closes SQLite, performs recoverable replacement, and restarts Electron.
+- Credential-free migration packages that retain business data and model configuration while removing machine-bound credentials, pairing, and account state.
+- Minimal backup, migration, file-dialog, fixed-directory, and prepared-restore controls in the existing data-storage settings.
 
 ## Out of Scope
 
 - Account management, roles, cloud deployment, or shared data.
-- Native Messaging, extension-store publishing, enterprise extension policy, general backup/restore, automatic updates, code signing, or custom application artwork.
+- Native Messaging, extension-store publishing, enterprise extension policy, cloud backup, automatic updates, code signing, or custom application artwork.
 - Multi-source data merging or long-term JSON/SQLite dual writes.
 - Cloud sync, accounts, roles, whole-database encryption, or cross-Windows-user credential portability.
 - Changes to existing business HTTP routes, response contracts, status codes, or business rules.
-- An application-to-extension command queue, WebSocket, Native Messaging, heartbeat service, new IPC, or new database migration.
+- Selective data merging, password-protected packages, whole-database encryption, or a new database migration.
 
 ## Success Criteria
 
-- An unpaired or revoked extension cannot write Cookie state; a paired extension remains usable across application and browser restarts.
-- SQLite stores only a fixed-length token hash, while the raw token remains in trusted extension storage.
-- A new successful pairing atomically replaces the prior pairing; starting or cancelling a pairing does not invalidate the prior token.
-- Untrusted web origins receive no permissive CORS response and cannot invoke local mutation routes through a browser.
-- Existing encrypted Cookie/model keys, dedicated Edge login, business APIs, automated tests, typecheck, build, credential smoke, and Windows installer build remain compatible.
-- An installed `0.4.0` upgrades a validated `0.3.0` installation without losing business data or encrypted credentials.
-- An installed `0.4.1` upgrades `0.4.0`, preserves the encrypted Cookie and pairing hash, and no longer reports a false extension-detection failure in Electron mode.
+- Daily and manual backups are consistent under WAL writes and never package partial database copies.
+- Local restore retains same-user encrypted credentials and can recover the prior database after an interrupted or failed replacement.
+- Migration packages contain no encrypted credentials, pairing hash, or saved account state while preserving business IDs, ordering, and relations.
+- Corrupt, changed, incompatible, or non-sanitized packages are rejected before the live database is closed.
+- Existing business APIs, SQLite Schema v3, safeStorage, extension pairing, dedicated Edge login, content review, automated tests, typecheck, build, credential smoke, and Windows installer remain compatible.

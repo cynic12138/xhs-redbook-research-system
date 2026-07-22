@@ -21,7 +21,7 @@
 
 - Active milestone: `D-005` on `codex/d-005-backup-restore`. The milestone adds automatic/manual SQLite backups, verified full-database restore, and credential-free migration packages without changing Schema v3.
 - Production services now use SQLite only; `LocalStore` is retained solely as a legacy JSON reader for compatibility tests and import support, with no JSON/SQLite dual write.
-- The generated `0.4.0` installer remains unsigned and restricted to internal company validation.
+- The generated desktop installers remain unsigned and restricted to internal company validation.
 - Runtime paths, reusable Express lifecycle, graceful job shutdown, Electron single-instance shell, Forge packaging, and Squirrel installer configuration are implemented.
 - Automated verification currently covers the desktop path boundary, server lifecycle, shutdown persistence, renderer security policy, packaging exclusions, and build contracts.
 - The D-003 desktop pilot release candidate is version `0.3.0`; the login-card Xiaohongshu link continues to use the existing browser Bridge with the dedicated Edge fallback.
@@ -47,10 +47,15 @@
 - The unsigned Windows x64 `小红书运营台-0.4.0-Setup.exe` release candidate was generated successfully; SHA-256 is `11B7D7D79AC9364A4EE82ED3409930CA1A0E39774D6E13E082449C287462B4BD`.
 - D-004 installed-app acceptance found two functional defects and one status-semantics UX issue; the `0.4.1` fixes and completed manual retest are recorded in `docs/D004_ACCEPTANCE_ISSUES.md`.
 - In `0.4.0`, the Electron renderer incorrectly attempted to detect an Edge content script, pairing errors omitted remaining attempts, and the saved account card was ambiguous. D-004.1 corrects those behaviors without changing stored Cookie or pairing semantics.
-- Backup/restore, signing, Native Messaging, extension-store publishing, and fleet distribution remain later milestones.
+- Signing, Native Messaging, extension-store publishing, automatic updates, and fleet distribution remain later milestones.
 - D-005 is now separately approved. Signing, automatic updates, cloud backup, password-protected packages, selective merging, and fleet distribution remain later or excluded work.
 - D-004.1 implementation is limited to Electron/browser status separation, remaining-attempt feedback, saved-account labeling and refresh, and release packaging; baseline verification is 44 Vitest files and 266 tests plus TypeScript typecheck.
 - D-004.1 now uses backend pairing/synchronization status in Electron, keeps the page Bridge in browser development mode, reports remaining incorrect-code attempts from extension `0.2.1`, and separates the saved Xiaohongshu account card from extension pairing state.
 - D-004.1 automated release verification passed with 45 Vitest files and 272 tests, TypeScript typecheck, production build, asynchronous safeStorage smoke, Windows x64 packaging, Squirrel installer generation, packaged extension `0.2.1`, and ASAR/resource sensitive-file checks.
 - The unsigned Windows x64 `小红书运营台-0.4.1-Setup.exe` release candidate was generated successfully; size is `178.26 MB` and SHA-256 is `E502967BFDCC395232F0C4CCA8DA44EB687119DBBB8A09820F0EDBD05AFD2927`.
 - The user completed the D-004.1 installed checklist without finding further issues and explicitly authorized pushing the accepted feature branch to the configured Git remote. Merge to `main` remains a separate action.
+- D-005 implementation now includes a versioned gzip package format, WAL-safe SQLite snapshots, one-per-day automatic backup, manual and safety backups, 7/3 retention, credential-free migration export, verified restore preview, a 15-minute prepared-restore plan, recoverable closed-database replacement, restart feedback, and settings controls.
+- D-005 automated release verification passed with 53 Vitest files and 305 tests, TypeScript typecheck, production build, asynchronous safeStorage smoke, Windows x64 packaging, Squirrel installer generation, packaged extension `0.2.1`, and ASAR/resource sensitive-file checks.
+- Restore execution is process-exclusive. Before the mandatory `pre-restore` backup, the application blocks new API work, drains AI/Goal/orchestration/reply/search workers within one timeout budget, and freezes the open SQLite connection as query-only; cancelling safely re-enables scheduling and writes.
+- The unsigned Windows x64 `小红书运营台-0.5.0-Setup.exe` release candidate was generated successfully; size is `146513408` bytes and SHA-256 is `47ADA96C44EC62E0A2D7080FD8D0B63A9F353A526B93A1BF9476E7CB887B5AD9`.
+- D-005 remains in progress until the installed upgrade, backup, restore, migration, tamper-rejection, and retention checklist in `docs/D005_ACCEPTANCE.md` is completed by the user.
