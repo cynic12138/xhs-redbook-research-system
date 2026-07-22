@@ -20,7 +20,7 @@ describe("application database", () => {
     expect(database.connection.prepare("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" });
     expect(database.connection.prepare("PRAGMA foreign_keys").get()).toMatchObject({ foreign_keys: 1 });
     expect(database.connection.prepare("PRAGMA busy_timeout").get()).toMatchObject({ timeout: 5000 });
-    expect(database.schemaVersion).toBe(2);
+    expect(database.schemaVersion).toBe(3);
 
     const tableNames = database.connection.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
@@ -31,7 +31,7 @@ describe("application database", () => {
       "ai_models", "ai_reports", "ai_artifacts", "ai_prompt_configs", "ai_custom_prompts", "ai_custom_prompt_revisions",
       "ai_orchestrations", "ai_goal_runs", "ai_messages", "reply_plans", "reply_actions", "health_reports", "boards",
       "favorite_notes", "content_playbooks", "content_playbook_revisions", "content_projects", "content_project_materials",
-      "content_drafts", "content_reviews", "secure_credentials"
+      "content_drafts", "content_reviews", "secure_credentials", "browser_extension_pairing"
     ]));
 
     expect(database.connection.prepare("PRAGMA table_info(secure_credentials)").all().map((row) => {
@@ -55,6 +55,30 @@ describe("application database", () => {
       ) VALUES (?, ?, ?, ?, ?)
     `).run("schema-contract", Buffer.from([1]), "unsupported-provider", "created", "updated")).toThrow();
 
+    expect(database.connection.prepare("PRAGMA table_info(browser_extension_pairing)").all().map((row) => {
+      const column = row as { name: unknown; type: unknown; notnull: unknown; pk: unknown };
+      return {
+        name: String(column.name),
+        type: String(column.type),
+        notnull: Number(column.notnull),
+        pk: Number(column.pk)
+      };
+    })).toEqual([
+      { name: "singleton_id", type: "INTEGER", notnull: 0, pk: 1 },
+      { name: "token_hash", type: "BLOB", notnull: 1, pk: 0 },
+      { name: "extension_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "browser", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "extension_version", type: "TEXT", notnull: 0, pk: 0 },
+      { name: "paired_at", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "last_seen_at", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "last_sync_at", type: "TEXT", notnull: 0, pk: 0 }
+    ]);
+    expect(() => database.connection.prepare(`
+      INSERT INTO browser_extension_pairing (
+        singleton_id, token_hash, extension_id, browser, paired_at, last_seen_at
+      ) VALUES (1, ?, ?, ?, ?, ?)
+    `).run(Buffer.alloc(31), "a".repeat(32), "edge", "created", "created")).toThrow();
+
     database.close();
   });
 
@@ -67,8 +91,8 @@ describe("application database", () => {
     openApplicationDatabase(file).close();
     const reopened = openApplicationDatabase(file);
 
-    expect(reopened.connection.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()).toMatchObject({ count: 2 });
-    expect(reopened.schemaVersion).toBe(2);
+    expect(reopened.connection.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()).toMatchObject({ count: 3 });
+    expect(reopened.schemaVersion).toBe(3);
     reopened.close();
   });
 
@@ -99,10 +123,10 @@ describe("application database", () => {
     const { openApplicationDatabase } = await import("../src/server/storage/database.js");
     const upgraded = openApplicationDatabase(file);
 
-    expect(upgraded.schemaVersion).toBe(2);
+    expect(upgraded.schemaVersion).toBe(3);
     expect(upgraded.connection.prepare(
       "SELECT version FROM schema_migrations ORDER BY version"
-    ).all()).toEqual([{ version: 1 }, { version: 2 }]);
+    ).all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
     expect(upgraded.connection.prepare(
       "SELECT value_json FROM app_state WHERE key = ?"
     ).get("authStatus")).toEqual({ value_json: JSON.stringify({ connected: false, configured: false }) });

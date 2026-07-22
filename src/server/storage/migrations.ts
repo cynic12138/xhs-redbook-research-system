@@ -312,5 +312,21 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
         updated_at TEXT NOT NULL
       );
     `
+  },
+  {
+    version: 3,
+    name: "browser-extension-pairing",
+    sql: `
+      CREATE TABLE browser_extension_pairing (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        token_hash BLOB NOT NULL CHECK (length(token_hash) = 32),
+        extension_id TEXT NOT NULL,
+        browser TEXT NOT NULL CHECK (browser IN ('edge', 'chrome', 'unknown')),
+        extension_version TEXT,
+        paired_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        last_sync_at TEXT
+      );
+    `
   }
 ];
