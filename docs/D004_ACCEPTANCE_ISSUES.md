@@ -1,124 +1,167 @@
-# D-004 Installed Acceptance Issues
+# D-004 安装版验收问题记录
 
-Date: 2026-07-22
+日期：2026-07-22
 
-Status: fixes are implemented and automated verification passed in the `0.4.1` release candidate. All three items remain `Pending installed retest`; do not mark D-004/D-004.1 installed acceptance complete until the manual checklist passes.
+当前状态：三个问题均已在 `0.4.1` 候选版本中完成代码修复，并已通过自动化验证。目前三项均为“等待安装版复测”。在下方人工复测清单全部通过前，不得将 D-004/D-004.1 标记为安装验收完成。
 
-## D004-BUG-001: Electron cannot directly detect the Edge extension
+## D004-BUG-001：Electron 无法直接检测 Edge 扩展
 
-Severity: Important
+严重程度：重要
 
-Fix status: Implemented in `0.4.1`; pending installed retest.
+修复状态：已在 `0.4.1` 中实现，等待安装版复测。
 
-Observed behavior:
+### 原问题表现
 
-- The Edge extension popup opens Xiaohongshu, completes pairing, and synchronizes through the local API.
-- The desktop login card shows the pairing record (`Edge`, extension `0.2.0`) but “检测助手” reports that the browser helper did not respond.
-- App-side “同步登录态” remains unavailable even though popup-side synchronization works.
+- Edge 扩展弹窗可以打开小红书、完成配对，并通过本机接口同步登录态。
+- 桌面应用的登录连接区域能够显示配对记录（`Edge`、扩展 `0.2.0`），但点击“检测助手”时提示浏览器助手未响应。
+- 即使扩展弹窗能够正常同步，应用内的“同步登录态”按钮仍不可用。
 
-Root cause evidence:
+### 根因
 
-- The current renderer calls `callBrowserBridge`, which uses `window.postMessage` and expects `browser-extension/xhs-bridge/content-script.js` to be injected into the page.
-- The installed application renders `http://127.0.0.1:8787` inside Electron `BrowserWindow`, while the extension is installed in a separate Edge/Chrome process.
-- Edge cannot inject its extension content script into Electron web contents. Pairing and popup synchronization work because they call the Express API directly and do not depend on the page bridge.
+- 原来的桌面界面调用 `callBrowserBridge`，该函数使用 `window.postMessage`，并要求 `browser-extension/xhs-bridge/content-script.js` 注入当前页面。
+- 安装版在 Electron 的 `BrowserWindow` 中显示 `http://127.0.0.1:8787`，而扩展实际运行在另一个 Edge/Chrome 进程中。
+- Edge 无法把浏览器扩展的内容脚本注入 Electron 页面。配对和扩展弹窗同步之所以能够工作，是因为它们直接调用 Express 本机接口，不依赖页面 Bridge。
 
-Current workaround:
+### 0.4.0 临时处理方式
 
-- Use the extension popup to open Xiaohongshu and synchronize the login state.
-- Treat the backend pairing status and recent synchronization time as authoritative in the installed application.
-- The dedicated Edge login window remains available as a fallback.
+- 从浏览器扩展弹窗打开小红书并同步登录态。
+- 安装版以服务端保存的配对状态和最近同步时间为准。
+- 如果扩展不可用，继续使用专用 Edge 登录窗口。
 
-Required follow-up direction:
+### 原定修复要求
 
-- Separate desktop status presentation from browser-page content-script detection.
-- Keep content-script detection for Vite/browser development mode.
-- In Electron mode, do not claim the Edge extension can be pinged through `window.postMessage`; either present backend pairing/last-seen state or introduce a separately approved command channel.
+- 把桌面安装版的状态展示与浏览器页面内容脚本检测分开。
+- Vite/浏览器开发模式继续保留内容脚本检测。
+- Electron 模式不得声称能够通过 `window.postMessage` 检测或控制另一个 Edge 扩展进程。
 
-Implemented resolution:
+### 已实现的修复
 
-- Electron mode now reads the existing backend pairing and synchronization status and labels the action “刷新状态”.
-- Electron mode no longer calls the page Bridge for ping, Cookie synchronization, or opening Xiaohongshu; Cookie synchronization is performed from the extension popup and Xiaohongshu opens through the existing backend Edge opener.
-- Vite/browser development mode retains page-Bridge detection and in-page Cookie synchronization.
+- Electron 安装版现在读取服务端已有的配对状态和同步时间，操作按钮改为“刷新状态”。
+- Electron 安装版不再通过页面 Bridge 执行 `ping`、Cookie 同步或打开小红书。
+- 安装版的 Cookie 同步改为从 Edge/Chrome 扩展弹窗执行；“打开小红书”继续复用现有的后端 Edge 打开能力。
+- Vite/浏览器开发模式仍保留页面 Bridge 检测和应用内同步能力。
 
-## D004-BUG-002: Pairing errors do not display attempts remaining
+### 需要复测
 
-Severity: Moderate
+1. 安装版已配对时，登录连接区域应显示“扩展已配对”，不能再提示“未检测到助手”。
+2. 安装版按钮应显示为“刷新状态”，并且不再显示无法工作的应用内“同步登录态”按钮。
+3. 点击“打开小红书”应能正常打开 Edge 小红书页面。
+4. 从扩展弹窗同步登录态后，切回安装版，最近同步时间应立即更新或最多在 7 秒内更新。
+5. 在 Vite 浏览器开发模式中，“检测助手”和应用内“同步登录态”仍应可用。
 
-Fix status: Implemented in extension `0.2.1`; pending installed retest.
+## D004-BUG-002：错误配对码没有显示剩余次数
 
-Observed behavior:
+严重程度：中等
 
-- An incorrect code displays “扩展配对码不正确”.
-- The fifth incorrect attempt correctly displays that attempts are exhausted and a new code is required.
-- The extension popup does not display remaining attempts after the first through fourth failures.
+修复状态：已在扩展 `0.2.1` 中实现，等待安装版复测。
 
-Root cause evidence:
+### 原问题表现
 
-- `BrowserExtensionPairingService` decrements `attemptsRemaining` correctly.
-- `sendPairingError` returns only `{ error }` for `401` and `429` responses.
-- The popup renders only the returned error string and does not fetch the current pairing status after a failed attempt.
+- 输入错误配对码时，只显示“扩展配对码不正确”。
+- 第五次输入错误后，能够正确提示次数已用完并要求重新生成配对码。
+- 第一次到第四次输入错误时，扩展弹窗没有显示剩余尝试次数。
 
-Current workaround:
+### 根因
 
-- Generate a new pairing code if the user is unsure how many attempts remain.
+- `BrowserExtensionPairingService` 已经正确扣减 `attemptsRemaining`。
+- `sendPairingError` 对 `401` 和 `429` 只返回 `{ error }`。
+- 扩展弹窗原来只显示错误文字，失败后不会再次读取当前配对状态。
 
-Required follow-up direction:
+### 0.4.0 临时处理方式
 
-- Return or fetch a sanitized pairing status after a failed completion attempt and display `attemptsRemaining` in the popup.
-- Never return the pairing code, code hash, long-lived token, or token hash.
+- 如果不确定还剩多少次，可以在运营台重新生成配对码。
 
-Implemented resolution:
+### 原定修复要求
 
-- After an incorrect-code `401`, the extension reads the existing sanitized pairing status and displays remaining attempts `4`, `3`, `2`, then `1`.
-- If that status read fails, the original error remains visible. Existing `410` expiry and `429` exhaustion behavior is unchanged.
+- 配对失败后读取经过脱敏的配对状态，并在扩展弹窗中显示 `attemptsRemaining`。
+- 接口、日志和扩展页面不得显示配对码、配对码摘要、长期令牌或令牌哈希。
 
-## D004-UX-003: Sidebar account card is mistaken for extension pairing state
+### 已实现的修复
 
-Severity: UX clarification; separate functional defect not yet proven
+- 扩展收到错误配对码的 `401` 后，会读取现有的脱敏配对状态。
+- 第一次至第四次错误分别显示还剩 `4`、`3`、`2`、`1` 次。
+- 如果状态读取失败，仍显示原来的错误文字，不影响用户重新生成配对码。
+- 原有 `410` 配对码过期和 `429` 尝试次数耗尽行为保持不变。
 
-Fix status: Implemented in `0.4.1`; pending installed retest.
+### 需要复测
 
-Observed behavior:
+1. 生成一个新的配对码。
+2. 在扩展弹窗连续输入错误的 6 位配对码。
+3. 前四次应依次显示：
+   - `扩展配对码不正确，还剩 4 次。`
+   - `扩展配对码不正确，还剩 3 次。`
+   - `扩展配对码不正确，还剩 2 次。`
+   - `扩展配对码不正确，还剩 1 次。`
+4. 第五次错误后，应提示尝试次数已用完，并要求重新生成配对码。
+5. 重新生成配对码后，应可以正常完成配对。
 
-- The bottom-left card continues to show the Xiaohongshu nickname and last verification time after pairing, re-pairing, or revoking the extension.
-- It changes after application restart and credential verification, which makes it appear stale.
+## D004-UX-003：左下角账号卡片容易被误认为扩展配对状态
 
-Current semantics:
+严重程度：交互说明问题；此前没有证据表明账号数据本身发生错误。
 
-- The card renders `AuthStatus`: the Xiaohongshu account represented by the currently saved encrypted Cookie.
-- Pairing state is stored separately in `BrowserExtensionPairingStatus`.
-- Revoking an extension pairing intentionally does not delete the saved Cookie, so the account card should not automatically become disconnected.
+修复状态：已在 `0.4.1` 中实现，等待安装版复测。
 
-UX problem:
+### 原问题表现
 
-- The card does not label itself as “当前已验证小红书账号”, so users can reasonably interpret it as extension connection status.
-- Pairing changes and Cookie/account changes are not visually distinguished.
+- 配对、重新配对或解除扩展配对后，左下角卡片仍然显示小红书昵称和上次验证时间。
+- 卡片通常在应用重启或重新验证凭证后才发生变化，因此看起来像状态没有及时刷新。
 
-Required follow-up direction:
+### 原有状态含义
 
-- Label the sidebar card as Cookie/account verification status.
-- Keep pairing/extension status in the login card.
-- Add a deliberate “重新验证账号” or equivalent refresh action if immediate account-status refresh is required.
-- If synchronizing a different Xiaohongshu account does not update the nickname immediately, record that as a separate reproducible functional bug.
+- 左下角卡片展示的是 `AuthStatus`，代表当前加密 Cookie 对应的小红书账号。
+- 扩展配对状态保存在单独的 `BrowserExtensionPairingStatus` 中。
+- 解除扩展配对只撤销扩展令牌，不会删除已经保存的 Cookie，因此账号卡片不应该自动变成未登录。
 
-Implemented resolution:
+### 交互问题
 
-- The sidebar is explicitly labeled “小红书账号” and shows “最近验证”. Extension pairing is labeled separately in the login card.
-- “重新验证账号” reuses the existing authentication verification API.
-- Returning focus to Electron refreshes account and pairing state; the existing seven-second refresh remains as a fallback.
-- Revoking extension pairing continues to preserve the encrypted Cookie and account status.
+- 原卡片没有明确说明它代表“已保存的小红书账号”，用户容易把它理解成扩展连接状态。
+- 扩展配对变化和 Cookie/账号变化没有清楚区分。
 
-## Acceptance impact
+### 原定修复要求
 
-- Pairing security, token-hash persistence, popup-side Cookie synchronization, restart persistence, and the dedicated Edge fallback remain usable.
-- The `0.4.1` release candidate removes the invalid Electron live-detection assumption while retaining browser-development Bridge behavior.
-- D-004.1 automated verification is complete; installed retesting remains required before merging D-004/D-004.1 to `main`.
+- 明确标注左下角卡片代表 Cookie/账号验证状态。
+- 扩展配对状态只在登录连接区域显示。
+- 提供“重新验证账号”功能，用于立即刷新账号状态。
+- 如果扩展同步另一个小红书账号后昵称不能及时更新，需要作为可复现功能问题继续记录。
 
-## D-004.1 installed retest checklist
+### 已实现的修复
 
-1. Cover-install `小红书运营台-0.4.1-Setup.exe` and reload extension `0.2.1` from the stable extension directory.
-2. Confirm the installed app shows backend pairing status through “刷新状态” without reporting that a separately running Edge extension is undetected.
-3. Synchronize from the extension popup, return focus to Electron, and confirm the account nickname and recent synchronization time update immediately or within seven seconds.
-4. Enter incorrect pairing codes and confirm the popup reports remaining attempts `4`, `3`, `2`, then `1`; the fifth failure must require a new pairing code.
-5. Revoke pairing and confirm extension synchronization is rejected while the encrypted Cookie and “小红书账号” card remain available.
-6. Use “重新验证账号”, dedicated Edge login, browser development mode, and same-version cover installation to confirm the compatibility paths still work.
+- 左下角卡片固定标记为“小红书账号”，并显示“最近验证”。
+- 扩展配对状态单独显示在登录连接区域，不再与账号状态混用。
+- 增加“重新验证账号”按钮，继续使用已有账号验证接口。
+- 用户从 Edge/Chrome 切回 Electron 时，会刷新账号和扩展状态；原有 7 秒轮询继续作为兜底。
+- 解除扩展配对仍然保留加密 Cookie 和账号状态。
+
+### 需要复测
+
+1. 左下角卡片应明确显示“小红书账号”、当前昵称和“最近验证”时间。
+2. 登录连接区域应单独显示“扩展已配对”或“扩展未配对”。
+3. 从扩展同步另一个小红书账号后，切回应用，昵称应立即更新或最多在 7 秒内更新。
+4. 点击“重新验证账号”后，账号状态和最近验证时间应立即刷新，无需重启应用。
+5. 点击“解除配对”后：
+   - 扩展应无法继续同步。
+   - 左下角的小红书账号仍应保留。
+   - 已加密 Cookie 不应被删除。
+
+## 对整体功能的影响
+
+- 配对安全、令牌哈希保存、扩展弹窗 Cookie 同步、重启后保持配对和专用 Edge 备用登录路径均继续保留。
+- `0.4.1` 已移除 Electron 中无效的扩展实时检测假设，同时保留浏览器开发模式的页面 Bridge 功能。
+- D-004.1 已完成自动化验证，但在安装版人工复测通过前，仍不能合并到 `main` 或推送发布。
+
+## D-004.1 安装版复测总清单
+
+1. 关闭当前应用，覆盖安装 `小红书运营台-0.4.1-Setup.exe`。
+2. 打开稳定扩展目录，在 Edge/Chrome 扩展管理页重新加载扩展 `0.2.1`。
+3. 在运营台生成配对码，并在扩展弹窗中完成配对。
+4. 确认安装版显示“扩展已配对”和“刷新状态”，不再提示无法检测另一个 Edge 扩展。
+5. 在扩展弹窗同步当前浏览器登录态，切回安装版，确认账号昵称和最近同步时间立即更新或最多 7 秒内更新。
+6. 连续输入错误配对码，确认依次显示剩余 `4`、`3`、`2`、`1` 次；第五次必须要求重新生成配对码。
+7. 重新生成配对码并完成配对，确认功能恢复正常。
+8. 解除配对，确认扩展同步被拒绝，但加密 Cookie 和左下角“小红书账号”仍然保留。
+9. 点击“重新验证账号”，确认无需重启即可刷新账号状态和验证时间。
+10. 确认“打开小红书”、专用 Edge 登录、兼容读取和手动 Cookie 入口仍可使用。
+11. 在浏览器开发模式确认“检测助手”和应用内同步仍可使用。
+12. 再次覆盖安装相同版本，确认 SQLite 数据、加密凭证、扩展目录和配对状态没有丢失。
+
+只有以上 12 项全部通过后，才能将 D-004/D-004.1 标记为安装验收完成，并进入合并与推送流程。
