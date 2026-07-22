@@ -2,11 +2,13 @@
 
 Date: 2026-07-22
 
-Status: `0.4.0` automated verification passed, but installed-app acceptance found two functional defects and one status-semantics UX issue. Do not mark D-004 installed acceptance complete until the functional defects are resolved and retested.
+Status: fixes are implemented in the `0.4.1` release candidate. All three items remain `Pending installed retest`; do not mark D-004/D-004.1 installed acceptance complete until the manual checklist passes.
 
 ## D004-BUG-001: Electron cannot directly detect the Edge extension
 
 Severity: Important
+
+Fix status: Implemented in `0.4.1`; pending installed retest.
 
 Observed behavior:
 
@@ -32,9 +34,17 @@ Required follow-up direction:
 - Keep content-script detection for Vite/browser development mode.
 - In Electron mode, do not claim the Edge extension can be pinged through `window.postMessage`; either present backend pairing/last-seen state or introduce a separately approved command channel.
 
+Implemented resolution:
+
+- Electron mode now reads the existing backend pairing and synchronization status and labels the action “刷新状态”.
+- Electron mode no longer calls the page Bridge for ping, Cookie synchronization, or opening Xiaohongshu; Cookie synchronization is performed from the extension popup and Xiaohongshu opens through the existing backend Edge opener.
+- Vite/browser development mode retains page-Bridge detection and in-page Cookie synchronization.
+
 ## D004-BUG-002: Pairing errors do not display attempts remaining
 
 Severity: Moderate
+
+Fix status: Implemented in extension `0.2.1`; pending installed retest.
 
 Observed behavior:
 
@@ -57,9 +67,16 @@ Required follow-up direction:
 - Return or fetch a sanitized pairing status after a failed completion attempt and display `attemptsRemaining` in the popup.
 - Never return the pairing code, code hash, long-lived token, or token hash.
 
+Implemented resolution:
+
+- After an incorrect-code `401`, the extension reads the existing sanitized pairing status and displays remaining attempts `4`, `3`, `2`, then `1`.
+- If that status read fails, the original error remains visible. Existing `410` expiry and `429` exhaustion behavior is unchanged.
+
 ## D004-UX-003: Sidebar account card is mistaken for extension pairing state
 
 Severity: UX clarification; separate functional defect not yet proven
+
+Fix status: Implemented in `0.4.1`; pending installed retest.
 
 Observed behavior:
 
@@ -83,6 +100,13 @@ Required follow-up direction:
 - Keep pairing/extension status in the login card.
 - Add a deliberate “重新验证账号” or equivalent refresh action if immediate account-status refresh is required.
 - If synchronizing a different Xiaohongshu account does not update the nickname immediately, record that as a separate reproducible functional bug.
+
+Implemented resolution:
+
+- The sidebar is explicitly labeled “小红书账号” and shows “最近验证”. Extension pairing is labeled separately in the login card.
+- “重新验证账号” reuses the existing authentication verification API.
+- Returning focus to Electron refreshes account and pairing state; the existing seven-second refresh remains as a fallback.
+- Revoking extension pairing continues to preserve the encrypted Cookie and account status.
 
 ## Acceptance impact
 
