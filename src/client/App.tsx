@@ -93,6 +93,7 @@ import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProvide
 import { WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY } from "../shared/contentReviewPolicy.js";
 import { api } from "./lib/api.js";
 import { credentialSecurityPresentation, shouldOpenCredentialSettings } from "./securityStatus.js";
+import { generateBrowserPairingCode, hashBrowserPairingCode, pairingSecondsRemaining } from "./browserPairing.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "content" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
@@ -413,6 +414,8 @@ export function App() {
   const [authVerifyAttempted, setAuthVerifyAttempted] = useState(false);
   const [cookieFields, setCookieFields] = useState({ a1: "", web_session: "", webId: "" });
   const [browserBridge, setBrowserBridge] = useState<BrowserBridgeStatus>({ connected: false, browser: "unknown", permissionStatus: "unknown" });
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairingClock, setPairingClock] = useState(Date.now());
   const [keywords, setKeywords] = useState("");
   const [sort, setSort] = useState<SearchSort>("popular");
   const [noteType, setNoteType] = useState<NoteTypeFilter>("all");
@@ -820,11 +823,27 @@ export function App() {
   }, [loadAnalytics, loadGoalRuns, loadNotes, loadOperations, loadOrchestrations, refreshCore]);
 
   useEffect(() => {
+    if (browserBridge.pairing?.state !== "pairing") {
+      setPairingCode("");
+      return;
+    }
+    setPairingClock(Date.now());
+    const timer = window.setInterval(() => setPairingClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [browserBridge.pairing?.state, browserBridge.pairing?.expiresAt]);
+
+  useEffect(() => {
     let alive = true;
     callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000)
       .then((status) => {
         if (alive) {
-          setBrowserBridge({ ...status, connected: true, message: status.message || "浏览器助手已连接。" });
+          setBrowserBridge((current) => ({
+            ...current,
+            ...status,
+            pairing: current.pairing ?? status.pairing,
+            connected: true,
+            message: status.message || "浏览器助手已连接。"
+          }));
         }
       })
       .catch(() => undefined);
@@ -1050,12 +1069,13 @@ export function App() {
   async function refreshBrowserBridge() {
     setBusy("bridge-check");
     setError("");
-    const savedStatus = await api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus);
+    const savedStatus: BrowserBridgeStatus = await api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }));
     try {
       const runtimeStatus = await callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000);
       setBrowserBridge({
         ...savedStatus,
         ...runtimeStatus,
+        pairing: savedStatus.pairing,
         connected: true,
         message: `已检测到${runtimeStatus.browser === "edge" ? " Edge" : runtimeStatus.browser === "chrome" ? " Chrome" : ""} 浏览器助手。`
       });
@@ -1101,6 +1121,39 @@ export function App() {
     } finally {
       setBusy("");
     }
+  }
+
+  async function startBrowserExtensionPairing() {
+    await run("bridge-pair", async () => {
+      const code = generateBrowserPairingCode();
+      const codeHash = await hashBrowserPairingCode(code);
+      const pairing = await api.startBrowserExtensionPairing({ codeHash });
+      setPairingCode(code);
+      setPairingClock(Date.now());
+      setBrowserBridge((current) => ({ ...current, pairing }));
+    });
+  }
+
+  async function cancelBrowserExtensionPairing() {
+    await run("bridge-pair", async () => {
+      const pairing = await api.cancelBrowserExtensionPairing();
+      setPairingCode("");
+      setBrowserBridge((current) => ({ ...current, pairing }));
+    });
+  }
+
+  async function revokeBrowserExtensionPairing() {
+    if (!window.confirm("解除配对后，当前浏览器扩展需要重新输入配对码才能同步登录态。确定继续吗？")) return;
+    await run("bridge-pair", async () => {
+      const pairing = await api.revokeBrowserExtensionPairing();
+      setPairingCode("");
+      setBrowserBridge((current) => ({
+        ...current,
+        connected: false,
+        pairing,
+        message: "浏览器扩展配对已解除。"
+      }));
+    });
   }
 
   async function openOriginalUrl(url: string) {
@@ -2159,6 +2212,11 @@ export function App() {
             autoReadCookie={autoReadCookie}
             refreshBrowserBridge={refreshBrowserBridge}
             syncBrowserBridgeCookie={syncBrowserBridgeCookie}
+            startBrowserExtensionPairing={startBrowserExtensionPairing}
+            cancelBrowserExtensionPairing={cancelBrowserExtensionPairing}
+            revokeBrowserExtensionPairing={revokeBrowserExtensionPairing}
+            pairingCode={pairingCode}
+            pairingClock={pairingClock}
             openOriginalUrl={openOriginalUrl}
             onResume={resumeJob}
             onStop={stopJob}
@@ -2678,6 +2736,11 @@ function OverviewPage({
   autoReadCookie,
   refreshBrowserBridge,
   syncBrowserBridgeCookie,
+  startBrowserExtensionPairing,
+  cancelBrowserExtensionPairing,
+  revokeBrowserExtensionPairing,
+  pairingCode,
+  pairingClock,
   openOriginalUrl,
   onResume,
   onStop,
@@ -2695,6 +2758,11 @@ function OverviewPage({
   autoReadCookie: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
   syncBrowserBridgeCookie: () => Promise<void>;
+  startBrowserExtensionPairing: () => Promise<void>;
+  cancelBrowserExtensionPairing: () => Promise<void>;
+  revokeBrowserExtensionPairing: () => Promise<void>;
+  pairingCode: string;
+  pairingClock: number;
   openOriginalUrl: (url: string) => Promise<void>;
   onResume: () => Promise<void>;
   onStop: () => Promise<void>;
@@ -2758,6 +2826,11 @@ function OverviewPage({
           autoReadCookie={autoReadCookie}
           refreshBrowserBridge={refreshBrowserBridge}
           syncBrowserBridgeCookie={syncBrowserBridgeCookie}
+          startBrowserExtensionPairing={startBrowserExtensionPairing}
+          cancelBrowserExtensionPairing={cancelBrowserExtensionPairing}
+          revokeBrowserExtensionPairing={revokeBrowserExtensionPairing}
+          pairingCode={pairingCode}
+          pairingClock={pairingClock}
           openOriginalUrl={openOriginalUrl}
           busy={busy}
         />
@@ -6993,6 +7066,11 @@ function AuthPanel({
   autoReadCookie,
   refreshBrowserBridge,
   syncBrowserBridgeCookie,
+  startBrowserExtensionPairing,
+  cancelBrowserExtensionPairing,
+  revokeBrowserExtensionPairing,
+  pairingCode,
+  pairingClock,
   openOriginalUrl,
   busy
 }: {
@@ -7004,9 +7082,16 @@ function AuthPanel({
   autoReadCookie: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
   syncBrowserBridgeCookie: () => Promise<void>;
+  startBrowserExtensionPairing: () => Promise<void>;
+  cancelBrowserExtensionPairing: () => Promise<void>;
+  revokeBrowserExtensionPairing: () => Promise<void>;
+  pairingCode: string;
+  pairingClock: number;
   openOriginalUrl: (url: string) => Promise<void>;
   busy: string;
 }) {
+  const pairing = browserBridge.pairing ?? { state: "unpaired" as const };
+  const pairingSeconds = pairingSecondsRemaining(pairing.expiresAt, pairingClock);
   return (
     <section className="surface command-surface auth-surface">
       <SectionTitle icon={<ShieldCheck size={18} />} title="登录连接" />
@@ -7029,11 +7114,44 @@ function AuthPanel({
             {busy === "bridge-check" ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
             检测助手
           </button>
-          <button className="primary-button compact" onClick={() => void syncBrowserBridgeCookie()} disabled={busy === "auth" || !browserBridge.connected}>
+          <button className="primary-button compact" onClick={() => void syncBrowserBridgeCookie()} disabled={busy === "auth" || !browserBridge.connected || pairing.state !== "paired"}>
             {busy === "auth" ? <Loader2 className="spin" size={15} /> : <KeyRound size={15} />}
             同步登录态
           </button>
         </div>
+      </div>
+      <div className="browser-pairing-panel">
+        {pairing.state === "paired" ? (
+          <>
+            <p className="muted-line">
+              已配对 {pairing.browser === "edge" ? "Edge" : pairing.browser === "chrome" ? "Chrome" : "浏览器"}
+              {pairing.extensionVersion ? ` · 扩展 ${pairing.extensionVersion}` : ""}
+            </p>
+            <button className="ghost-button compact danger" onClick={() => void revokeBrowserExtensionPairing()} disabled={busy === "bridge-pair"}>
+              解除配对
+            </button>
+          </>
+        ) : pairing.state === "pairing" ? (
+          <>
+            {pairingCode ? (
+              <div className="pairing-code-block">
+                <small>请在浏览器扩展中输入</small>
+                <strong className="pairing-code">{pairingCode}</strong>
+                <small>{pairingSeconds > 0 ? `${pairingSeconds} 秒后失效` : "配对码已失效，请重新生成"}</small>
+              </div>
+            ) : (
+              <p className="muted-line">页面已刷新，临时配对码无法恢复，请重新生成。</p>
+            )}
+            <div className="button-row">
+              <button className="primary-button compact" onClick={() => void startBrowserExtensionPairing()} disabled={busy === "bridge-pair"}>重新生成</button>
+              <button className="ghost-button compact" onClick={() => void cancelBrowserExtensionPairing()} disabled={busy === "bridge-pair"}>取消配对</button>
+            </div>
+          </>
+        ) : (
+          <button className="primary-button compact" onClick={() => void startBrowserExtensionPairing()} disabled={busy === "bridge-pair"}>
+            开始配对
+          </button>
+        )}
       </div>
       <p className="muted-line">插件使用：在 Edge 扩展页加载 browser-extension/xhs-bridge，刷新本地运营台和小红书页面，再点击“检测助手”。</p>
       <div className="button-row">

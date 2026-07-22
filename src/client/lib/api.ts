@@ -29,6 +29,8 @@ import type {
   AnalyticsReport,
   AuthStatus,
   BrowserBridgeStatus,
+  BrowserExtensionPairingStatus,
+  StartExtensionPairingInput,
   BrowserAuthSessionInfo,
   BrowserOpenMode,
   BrowserOpenResult,
@@ -115,6 +117,12 @@ export const api = {
   authStatus: () => apiGet<AuthStatus>("/api/auth/status"),
   verifyAuth: () => apiPost<AuthStatus>("/api/auth/verify"),
   browserBridgeStatus: () => apiGet<BrowserBridgeStatus>("/api/auth/extension/status"),
+  startBrowserExtensionPairing: (input: StartExtensionPairingInput) =>
+    apiPost<BrowserExtensionPairingStatus>("/api/auth/extension/pairing/start", input),
+  cancelBrowserExtensionPairing: () =>
+    apiPost<BrowserExtensionPairingStatus>("/api/auth/extension/pairing/cancel"),
+  revokeBrowserExtensionPairing: () =>
+    apiDelete<BrowserExtensionPairingStatus>("/api/auth/extension/pairing"),
   saveCookie: (fields: CookieFields) => apiPost<AuthStatus>("/api/auth/cookie", fields),
   autoReadCookie: () => apiPost<AuthStatus>("/api/auth/browser"),
   startAuthBrowserSession: () => apiPost<BrowserAuthSessionInfo>("/api/auth/browser-session"),
