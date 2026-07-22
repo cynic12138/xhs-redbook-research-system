@@ -14,12 +14,13 @@
 
 - `D-001.1` version `0.1.1` passed automated verification and the user's installed-app acceptance, including the Xiaohongshu browser link, extension workflow, and preservation of existing local data.
 - `D-002` version `0.2.0` passed automated verification and the user's installed-app acceptance, including SQLite migration, restart persistence, and Windows installer validation.
+- `D-003` version `0.3.0` passed automated verification and the user's installed-app acceptance, including encrypted credential migration, restart persistence, and Windows installer validation; it is present on remote `main` at baseline commit `721b95d`.
 
 ## Current Work
 
-- Active milestone: `D-003` encrypted local credentials and version `0.3.0`.
+- Active milestone: `D-004` browser-extension pairing, local API hardening, and version `0.4.0`.
 - Production services now use SQLite only; `LocalStore` is retained solely as a legacy JSON reader for compatibility tests and import support, with no JSON/SQLite dual write.
-- The `0.3.0` installer remains unsigned and restricted to internal engineering validation.
+- The planned `0.4.0` installer remains unsigned and restricted to internal company validation.
 - Runtime paths, reusable Express lifecycle, graceful job shutdown, Electron single-instance shell, Forge packaging, and Squirrel installer configuration are implemented.
 - Automated verification currently covers the desktop path boundary, server lifecycle, shutdown persistence, renderer security policy, packaging exclusions, and build contracts.
 - The D-003 desktop pilot release candidate is version `0.3.0`; the login-card Xiaohongshu link continues to use the existing browser Bridge with the dedicated Edge fallback.
