@@ -102,6 +102,15 @@ Existing bugs and unusual behavior are part of the current behavior baseline unl
 - Browser development mode must retain the existing content-script detection and in-page synchronization workflow.
 - Revoking extension pairing must continue to preserve the encrypted Xiaohongshu Cookie and account status. D-004.1 must not add APIs, IPC, database migrations, dependencies, background command channels, or credential deletion behavior.
 
+## Approved Backup and Restore Track
+
+- `D-005` is explicitly approved to add automatic and manual SQLite backups, verified full-database restore, credential-free migration packages, and the minimal settings/API/Electron IPC required by the approved plan.
+- Live backups must use the built-in `node:sqlite.backup()` API. Copying a live WAL database file directly, long-term dual storage, and selective cross-database merging are prohibited.
+- Local backups may retain Electron `safeStorage` ciphertext for same-Windows-user recovery. Portable migration packages must remove encrypted credentials, browser-extension pairing, saved account state, and other machine-bound authentication state before export.
+- Restore must create a verified pre-restore backup, stop background work, close SQLite, replace the database through a recoverable same-volume operation, and restart the desktop application. A failed or interrupted restore must preserve or recover the prior database.
+- Backup manifests, APIs, logs, exports, tests, and committed fixtures must never expose credential values, encrypted blobs, pairing codes, bridge tokens, source user paths, or database contents.
+- `D-005` must preserve SQLite Schema v3 and existing business API contracts. Cloud backup, selective merging, whole-database encryption, password-protected migration packages, signing, automatic updates, accounts, and multi-user sharing remain outside this milestone.
+
 ## Completion Standards
 
 The repository audit is complete only when:

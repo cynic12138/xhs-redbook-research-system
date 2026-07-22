@@ -19,7 +19,7 @@
 
 ## Current Work
 
-- Active milestone: none. D-004/D-004.1 is complete on `codex/d-004-1-acceptance-fixes`; D-005 remains pending separate approval.
+- Active milestone: `D-005` on `codex/d-005-backup-restore`. The milestone adds automatic/manual SQLite backups, verified full-database restore, and credential-free migration packages without changing Schema v3.
 - Production services now use SQLite only; `LocalStore` is retained solely as a legacy JSON reader for compatibility tests and import support, with no JSON/SQLite dual write.
 - The generated `0.4.0` installer remains unsigned and restricted to internal company validation.
 - Runtime paths, reusable Express lifecycle, graceful job shutdown, Electron single-instance shell, Forge packaging, and Squirrel installer configuration are implemented.
@@ -48,6 +48,7 @@
 - D-004 installed-app acceptance found two functional defects and one status-semantics UX issue; the `0.4.1` fixes and completed manual retest are recorded in `docs/D004_ACCEPTANCE_ISSUES.md`.
 - In `0.4.0`, the Electron renderer incorrectly attempted to detect an Edge content script, pairing errors omitted remaining attempts, and the saved account card was ambiguous. D-004.1 corrects those behaviors without changing stored Cookie or pairing semantics.
 - Backup/restore, signing, Native Messaging, extension-store publishing, and fleet distribution remain later milestones.
+- D-005 is now separately approved. Signing, automatic updates, cloud backup, password-protected packages, selective merging, and fleet distribution remain later or excluded work.
 - D-004.1 implementation is limited to Electron/browser status separation, remaining-attempt feedback, saved-account labeling and refresh, and release packaging; baseline verification is 44 Vitest files and 266 tests plus TypeScript typecheck.
 - D-004.1 now uses backend pairing/synchronization status in Electron, keeps the page Bridge in browser development mode, reports remaining incorrect-code attempts from extension `0.2.1`, and separates the saved Xiaohongshu account card from extension pairing state.
 - D-004.1 automated release verification passed with 45 Vitest files and 272 tests, TypeScript typecheck, production build, asynchronous safeStorage smoke, Windows x64 packaging, Squirrel installer generation, packaged extension `0.2.1`, and ASAR/resource sensitive-file checks.
