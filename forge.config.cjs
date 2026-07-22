@@ -9,6 +9,7 @@ const excludedRoots = [
   ".vite",
   ".vite-temp",
   ".agents",
+  ".superpowers",
   ".gitignore",
   "AGENTS.md",
   "build",
@@ -53,7 +54,7 @@ module.exports = {
       name: "@electron-forge/maker-squirrel",
       config: {
         name: "xiaohongshu-yunyingtai",
-        setupExe: "小红书运营台-0.4.1-Setup.exe",
+        setupExe: "小红书运营台-0.5.0-Setup.exe",
         vendorDirectory: path.join(__dirname, ".cache", "squirrel-vendor"),
         noMsi: true
       }
