@@ -2,9 +2,9 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 describe("browser extension pairing contract", () => {
-  it("ships extension 0.2.0 and injects the bridge into desktop and development origins", async () => {
+  it("ships extension 0.2.1 and injects the bridge into desktop and development origins", async () => {
     const manifest = JSON.parse(await readFile("browser-extension/xhs-bridge/manifest.json", "utf8"));
-    expect(manifest.version).toBe("0.2.0");
+    expect(manifest.version).toBe("0.2.1");
     expect(manifest.content_scripts[0].matches).toEqual(expect.arrayContaining([
       "http://127.0.0.1:8787/*",
       "http://127.0.0.1:5173/*",

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "小红书运营台助手",
   "description": "将当前浏览器的小红书登录态同步到本地小红书运营台。",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "permissions": ["cookies", "tabs", "storage", "scripting"],
   "host_permissions": [
     "https://*.xiaohongshu.com/*",

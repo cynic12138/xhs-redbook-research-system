@@ -48,7 +48,7 @@ async function loadPairingFailureMessage(fetch: ReturnType<typeof vi.fn>) {
       runtime: {
         id: "a".repeat(32),
         lastError: undefined,
-        getManifest: () => ({ version: "0.2.0" }),
+        getManifest: () => ({ version: "0.2.1" }),
         onInstalled: { addListener: () => undefined },
         onStartup: { addListener: () => undefined },
         onMessage: { addListener: () => undefined }
