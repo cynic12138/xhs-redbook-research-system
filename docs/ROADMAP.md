@@ -6,6 +6,7 @@
 | `D-002` | Complete | SQLite runtime, schema, repositories, one-source transactional JSON import, production cutover, settings migration workflow, and installed upgrade acceptance. |
 | `D-003` | Complete | Electron safeStorage, Schema v2 encrypted Cookie/model keys, legacy plaintext cleanup, credential-security status, and installed upgrade acceptance. |
 | `D-004` | Installed acceptance issues found | Automated verification passed; D-004.1 must resolve Electron extension detection, remaining-attempt feedback, and account/pairing status clarity before installed acceptance completes. |
+| `D-004.1` | In progress | Separate Electron status from the browser Bridge, show remaining pairing attempts, clarify saved account status, and release `0.4.1` for installed retest. |
 | `D-005` | Pending separate approval | Automatic backups, restore, and credential-free migration packages. |
 | `D-006` | Pending separate approval | Production artwork, Windows signing, and fleet distribution acceptance. |
 

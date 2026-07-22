@@ -95,6 +95,13 @@ Existing bugs and unusual behavior are part of the current behavior baseline unl
 - Existing authentication response contracts, encrypted Cookie/model-key storage, business API behavior, and the dedicated Edge login fallback must remain compatible.
 - Native Messaging, extension-store publishing, enterprise installation policy, backup/restore, signing, automatic updates, cloud sync, accounts, and multi-browser simultaneous pairing remain outside `D-004`.
 
+## Approved D-004.1 Acceptance Fix Track
+
+- `D-004.1` is explicitly approved to separate installed Electron status presentation from the browser-page content-script Bridge, display the existing pairing attempt count in extension feedback, clarify saved Xiaohongshu account status, and package version `0.4.1` with extension `0.2.1`.
+- Installed Electron mode must use the existing backend pairing and synchronization timestamps as authoritative and must not claim it can directly ping or command an Edge/Chrome extension process.
+- Browser development mode must retain the existing content-script detection and in-page synchronization workflow.
+- Revoking extension pairing must continue to preserve the encrypted Xiaohongshu Cookie and account status. D-004.1 must not add APIs, IPC, database migrations, dependencies, background command channels, or credential deletion behavior.
+
 ## Completion Standards
 
 The repository audit is complete only when:

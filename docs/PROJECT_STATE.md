@@ -18,7 +18,7 @@
 
 ## Current Work
 
-- Active milestone: `D-004` browser-extension pairing, local API hardening, and version `0.4.0`.
+- Active milestone: `D-004.1` installed acceptance fixes and version `0.4.1`, developed on `codex/d-004-1-acceptance-fixes` from the D-004 release-candidate branch.
 - Production services now use SQLite only; `LocalStore` is retained solely as a legacy JSON reader for compatibility tests and import support, with no JSON/SQLite dual write.
 - The generated `0.4.0` installer remains unsigned and restricted to internal company validation.
 - Runtime paths, reusable Express lifecycle, graceful job shutdown, Electron single-instance shell, Forge packaging, and Squirrel installer configuration are implemented.
@@ -47,3 +47,4 @@
 - D-004 installed-app acceptance found two functional defects and one status-semantics UX issue; details and workarounds are recorded in `docs/D004_ACCEPTANCE_ISSUES.md`. The release candidate must not be marked installed-acceptance complete until D-004.1 is implemented and retested.
 - Popup-side pairing and Cookie synchronization work, but the Electron renderer cannot directly detect an Edge content script; pairing errors also omit the remaining-attempt count. The persistent sidebar nickname is currently the saved Cookie/account status rather than pairing status, but its labeling is ambiguous.
 - Backup/restore, signing, Native Messaging, extension-store publishing, and fleet distribution remain later milestones.
+- D-004.1 implementation is limited to Electron/browser status separation, remaining-attempt feedback, saved-account labeling and refresh, and release packaging; baseline verification is 44 Vitest files and 266 tests plus TypeScript typecheck.
