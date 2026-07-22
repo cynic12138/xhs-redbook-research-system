@@ -137,10 +137,25 @@ async function pairExtension(code) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(typeof body.error === "string" ? body.error : `Pairing failed: HTTP ${response.status}`);
+    throw new Error(await pairingFailureMessage(response, body));
   }
   await chrome.storage.local.set({ [BRIDGE_TOKEN_KEY]: token });
   return body;
+}
+
+async function pairingFailureMessage(response, body) {
+  const fallback = typeof body.error === "string" ? body.error : `Pairing failed: HTTP ${response.status}`;
+  if (response.status !== 401) return fallback;
+  try {
+    const statusResponse = await fetch(`${API_BASE}/api/auth/extension/status`);
+    if (!statusResponse.ok) return fallback;
+    const status = await statusResponse.json();
+    const attemptsRemaining = status?.pairing?.attemptsRemaining;
+    if (!Number.isInteger(attemptsRemaining)) return fallback;
+    return `${fallback.replace(/[。.!！]+$/u, "")}，还剩 ${attemptsRemaining} 次。`;
+  } catch {
+    return fallback;
+  }
 }
 
 async function unpairExtension() {

@@ -23,6 +23,13 @@ describe("browser extension pairing contract", () => {
     expect(source).toContain("unpairExtension");
   });
 
+  it("reads the authoritative pairing status after an incorrect code and reports remaining attempts", async () => {
+    const source = await readFile("browser-extension/xhs-bridge/background.js", "utf8");
+    expect(source).toContain("/api/auth/extension/status");
+    expect(source).toContain("attemptsRemaining");
+    expect(source).toContain("还剩 ${attemptsRemaining} 次");
+  });
+
   it("does not expose bridge credentials to the page-facing content script", async () => {
     const source = await readFile("browser-extension/xhs-bridge/content-script.js", "utf8");
     expect(source).toContain("event.origin !== window.location.origin");

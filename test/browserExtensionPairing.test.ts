@@ -74,6 +74,10 @@ describe("browser extension pairing", () => {
         extensionId: EXTENSION_ID,
         browser: "edge"
       })).toThrowError(expect.objectContaining({ statusCode: 401 }));
+      expect(fixture.service.status()).toMatchObject({
+        state: "pairing",
+        attemptsRemaining: 4 - attempt
+      });
     }
     expect(() => fixture.service.complete({
       code: "000000",
