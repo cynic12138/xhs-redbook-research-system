@@ -4,6 +4,8 @@ export interface RuntimePaths {
   mode: "development" | "desktop";
   dataDir: string;
   databaseFile: string;
+  backupsDir: string;
+  restoreStagingDir: string;
   outputDir: string;
   mediaCacheDir: string;
   browserProfileDir: string;
@@ -19,6 +21,8 @@ export function createDevelopmentRuntimePaths(cwd = process.cwd()): RuntimePaths
     mode: "development",
     dataDir: path.join(cwd, "data"),
     databaseFile: path.join(cwd, "data", "app.db"),
+    backupsDir: path.join(cwd, "data", "backups"),
+    restoreStagingDir: path.join(cwd, "data", ".restore-staging"),
     outputDir: path.join(cwd, "output"),
     mediaCacheDir: path.join(cwd, "data", "media-cache"),
     browserProfileDir: path.join(cwd, "data", "xhs-login-edge-profile"),
@@ -36,6 +40,8 @@ export function createDesktopRuntimePaths(input: {
     mode: "desktop",
     dataDir: path.join(input.userDataDir, "data"),
     databaseFile: path.join(input.userDataDir, "data", "app.db"),
+    backupsDir: path.join(input.userDataDir, "backups"),
+    restoreStagingDir: path.join(input.userDataDir, "data", ".restore-staging"),
     outputDir: path.join(input.userDataDir, "output"),
     mediaCacheDir: path.join(input.userDataDir, "media-cache"),
     browserProfileDir: path.join(input.userDataDir, "browser-profile"),
