@@ -123,9 +123,9 @@ npm run build
 npm start
 ```
 
-## Windows 桌面试用版（D-003）
+## Windows 桌面试用版（D-004）
 
-D-003 使用 Electron 包装现有 React 和 Express 应用，复用相同 HTTP API 和业务逻辑，并使用 Node 24 内置 `node:sqlite` 保存业务数据。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。小红书 Cookie 和 AI 模型 Key 通过 Electron `safeStorage` 使用当前 Windows 用户的保护能力加密后写入 SQLite。
+D-004 使用 Electron 包装现有 React 和 Express 应用，复用相同 HTTP API 和业务逻辑，并使用 Node 24 内置 `node:sqlite` 保存业务数据。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。小红书 Cookie 和 AI 模型 Key 通过 Electron `safeStorage` 使用当前 Windows 用户的保护能力加密后写入 SQLite；浏览器扩展必须先完成一次性配对才能同步 Cookie。
 
 本机调试桌面壳：
 
@@ -151,7 +151,7 @@ npm run desktop:make
 
 ```text
 out/小红书运营台-win32-x64/
-out/make/squirrel.windows/x64/小红书运营台-0.3.0-Setup.exe
+out/make/squirrel.windows/x64/小红书运营台-0.4.0-Setup.exe
 ```
 
 如果 Electron 官方 GitHub 下载在中国网络中断，可以仅对当前 PowerShell 会话使用 Electron README 推荐的镜像，不需要写入项目配置：
@@ -165,7 +165,7 @@ npm run desktop:make
 
 - 当前安装包没有 Windows 代码签名，只用于少量内部工程验收；SmartScreen 可能显示未知发布者提示。
 - 安装版运行数据位于 `%APPDATA%\小红书运营台`，其中包含 `data/app.db`、`output/`、`media-cache/`、`browser-profile/` 和 `.env.local`。
-- D-003 安装版会把 Cookie 和模型 Key 加密写入 `data/app.db`；`.env.local` 仅保留端口等非敏感设置。开发模式仍由 `.env.local` 管理凭证。
+- 安装版会把 Cookie 和模型 Key 加密写入 `data/app.db`；`.env.local` 仅保留端口等非敏感设置。开发模式仍由 `.env.local` 管理凭证。
 - `safeStorage` 主要防止凭证以明文文件保存，不能防御以同一 Windows 用户权限运行的恶意程序。
 - 将 `app.db` 复制到另一台电脑或另一个 Windows 用户后，业务数据仍可使用，但 Cookie 和模型 Key 需要重新填写。
 - 应用使用单实例锁。再次启动会聚焦已有窗口，不会打开第二套 Store 或 HTTP 服务。
@@ -197,6 +197,16 @@ npm run desktop:make
 
 迁移失败时应用不会删除原明文；若密文已可用但清理失败，安装版仍只使用密文，不会回退读取明文。
 
+### 从 0.3.0 升级并配对扩展
+
+1. 关闭 `0.3.0`，覆盖安装 `0.4.0` 后启动应用；原数据库、加密凭证、任务和产物会继续保留。
+2. 在“登录连接”点击“打开扩展目录”，在 Edge/Chrome 扩展管理页重新加载该稳定目录中的扩展 `0.2.0`。
+3. 回到运营台点击“开始配对”，把 6 位配对码输入扩展弹窗。
+4. 配对成功后点击“同步登录态”，确认运营台显示登录连接正常。
+5. 配对会跨应用和浏览器重启保留；旧版未配对扩展不再允许直接写入 Cookie。
+
+如果扩展尚未完成配对，仍可使用专用 Edge 登录窗口、兼容自动读取或手动 Cookie 入口。
+
 ## 登录小红书
 
 本项目使用浏览器 Cookie 登录态，不需要小红书官方 API Key。后端启动后会把历史 Cookie 标记为“待验证”，前端会自动调用 `POST /api/auth/verify` 重新验证当前凭证仓库中的 Cookie；安装版使用 Windows 加密仓库，开发模式使用 `.env.local`。
@@ -210,13 +220,13 @@ npm run desktop:make
 
 ### 浏览器助手扩展
 
-1. 启动项目，确保后端 `http://127.0.0.1:8787` 和前端 `http://127.0.0.1:5173` 可用。
+1. 安装版在“登录连接”区域点击“打开扩展目录”；开发模式直接使用 `browser-extension/xhs-bridge/`。
 2. 打开 Edge 的 `edge://extensions/` 或 Chrome 的 `chrome://extensions/`。
 3. 开启“开发人员模式”。
-4. 点击“加载解压缩的扩展”，选择 `browser-extension/xhs-bridge/`。
-5. 在同一个浏览器 profile 中登录 `https://www.xiaohongshu.com/`。
-6. 回到本项目“登录连接”区域，点击“检测助手”，再点击“同步登录态”。
-7. 也可以点击扩展图标，在弹窗里点击“同步当前浏览器登录态”。
+4. 点击“加载解压缩的扩展”，选择刚打开的稳定扩展目录。
+5. 回到运营台点击“开始配对”，在扩展弹窗中输入运营台显示的 6 位配对码。
+6. 配对成功后，在同一个浏览器 profile 中登录 `https://www.xiaohongshu.com/`。
+7. 点击扩展弹窗或运营台中的“同步登录态”。配对会跨应用和浏览器重启保持，直到主动解除、扩展重装或新配对替换。
 
 扩展在浏览器中显示为“小红书运营台助手”。如果刚更新或重新加载扩展，请刷新本地运营台页面和已打开的小红书页面。
 
@@ -226,10 +236,10 @@ npm run desktop:make
 | --- | --- |
 | `cookies` | 读取 `xiaohongshu.com` 相关 Cookie |
 | `tabs` / `scripting` | 检测当前小红书页面和打开原帖 |
-| `storage` | 浏览器扩展本地能力预留 |
+| `storage` | 在可信扩展上下文中保存本机配对令牌 |
 | `host_permissions` | 仅覆盖小红书域名、本机 `5173` 和本机 `8787` |
 
-Cookie 只会通过 `POST /api/auth/extension-cookie` 发送到本机后端，不会发送到云端。接口响应不会回显 Cookie 明文。
+Cookie 只会通过带配对令牌的 `POST /api/auth/extension-cookie` 发送到本机后端，不会发送到云端。后端只保存配对令牌的 SHA-256 哈希，接口响应不会回显 Cookie 或令牌明文。新配对成功后旧扩展立即失效；仅开始或取消配对不会影响当前有效扩展。
 
 ### 专用 Edge 登录窗口
 
@@ -519,7 +529,7 @@ GET /api/ai/orchestrations/:id/events
 | `data/media-cache/` | 媒体代理缓存 |
 | `data/xhs-login-edge-profile/` | 专用 Edge 登录窗口 profile |
 
-这些目录和文件都不应提交到 Git。`0.3.0` 正式运行只写 `data/app.db`；上表中的 JSON 文件仅作为 `0.1.1` 旧数据来源保留。
+这些目录和文件都不应提交到 Git。`0.4.0` 正式运行只写 `data/app.db`；上表中的 JSON 文件仅作为 `0.1.1` 旧数据来源保留。
 
 以上路径适用于浏览器开发模式。Electron 安装版使用 `%APPDATA%\小红书运营台` 作为根目录，避免把数据库、媒体、Edge Profile 或 `.env.local` 写入只读安装目录。
 
@@ -697,11 +707,12 @@ PORT=8788
 
 ### 浏览器助手未连接
 
-1. Edge/Chrome 是否开启开发人员模式并加载 `browser-extension/xhs-bridge/`。
-2. 本地前端是否运行在 `http://127.0.0.1:5173` 或 `http://localhost:5173`。
-3. 本地后端是否运行在 `http://127.0.0.1:8787`。
+1. 安装版是否通过“打开扩展目录”加载稳定目录；开发模式是否加载 `browser-extension/xhs-bridge/`。
+2. 运营台是否已生成配对码，并在扩展弹窗中完成配对。
+3. 本地前端是否运行在 `http://127.0.0.1:5173`、`http://localhost:5173` 或安装版 `http://127.0.0.1:8787`。
 4. 是否在同一个浏览器 profile 中登录了小红书。
-5. 扩展更新后，刷新小红书标签页和本地前端页面。
+5. 如果显示“配对已失效”，重新配对；如果只是 Cookie 验证失败，重新登录小红书后再次同步。
+6. 扩展更新后，刷新小红书标签页和本地前端页面。
 
 ### 笔记库为空
 
