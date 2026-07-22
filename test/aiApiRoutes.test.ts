@@ -443,6 +443,8 @@ describe("browser bridge API routes", () => {
   });
 
   it("creates, completes, cancels and revokes extension pairing sessions", async () => {
+    const writeAwaited = vi.fn((resolve: (value?: unknown) => void) => resolve());
+    const storeWrite = vi.fn(() => ({ then: writeAwaited }));
     const extensionPairing = {
       status: vi.fn(() => ({ state: "unpaired" })),
       start: vi.fn(() => ({ state: "pairing", expiresAt: "2026-07-22T00:05:00.000Z", attemptsRemaining: 5 })),
@@ -452,7 +454,7 @@ describe("browser bridge API routes", () => {
     };
     vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
       getRuntimeStorage: vi.fn(() => ({ extensionPairing })),
-      store: { read: vi.fn(async () => ({ connected: false })), write: vi.fn(), update: vi.fn() }
+      store: { read: vi.fn(async () => ({ connected: false })), write: storeWrite, update: vi.fn() }
     }));
     const app = await createApp();
 
@@ -483,6 +485,8 @@ describe("browser bridge API routes", () => {
     expect(extensionPairing.complete).toHaveBeenCalledOnce();
     expect(extensionPairing.cancel).toHaveBeenCalledOnce();
     expect(extensionPairing.revoke).toHaveBeenCalledOnce();
+    expect(storeWrite).toHaveBeenCalledOnce();
+    expect(writeAwaited).toHaveBeenCalledOnce();
   });
 
   it("saves extension cookie sync without returning cookie values", async () => {

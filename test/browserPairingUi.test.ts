@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   generateBrowserPairingCode,
   hashBrowserPairingCode,
+  mergeBrowserBridgeStatuses,
   pairingSecondsRemaining
 } from "../src/client/browserPairing.js";
 
@@ -21,6 +22,32 @@ describe("browser pairing UI helpers", () => {
   it("calculates a non-negative pairing countdown", () => {
     expect(pairingSecondsRemaining("2026-07-22T00:05:00.000Z", Date.parse("2026-07-22T00:04:01.000Z"))).toBe(59);
     expect(pairingSecondsRemaining("2026-07-22T00:05:00.000Z", Date.parse("2026-07-22T00:06:00.000Z"))).toBe(0);
+  });
+
+  it("keeps authoritative pairing data while reflecting the live extension connection", () => {
+    const saved = {
+      connected: false,
+      browser: "edge" as const,
+      permissionStatus: "unknown" as const,
+      pairing: { state: "paired" as const, pairedAt: "2026-07-22T00:00:00.000Z" }
+    };
+    const runtime = {
+      connected: true,
+      browser: "chrome" as const,
+      permissionStatus: "granted" as const,
+      pairing: { state: "unpaired" as const }
+    };
+
+    expect(mergeBrowserBridgeStatuses(saved, runtime)).toMatchObject({
+      connected: true,
+      browser: "chrome",
+      permissionStatus: "granted",
+      pairing: saved.pairing
+    });
+    expect(mergeBrowserBridgeStatuses(saved, undefined)).toMatchObject({
+      connected: false,
+      pairing: saved.pairing
+    });
   });
 
   it("connects the login card to pairing APIs without handling the long-lived token", async () => {

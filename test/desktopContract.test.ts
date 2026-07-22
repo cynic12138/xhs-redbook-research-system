@@ -16,7 +16,7 @@ describe("desktop build contract", () => {
     };
 
     expect(packageJson.productName).toBe("小红书运营台");
-    expect((packageJson as { version?: string }).version).toBe("0.3.0");
+    expect((packageJson as { version?: string }).version).toBe("0.4.0");
     expect(packageJson.author).toBeTruthy();
     expect(packageJson.description).toBeTruthy();
     expect(packageJson.main).toBe("dist/server/electron/main.js");
@@ -58,14 +58,18 @@ describe("desktop build contract", () => {
   });
 
   it("configures an unsigned Squirrel installer without packaging local runtime data", async () => {
-    const source = await readFile("forge.config.cjs", "utf8");
+    const [source, mainSource] = await Promise.all([
+      readFile("forge.config.cjs", "utf8"),
+      readFile("src/electron/main.ts", "utf8")
+    ]);
 
     expect(source).toContain("@electron-forge/maker-squirrel");
     expect(source).not.toContain("@electron-forge/plugin-auto-unpack-natives");
     expect(source).toContain("checksums: electronChecksums");
-    expect(source).toContain("setupExe: \"小红书运营台-0.3.0-Setup.exe\"");
+    expect(source).toContain("setupExe: \"小红书运营台-0.4.0-Setup.exe\"");
     expect(source).toContain('vendorDirectory: path.join(__dirname, ".cache", "squirrel-vendor")');
     expect(source).toContain('extraResource: ["browser-extension/xhs-bridge"]');
+    expect(mainSource).toContain('path.join(process.resourcesPath, "xhs-bridge")');
     for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
     }

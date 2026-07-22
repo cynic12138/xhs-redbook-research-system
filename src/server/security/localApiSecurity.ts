@@ -27,9 +27,9 @@ export function createLocalApiSecurityMiddleware(
       return;
     }
 
-    const isAppOrigin = appOrigins.has(origin);
+    const isAppOrigin = appOrigins.has(origin) || isSameOriginLoopbackRequest(origin, req.get("Host"));
     const isExtensionOrigin = EXTENSION_ORIGIN.test(origin)
-      && req.path.startsWith("/api/auth/extension/");
+      && isExtensionApiPath(req.path);
     if (!isAppOrigin && !isExtensionOrigin) {
       res.status(403).json({ error: "本地接口拒绝了不受信任的页面来源。" });
       return;
@@ -49,4 +49,21 @@ export function createLocalApiSecurityMiddleware(
 
 function isLoopbackHost(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost";
+}
+
+function isExtensionApiPath(requestPath: string): boolean {
+  return requestPath === "/api/auth/extension-cookie"
+    || requestPath.startsWith("/api/auth/extension/");
+}
+
+function isSameOriginLoopbackRequest(origin: string, host: string | undefined): boolean {
+  if (!host) return false;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === "http:"
+      && isLoopbackHost(parsed.hostname)
+      && parsed.host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
 }

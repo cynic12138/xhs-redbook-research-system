@@ -79,7 +79,7 @@ async function bootDesktop(): Promise<void> {
   ]);
   const { syncBrowserExtensionAssets } = await import("./extensionInstaller.js");
   const bundledExtensionDir = app.isPackaged
-    ? path.join(process.resourcesPath, "browser-extension", "xhs-bridge")
+    ? path.join(process.resourcesPath, "xhs-bridge")
     : path.join(app.getAppPath(), "browser-extension", "xhs-bridge");
   await syncBrowserExtensionAssets({
     sourceDir: bundledExtensionDir,

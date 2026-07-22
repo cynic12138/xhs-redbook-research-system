@@ -33,4 +33,25 @@ describe("packaged browser extension installer", () => {
     }
     await expect(readFile(path.join(targetDir, "should-not-copy.secret"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("updates an existing stable extension directory in place", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "xhs-extension-upgrade-"));
+    tempDirs.push(root);
+    const sourceDir = path.join(root, "source");
+    const targetDir = path.join(root, "user-data", "browser-extension", "xhs-bridge");
+    await mkdir(sourceDir, { recursive: true });
+    await Promise.all(BROWSER_EXTENSION_FILES.map((name) => (
+      writeFile(path.join(sourceDir, name), `v1:${name}`, "utf8")
+    )));
+
+    await syncBrowserExtensionAssets({ sourceDir, targetDir });
+    await Promise.all(BROWSER_EXTENSION_FILES.map((name) => (
+      writeFile(path.join(sourceDir, name), `v2:${name}`, "utf8")
+    )));
+    await syncBrowserExtensionAssets({ sourceDir, targetDir });
+
+    for (const name of BROWSER_EXTENSION_FILES) {
+      await expect(readFile(path.join(targetDir, name), "utf8")).resolves.toBe(`v2:${name}`);
+    }
+  });
 });

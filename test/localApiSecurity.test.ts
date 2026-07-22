@@ -25,11 +25,21 @@ describe("local API security policy", () => {
       expect(response.allowOrigin).toBe(origin);
       expect(response.allowOrigin).not.toBe("*");
     }
+    const customPortOrigin = "http://127.0.0.1:8788";
+    const customPort = await request(createApp(), {
+      method: "POST",
+      origin: customPortOrigin,
+      host: "127.0.0.1:8788",
+      path: "/api/test"
+    });
+    expect(customPort.status).toBe(200);
+    expect(customPort.allowOrigin).toBe(customPortOrigin);
   });
 
   it("allows extension origins only for extension API paths", async () => {
     const origin = `chrome-extension://${"a".repeat(32)}`;
     expect((await request(createApp(), { method: "POST", origin, path: "/api/auth/extension/pairing/complete" })).status).toBe(200);
+    expect((await request(createApp(), { method: "POST", origin, path: "/api/auth/extension-cookie" })).status).toBe(200);
     expect((await request(createApp(), { method: "POST", origin, path: "/api/auth/cookie" })).status).toBe(403);
   });
 

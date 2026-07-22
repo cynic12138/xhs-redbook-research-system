@@ -17,8 +17,22 @@ export function pairingSecondsRemaining(expiresAt: string | undefined, now = Dat
   return Math.max(0, Math.ceil((expiry - now) / 1000));
 }
 
+export function mergeBrowserBridgeStatuses(
+  saved: BrowserBridgeStatus,
+  runtime: BrowserBridgeStatus | undefined
+): BrowserBridgeStatus {
+  if (!runtime) return { ...saved, connected: false };
+  return {
+    ...saved,
+    ...runtime,
+    connected: true,
+    pairing: saved.pairing
+  };
+}
+
 function cryptographicRandom(): number {
   const values = new Uint32Array(1);
   crypto.getRandomValues(values);
   return values[0] ?? 0;
 }
+import type { BrowserBridgeStatus } from "../shared/types.js";

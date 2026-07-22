@@ -96,7 +96,7 @@ describe("application database", () => {
     reopened.close();
   });
 
-  it("upgrades an existing schema v1 database to v2 without changing business data", async () => {
+  it("upgrades an existing schema v1 database to the latest schema without changing business data", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "xhs-database-upgrade-"));
     tempDirs.push(dir);
     const file = path.join(dir, "app.db");
@@ -133,6 +133,54 @@ describe("application database", () => {
     expect(upgraded.connection.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'secure_credentials'"
     ).get()).toEqual({ name: "secure_credentials" });
+    upgraded.close();
+  });
+
+  it("upgrades schema v2 to v3 without changing encrypted credentials", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "xhs-database-v2-upgrade-"));
+    tempDirs.push(dir);
+    const file = path.join(dir, "app.db");
+    const legacy = new DatabaseSync(file);
+    const { databaseMigrations } = await import("../src/server/storage/migrations.js");
+    const versions = databaseMigrations.filter((migration) => migration.version <= 2);
+    legacy.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+    `);
+    for (const migration of versions) {
+      legacy.exec(migration.sql);
+      legacy.prepare(
+        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)"
+      ).run(migration.version, migration.name, "2026-07-21T00:00:00.000Z");
+    }
+    const encryptedValue = Buffer.from([1, 2, 3, 4]);
+    legacy.prepare(`
+      INSERT INTO secure_credentials (
+        credential_key, encrypted_value, provider, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      "credential-fixture",
+      encryptedValue,
+      "electron-safe-storage",
+      "2026-07-21T00:00:00.000Z",
+      "2026-07-21T00:00:00.000Z"
+    );
+    legacy.close();
+
+    const { openApplicationDatabase } = await import("../src/server/storage/database.js");
+    const upgraded = openApplicationDatabase(file);
+
+    expect(upgraded.schemaVersion).toBe(3);
+    const credentialRow = upgraded.connection.prepare(
+      "SELECT encrypted_value FROM secure_credentials WHERE credential_key = ?"
+    ).get("credential-fixture") as { encrypted_value: Uint8Array };
+    expect(Buffer.from(credentialRow.encrypted_value)).toEqual(encryptedValue);
+    expect(upgraded.connection.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'browser_extension_pairing'"
+    ).get()).toEqual({ name: "browser_extension_pairing" });
     upgraded.close();
   });
 

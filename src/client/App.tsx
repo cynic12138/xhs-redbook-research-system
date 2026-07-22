@@ -93,7 +93,7 @@ import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProvide
 import { WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY } from "../shared/contentReviewPolicy.js";
 import { api } from "./lib/api.js";
 import { credentialSecurityPresentation, shouldOpenCredentialSettings } from "./securityStatus.js";
-import { generateBrowserPairingCode, hashBrowserPairingCode, pairingSecondsRemaining } from "./browserPairing.js";
+import { generateBrowserPairingCode, hashBrowserPairingCode, mergeBrowserBridgeStatuses, pairingSecondsRemaining } from "./browserPairing.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "content" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
@@ -571,7 +571,7 @@ export function App() {
   }, []);
 
   const refreshCore = useCallback(async () => {
-    const [authStatus, allJobs, caps, models, workflows, prompts, customPrompts, scopes, bridgeStatus, projects, playbooks, drafts, reviews] = await Promise.all([
+    const [authStatus, allJobs, caps, models, workflows, prompts, customPrompts, scopes, bridgeStatus, runtimeBridgeStatus, projects, playbooks, drafts, reviews] = await Promise.all([
       api.authStatus(),
       api.listJobs(),
       api.capabilities(),
@@ -581,6 +581,7 @@ export function App() {
       api.listAiCustomPrompts(),
       api.listNoteScopes(),
       api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus),
+      callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000).catch(() => undefined),
       api.listContentProjects(),
       api.listContentPlaybooks(),
       api.listContentDrafts(),
@@ -629,7 +630,7 @@ export function App() {
       setSelectedContentPlaybook("");
       setContentPlaybookForm(defaultPlaybookForm);
     }
-    setBrowserBridge({ ...bridgeStatus, connected: false });
+    setBrowserBridge(mergeBrowserBridgeStatuses(bridgeStatus, runtimeBridgeStatus));
     setError(clearRecoveredBackendError);
   }, [setSelectedContentPlaybook, setSelectedContentProject]);
 

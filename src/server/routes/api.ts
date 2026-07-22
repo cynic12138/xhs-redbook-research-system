@@ -503,14 +503,14 @@ api.post("/auth/extension/pairing/cancel", (_req, res, next) => {
   }
 });
 
-api.delete("/auth/extension/pairing", (req, res, next) => {
+api.delete("/auth/extension/pairing", async (req, res, next) => {
   try {
     if (isExtensionOrigin(req.get("Origin")) && !authenticateExtensionRequest(req)) {
       res.status(401).json({ error: "浏览器扩展配对无效，请重新配对。" });
       return;
     }
     const status = getRuntimeStorage().extensionPairing.revoke();
-    void store.write("browserBridgeStatus", {
+    await store.write("browserBridgeStatus", {
       connected: false,
       browser: "unknown",
       permissionStatus: "unknown",
