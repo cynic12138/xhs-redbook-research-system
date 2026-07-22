@@ -6,9 +6,30 @@ const XHS_COOKIE_URLS = [
   "https://creator.xiaohongshu.com/"
 ];
 const REQUIRED_COOKIE_NAMES = ["a1", "web_session"];
+const BRIDGE_TOKEN_KEY = "xhsBridgeToken";
+const LOCAL_APP_ORIGINS = new Set([
+  "http://127.0.0.1:8787",
+  "http://127.0.0.1:5173",
+  "http://localhost:5173"
+]);
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+void restrictStorageAccess();
+
+chrome.runtime.onInstalled.addListener(() => {
+  void restrictStorageAccess();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void restrictStorageAccess();
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || message.type !== "XHS_BRIDGE_COMMAND") {
+    return false;
+  }
+
+  if (!isAllowedSender(sender, message.action)) {
+    sendResponse({ ok: false, error: "浏览器助手拒绝了不受信任的消息来源。" });
     return false;
   }
 
@@ -20,12 +41,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 async function handleCommand(action, payload = {}) {
   if (action === "ping") {
+    const token = await readBridgeToken();
     return {
       connected: true,
       browser: detectBrowser(),
       extensionVersion: chrome.runtime.getManifest().version,
-      permissionStatus: "granted"
+      permissionStatus: "granted",
+      pairing: { state: token ? "paired" : "unpaired" }
     };
+  }
+  if (action === "pairExtension") {
+    return pairExtension(payload.code);
+  }
+  if (action === "unpairExtension") {
+    return unpairExtension();
   }
   if (action === "syncCookie") {
     return syncCookie();
@@ -37,6 +66,7 @@ async function handleCommand(action, payload = {}) {
 }
 
 async function syncCookie() {
+  const token = await requireBridgeToken();
   const cookies = await readXhsCookies();
   const cookieMap = Object.fromEntries(cookies.map((cookie) => [cookie.name, cookie.value]));
   const pageAuth = await readPageAuthCandidates().catch((error) => ({
@@ -64,7 +94,10 @@ async function syncCookie() {
 
   const response = await fetch(`${API_BASE}/api/auth/extension-cookie`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-XHS-Bridge-Token": token
+    },
     body: JSON.stringify({
       a1: cookieMap.a1,
       web_session: cookieMap.web_session,
@@ -75,10 +108,94 @@ async function syncCookie() {
     })
   });
   const body = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    await chrome.storage.local.remove(BRIDGE_TOKEN_KEY);
+    throw new Error("浏览器助手配对已失效，请重新连接运营台。");
+  }
   if (!response.ok) {
     throw new Error(typeof body.error === "string" ? body.error : `Sync failed: HTTP ${response.status}`);
   }
   return body;
+}
+
+async function pairExtension(code) {
+  const normalizedCode = String(code ?? "").trim();
+  if (!/^\d{6}$/.test(normalizedCode)) {
+    throw new Error("请输入运营台显示的 6 位配对码。");
+  }
+  const token = generateBridgeToken();
+  const response = await fetch(`${API_BASE}/api/auth/extension/pairing/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code: normalizedCode,
+      token,
+      extensionId: chrome.runtime.id,
+      browser: detectBrowser(),
+      extensionVersion: chrome.runtime.getManifest().version
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(typeof body.error === "string" ? body.error : `Pairing failed: HTTP ${response.status}`);
+  }
+  await chrome.storage.local.set({ [BRIDGE_TOKEN_KEY]: token });
+  return body;
+}
+
+async function unpairExtension() {
+  const token = await requireBridgeToken();
+  const response = await fetch(`${API_BASE}/api/auth/extension/pairing`, {
+    method: "DELETE",
+    headers: { "X-XHS-Bridge-Token": token }
+  });
+  const body = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    await chrome.storage.local.remove(BRIDGE_TOKEN_KEY);
+    throw new Error("浏览器助手配对已失效，请重新连接运营台。");
+  }
+  if (!response.ok) {
+    throw new Error(typeof body.error === "string" ? body.error : `Unpair failed: HTTP ${response.status}`);
+  }
+  await chrome.storage.local.remove(BRIDGE_TOKEN_KEY);
+  return body;
+}
+
+async function restrictStorageAccess() {
+  if (chrome.storage.local.setAccessLevel) {
+    await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+  }
+}
+
+async function readBridgeToken() {
+  const stored = await chrome.storage.local.get(BRIDGE_TOKEN_KEY);
+  return typeof stored[BRIDGE_TOKEN_KEY] === "string" ? stored[BRIDGE_TOKEN_KEY] : "";
+}
+
+async function requireBridgeToken() {
+  const token = await readBridgeToken();
+  if (!token) throw new Error("浏览器助手尚未配对，请先在运营台生成配对码。");
+  return token;
+}
+
+function generateBridgeToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const binary = Array.from(bytes, (value) => String.fromCharCode(value)).join("");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function isAllowedSender(sender, action) {
+  const senderUrl = sender?.url || sender?.tab?.url || "";
+  const isExtensionPage = senderUrl.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+  if (action === "pairExtension" || action === "unpairExtension") return isExtensionPage;
+  if (!new Set(["ping", "syncCookie", "openUrl"]).has(action)) return false;
+  if (isExtensionPage) return true;
+  try {
+    return LOCAL_APP_ORIGINS.has(new URL(senderUrl).origin);
+  } catch {
+    return false;
+  }
 }
 
 async function readXhsCookies() {

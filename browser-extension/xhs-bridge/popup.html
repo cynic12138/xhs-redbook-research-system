@@ -36,6 +36,17 @@
         background: #ff315f;
         color: white;
       }
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        border: 1px solid #d8e0ec;
+        border-radius: 8px;
+        padding: 9px 10px;
+        font-size: 18px;
+        letter-spacing: 0.2em;
+        text-align: center;
+      }
+      [hidden] { display: none !important; }
       #status {
         min-height: 18px;
         margin-top: 10px;
@@ -52,9 +63,16 @@
   </head>
   <body>
     <h1>小红书运营台助手</h1>
-    <p>请先在当前浏览器登录小红书，再同步登录态到本地运营台。扩展刚更新后，请先刷新小红书页面。</p>
-    <button id="open-xhs">打开小红书</button>
-    <button id="sync" class="primary">同步当前浏览器登录态</button>
+    <p>首次使用请在运营台生成配对码。配对成功后，登录当前浏览器的小红书即可同步登录态。</p>
+    <section id="pairing-panel">
+      <input id="pairing-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位配对码" />
+      <button id="pair" class="primary">连接运营台</button>
+    </section>
+    <section id="paired-panel" hidden>
+      <button id="open-xhs">打开小红书</button>
+      <button id="sync" class="primary">同步当前浏览器登录态</button>
+      <button id="unpair">解除配对</button>
+    </section>
     <div id="status">等待操作</div>
     <script src="popup.js"></script>
   </body>
