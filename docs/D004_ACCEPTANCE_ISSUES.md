@@ -2,7 +2,7 @@
 
 Date: 2026-07-22
 
-Status: fixes are implemented in the `0.4.1` release candidate. All three items remain `Pending installed retest`; do not mark D-004/D-004.1 installed acceptance complete until the manual checklist passes.
+Status: fixes are implemented and automated verification passed in the `0.4.1` release candidate. All three items remain `Pending installed retest`; do not mark D-004/D-004.1 installed acceptance complete until the manual checklist passes.
 
 ## D004-BUG-001: Electron cannot directly detect the Edge extension
 
@@ -111,5 +111,14 @@ Implemented resolution:
 ## Acceptance impact
 
 - Pairing security, token-hash persistence, popup-side Cookie synchronization, restart persistence, and the dedicated Edge fallback remain usable.
-- The installed desktop interaction is not yet internally consistent because its live-detection button assumes a browser content-script bridge that cannot exist inside Electron.
-- Recommended next milestone before merging D-004 to `main`: `D-004.1`, limited to these acceptance defects and their regression tests.
+- The `0.4.1` release candidate removes the invalid Electron live-detection assumption while retaining browser-development Bridge behavior.
+- D-004.1 automated verification is complete; installed retesting remains required before merging D-004/D-004.1 to `main`.
+
+## D-004.1 installed retest checklist
+
+1. Cover-install `小红书运营台-0.4.1-Setup.exe` and reload extension `0.2.1` from the stable extension directory.
+2. Confirm the installed app shows backend pairing status through “刷新状态” without reporting that a separately running Edge extension is undetected.
+3. Synchronize from the extension popup, return focus to Electron, and confirm the account nickname and recent synchronization time update immediately or within seven seconds.
+4. Enter incorrect pairing codes and confirm the popup reports remaining attempts `4`, `3`, `2`, then `1`; the fifth failure must require a new pairing code.
+5. Revoke pairing and confirm extension synchronization is rejected while the encrypted Cookie and “小红书账号” card remain available.
+6. Use “重新验证账号”, dedicated Edge login, browser development mode, and same-version cover installation to confirm the compatibility paths still work.

@@ -18,7 +18,7 @@
 
 ## Current Work
 
-- Active milestone: `D-004.1` installed acceptance fixes and version `0.4.1`, developed on `codex/d-004-1-acceptance-fixes` from the D-004 release-candidate branch.
+- Active milestone: `D-004.1` version `0.4.1` is automatically verified and awaiting installed acceptance on `codex/d-004-1-acceptance-fixes`.
 - Production services now use SQLite only; `LocalStore` is retained solely as a legacy JSON reader for compatibility tests and import support, with no JSON/SQLite dual write.
 - The generated `0.4.0` installer remains unsigned and restricted to internal company validation.
 - Runtime paths, reusable Express lifecycle, graceful job shutdown, Electron single-instance shell, Forge packaging, and Squirrel installer configuration are implemented.
@@ -44,7 +44,11 @@
 - D-004 automated release verification passed with 44 Vitest files and 266 tests, TypeScript typecheck, production build, asynchronous safeStorage smoke, Windows x64 packaging, and Squirrel installer generation.
 - The packaged application reads extension `0.2.0` from `resources/xhs-bridge` and atomically copies its allowlisted files into the stable user-data directory; package inspection found no root `.env.local`, `app.db`, legacy data, output, project tests, project docs, or `PROJECT_CONTEXT.md`.
 - The unsigned Windows x64 `小红书运营台-0.4.0-Setup.exe` release candidate was generated successfully; SHA-256 is `11B7D7D79AC9364A4EE82ED3409930CA1A0E39774D6E13E082449C287462B4BD`.
-- D-004 installed-app acceptance found two functional defects and one status-semantics UX issue; details and workarounds are recorded in `docs/D004_ACCEPTANCE_ISSUES.md`. The release candidate must not be marked installed-acceptance complete until D-004.1 is implemented and retested.
-- Popup-side pairing and Cookie synchronization work, but the Electron renderer cannot directly detect an Edge content script; pairing errors also omit the remaining-attempt count. The persistent sidebar nickname is currently the saved Cookie/account status rather than pairing status, but its labeling is ambiguous.
+- D-004 installed-app acceptance found two functional defects and one status-semantics UX issue; the `0.4.1` code fixes and remaining manual retest are recorded in `docs/D004_ACCEPTANCE_ISSUES.md`.
+- In `0.4.0`, the Electron renderer incorrectly attempted to detect an Edge content script, pairing errors omitted remaining attempts, and the saved account card was ambiguous. D-004.1 corrects those behaviors without changing stored Cookie or pairing semantics.
 - Backup/restore, signing, Native Messaging, extension-store publishing, and fleet distribution remain later milestones.
 - D-004.1 implementation is limited to Electron/browser status separation, remaining-attempt feedback, saved-account labeling and refresh, and release packaging; baseline verification is 44 Vitest files and 266 tests plus TypeScript typecheck.
+- D-004.1 now uses backend pairing/synchronization status in Electron, keeps the page Bridge in browser development mode, reports remaining incorrect-code attempts from extension `0.2.1`, and separates the saved Xiaohongshu account card from extension pairing state.
+- D-004.1 automated release verification passed with 45 Vitest files and 272 tests, TypeScript typecheck, production build, asynchronous safeStorage smoke, Windows x64 packaging, Squirrel installer generation, packaged extension `0.2.1`, and ASAR/resource sensitive-file checks.
+- The unsigned Windows x64 `小红书运营台-0.4.1-Setup.exe` release candidate was generated successfully; size is `178.26 MB` and SHA-256 is `E502967BFDCC395232F0C4CCA8DA44EB687119DBBB8A09820F0EDBD05AFD2927`.
+- D-004/D-004.1 remain incomplete until the installed checklist in `docs/D004_ACCEPTANCE_ISSUES.md` is manually retested. No merge to `main` or remote push is authorized yet.
