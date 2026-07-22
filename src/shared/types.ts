@@ -140,6 +140,33 @@ export interface BrowserBridgeStatus {
   permissionStatus: BrowserBridgePermissionStatus;
   message?: string;
   diagnostic?: string;
+  pairing?: BrowserExtensionPairingStatus;
+}
+
+export type BrowserExtensionPairingState = "unpaired" | "pairing" | "paired" | "expired";
+
+export interface BrowserExtensionPairingStatus {
+  state: BrowserExtensionPairingState;
+  expiresAt?: string;
+  attemptsRemaining?: number;
+  browser?: BrowserBridgeBrowser;
+  extensionVersion?: string;
+  pairedAt?: string;
+  lastSeenAt?: string;
+  lastSyncAt?: string;
+  message?: string;
+}
+
+export interface StartExtensionPairingInput {
+  codeHash: string;
+}
+
+export interface CompleteExtensionPairingInput {
+  code: string;
+  token: string;
+  extensionId: string;
+  browser: BrowserBridgeBrowser;
+  extensionVersion?: string;
 }
 
 export type BrowserOpenMode = "auto" | "current-browser" | "dedicated-edge";
