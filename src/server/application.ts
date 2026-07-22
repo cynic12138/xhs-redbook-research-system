@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
-import cors from "cors";
 import express from "express";
 import { disposeRuntimeCredentials, prepareRuntimeCredentials } from "./runtime/runtimeCredentialVault.js";
 import { getRuntimePaths } from "./runtime/runtimePaths.js";
@@ -9,6 +8,7 @@ import { activateApplicationRuntime, deactivateApplicationRuntime } from "./runt
 import { api } from "./routes/api.js";
 import { closeRuntimeStorage, getRuntimeStorage } from "./storage/runtimeStorage.js";
 import { getAutoResumeJobs, getPort } from "./utils/env.js";
+import { createLocalApiSecurityMiddleware } from "./security/localApiSecurity.js";
 
 export interface RunningApplicationServer {
   app: express.Express;
@@ -30,7 +30,7 @@ export function createApplication(options: { clientDist?: string } = {}): expres
   const app = express();
   const clientDist = options.clientDist ?? getRuntimePaths().clientDist;
 
-  app.use(cors());
+  app.use(createLocalApiSecurityMiddleware());
   app.use(express.json({ limit: "2mb" }));
   app.use(async (req, res, next) => {
     const migrationRoutes = new Set([
