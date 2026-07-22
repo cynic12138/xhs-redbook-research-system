@@ -5,7 +5,8 @@ import {
   generateBrowserPairingCode,
   hashBrowserPairingCode,
   mergeBrowserBridgeStatuses,
-  pairingSecondsRemaining
+  pairingSecondsRemaining,
+  shouldUseBrowserPageBridge
 } from "../src/client/browserPairing.js";
 
 describe("browser pairing UI helpers", () => {
@@ -50,6 +51,11 @@ describe("browser pairing UI helpers", () => {
     });
   });
 
+  it("uses the page Bridge only outside the installed Electron application", () => {
+    expect(shouldUseBrowserPageBridge(undefined)).toBe(true);
+    expect(shouldUseBrowserPageBridge({ openInstallDirectory: async () => ({ ok: true, message: "ok" }) })).toBe(false);
+  });
+
   it("connects the login card to pairing APIs without handling the long-lived token", async () => {
     const app = await readFile("src/client/App.tsx", "utf8");
     const api = await readFile("src/client/lib/api.ts", "utf8");
@@ -60,6 +66,8 @@ describe("browser pairing UI helpers", () => {
     expect(app).toContain("取消配对");
     expect(app).toContain("解除配对");
     expect(app).toContain("pairingCode");
+    expect(app).toContain("shouldUseBrowserPageBridge(window.desktopExtension)");
+    expect(app).toContain("请在 Edge/Chrome 扩展弹窗中同步登录态");
     expect(app).not.toContain("X-XHS-Bridge-Token");
   });
 });

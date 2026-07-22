@@ -93,7 +93,7 @@ import { AI_MODEL_PROVIDER_PRESETS, findModelProviderPreset, type AiModelProvide
 import { WEEK_FIFTEEN_HONEY_DEW_REVIEW_POLICY } from "../shared/contentReviewPolicy.js";
 import { api } from "./lib/api.js";
 import { credentialSecurityPresentation, shouldOpenCredentialSettings } from "./securityStatus.js";
-import { generateBrowserPairingCode, hashBrowserPairingCode, mergeBrowserBridgeStatuses, pairingSecondsRemaining } from "./browserPairing.js";
+import { generateBrowserPairingCode, hashBrowserPairingCode, mergeBrowserBridgeStatuses, pairingSecondsRemaining, shouldUseBrowserPageBridge } from "./browserPairing.js";
 
 type ModuleKey = "overview" | "research" | "notes" | "viral" | "audience" | "competitors" | "comments" | "content" | "prompts" | "ai";
 type SortMode = "hot" | "likes" | "comments" | "collects" | "latest";
@@ -409,6 +409,7 @@ function clearRecoveredBackendError(message: string): string {
 }
 
 export function App() {
+  const useBrowserPageBridge = shouldUseBrowserPageBridge(window.desktopExtension);
   const [activeModule, setActiveModule] = useState<ModuleKey>("overview");
   const [auth, setAuth] = useState<AuthStatus>({ connected: false, configured: false });
   const [authVerifyAttempted, setAuthVerifyAttempted] = useState(false);
@@ -581,7 +582,9 @@ export function App() {
       api.listAiCustomPrompts(),
       api.listNoteScopes(),
       api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }) satisfies BrowserBridgeStatus),
-      callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000).catch(() => undefined),
+      useBrowserPageBridge
+        ? callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000).catch(() => undefined)
+        : Promise.resolve(undefined),
       api.listContentProjects(),
       api.listContentPlaybooks(),
       api.listContentDrafts(),
@@ -630,9 +633,9 @@ export function App() {
       setSelectedContentPlaybook("");
       setContentPlaybookForm(defaultPlaybookForm);
     }
-    setBrowserBridge(mergeBrowserBridgeStatuses(bridgeStatus, runtimeBridgeStatus));
+    setBrowserBridge(useBrowserPageBridge ? mergeBrowserBridgeStatuses(bridgeStatus, runtimeBridgeStatus) : bridgeStatus);
     setError(clearRecoveredBackendError);
-  }, [setSelectedContentPlaybook, setSelectedContentProject]);
+  }, [setSelectedContentPlaybook, setSelectedContentProject, useBrowserPageBridge]);
 
   const loadNotes = useCallback(async () => {
     if (!activeJobId && !activeKeywordScopeId && !showHistoryData) {
@@ -834,6 +837,7 @@ export function App() {
   }, [browserBridge.pairing?.state, browserBridge.pairing?.expiresAt]);
 
   useEffect(() => {
+    if (!useBrowserPageBridge) return;
     let alive = true;
     callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000)
       .then((status) => {
@@ -851,7 +855,7 @@ export function App() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [useBrowserPageBridge]);
 
   useEffect(() => {
     if (!activeOrchestrationId) {
@@ -1071,6 +1075,11 @@ export function App() {
     setBusy("bridge-check");
     setError("");
     const savedStatus: BrowserBridgeStatus = await api.browserBridgeStatus().catch(() => ({ connected: false, browser: "unknown", permissionStatus: "unknown" }));
+    if (!useBrowserPageBridge) {
+      setBrowserBridge(savedStatus);
+      setBusy("");
+      return;
+    }
     try {
       const runtimeStatus = await callBrowserBridge<BrowserBridgeStatus>("ping", undefined, 1000);
       setBrowserBridge({
@@ -1158,6 +1167,12 @@ export function App() {
   }
 
   async function openOriginalUrl(url: string) {
+    if (!useBrowserPageBridge) {
+      await run("open-url", async () => {
+        await api.openBrowserUrl({ url, mode: "auto" });
+      });
+      return;
+    }
     await openUrlWithBrowserFallback(
       url,
       async (targetUrl) => {
@@ -2219,6 +2234,7 @@ export function App() {
             cookieFields={cookieFields}
             setCookieFields={setCookieFields}
             browserBridge={browserBridge}
+            useBrowserPageBridge={useBrowserPageBridge}
             saveCookie={saveCookie}
             autoReadCookie={autoReadCookie}
             refreshBrowserBridge={refreshBrowserBridge}
@@ -2744,6 +2760,7 @@ function OverviewPage({
   cookieFields,
   setCookieFields,
   browserBridge,
+  useBrowserPageBridge,
   saveCookie,
   autoReadCookie,
   refreshBrowserBridge,
@@ -2767,6 +2784,7 @@ function OverviewPage({
   cookieFields: { a1: string; web_session: string; webId: string };
   setCookieFields: (value: { a1: string; web_session: string; webId: string }) => void;
   browserBridge: BrowserBridgeStatus;
+  useBrowserPageBridge: boolean;
   saveCookie: () => Promise<void>;
   autoReadCookie: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
@@ -2836,6 +2854,7 @@ function OverviewPage({
           cookieFields={cookieFields}
           setCookieFields={setCookieFields}
           browserBridge={browserBridge}
+          useBrowserPageBridge={useBrowserPageBridge}
           saveCookie={saveCookie}
           autoReadCookie={autoReadCookie}
           refreshBrowserBridge={refreshBrowserBridge}
@@ -7077,6 +7096,7 @@ function AuthPanel({
   cookieFields,
   setCookieFields,
   browserBridge,
+  useBrowserPageBridge,
   saveCookie,
   autoReadCookie,
   refreshBrowserBridge,
@@ -7094,6 +7114,7 @@ function AuthPanel({
   cookieFields: { a1: string; web_session: string; webId: string };
   setCookieFields: (value: { a1: string; web_session: string; webId: string }) => void;
   browserBridge: BrowserBridgeStatus;
+  useBrowserPageBridge: boolean;
   saveCookie: () => Promise<void>;
   autoReadCookie: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
@@ -7112,14 +7133,20 @@ function AuthPanel({
   return (
     <section className="surface command-surface auth-surface">
       <SectionTitle icon={<ShieldCheck size={18} />} title="登录连接" />
-      <div className={`browser-bridge-card ${browserBridge.connected ? "ok" : "pending"}`}>
+      <div className={`browser-bridge-card ${(useBrowserPageBridge ? browserBridge.connected : pairing.state === "paired") ? "ok" : "pending"}`}>
         <div>
           <strong>浏览器助手 Bridge</strong>
           <p>
-            {browserBridge.message ||
-              (browserBridge.connected
-                ? `已连接 ${browserBridge.browser === "edge" ? "Edge" : browserBridge.browser === "chrome" ? "Chrome" : "浏览器"}，可同步当前浏览器登录态。`
-                : "推荐安装本项目浏览器助手扩展，登录当前浏览器的小红书后即可同步 Cookie。")}
+            {!useBrowserPageBridge
+              ? pairing.state === "paired"
+                ? "扩展已配对。请在 Edge/Chrome 扩展弹窗中同步登录态。"
+                : pairing.state === "pairing"
+                  ? "正在等待浏览器扩展输入配对码。"
+                  : "扩展尚未配对，请先在运营台生成配对码。"
+              : browserBridge.message ||
+                (browserBridge.connected
+                  ? `已连接 ${browserBridge.browser === "edge" ? "Edge" : browserBridge.browser === "chrome" ? "Chrome" : "浏览器"}，可同步当前浏览器登录态。`
+                  : "推荐安装本项目浏览器助手扩展，登录当前浏览器的小红书后即可同步 Cookie。")}
           </p>
           {(browserBridge.lastSyncAt || browserBridge.lastSeenAt) && (
             <small>{browserBridge.lastSyncAt ? "最近同步" : "最近检测"}：{formatDateTime(browserBridge.lastSyncAt || browserBridge.lastSeenAt || "")}</small>
@@ -7129,12 +7156,14 @@ function AuthPanel({
         <div className="button-row">
           <button className="ghost-button compact" onClick={() => void refreshBrowserBridge()} disabled={busy === "bridge-check"}>
             {busy === "bridge-check" ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
-            检测助手
+            {useBrowserPageBridge ? "检测助手" : "刷新状态"}
           </button>
-          <button className="primary-button compact" onClick={() => void syncBrowserBridgeCookie()} disabled={busy === "auth" || !browserBridge.connected || pairing.state !== "paired"}>
-            {busy === "auth" ? <Loader2 className="spin" size={15} /> : <KeyRound size={15} />}
-            同步登录态
-          </button>
+          {useBrowserPageBridge && (
+            <button className="primary-button compact" onClick={() => void syncBrowserBridgeCookie()} disabled={busy === "auth" || !browserBridge.connected || pairing.state !== "paired"}>
+              {busy === "auth" ? <Loader2 className="spin" size={15} /> : <KeyRound size={15} />}
+              同步登录态
+            </button>
+          )}
         </div>
       </div>
       <div className="browser-pairing-panel">
@@ -7148,6 +7177,7 @@ function AuthPanel({
               已配对 {pairing.browser === "edge" ? "Edge" : pairing.browser === "chrome" ? "Chrome" : "浏览器"}
               {pairing.extensionVersion ? ` · 扩展 ${pairing.extensionVersion}` : ""}
             </p>
+            {pairing.pairedAt && <p className="muted-line">配对时间：{formatDateTime(pairing.pairedAt)}</p>}
             <button className="ghost-button compact danger" onClick={() => void revokeBrowserExtensionPairing()} disabled={busy === "bridge-pair"}>
               解除配对
             </button>
@@ -7174,7 +7204,11 @@ function AuthPanel({
           </button>
         )}
       </div>
-      <p className="muted-line">插件使用：在 Edge 扩展页加载 browser-extension/xhs-bridge，刷新本地运营台和小红书页面，再点击“检测助手”。</p>
+      <p className="muted-line">
+        {useBrowserPageBridge
+          ? "插件使用：在 Edge 扩展页加载 browser-extension/xhs-bridge，刷新本地运营台和小红书页面，再点击“检测助手”。"
+          : "安装版请在 Edge/Chrome 扩展弹窗中同步登录态；运营台会显示已保存的配对与最近同步状态。"}
+      </p>
       <div className="button-row">
         <button className="ghost-button" onClick={() => void openOriginalUrl("https://www.xiaohongshu.com/")}>
           <ExternalLink size={16} />

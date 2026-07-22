@@ -17,6 +17,10 @@ export function pairingSecondsRemaining(expiresAt: string | undefined, now = Dat
   return Math.max(0, Math.ceil((expiry - now) / 1000));
 }
 
+export function shouldUseBrowserPageBridge(desktopExtension: unknown): boolean {
+  return desktopExtension === undefined;
+}
+
 export function mergeBrowserBridgeStatuses(
   saved: BrowserBridgeStatus,
   runtime: BrowserBridgeStatus | undefined
