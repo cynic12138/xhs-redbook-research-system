@@ -571,6 +571,15 @@ export function App() {
     return status;
   }, []);
 
+  const refreshConnectionStatus = useCallback(async () => {
+    const [authStatus, bridgeStatus] = await Promise.all([
+      api.authStatus(),
+      api.browserBridgeStatus()
+    ]);
+    setAuth(authStatus);
+    setBrowserBridge(bridgeStatus);
+  }, []);
+
   const refreshCore = useCallback(async () => {
     const [authStatus, allJobs, caps, models, workflows, prompts, customPrompts, scopes, bridgeStatus, runtimeBridgeStatus, projects, playbooks, drafts, reviews] = await Promise.all([
       api.authStatus(),
@@ -758,6 +767,15 @@ export function App() {
   useEffect(() => {
     void refreshCore().catch((err) => setError(err.message));
   }, [refreshCore]);
+
+  useEffect(() => {
+    if (useBrowserPageBridge) return;
+    const refreshOnFocus = () => {
+      void refreshConnectionStatus().catch(() => undefined);
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [refreshConnectionStatus, useBrowserPageBridge]);
 
   useEffect(() => {
     void loadContentPlaybookRevisions(selectedContentPlaybookId).catch(() => setContentPlaybookRevisions([]));
@@ -1068,6 +1086,12 @@ export function App() {
       setAuth(await api.autoReadCookie());
       await loadCredentialSecurityStatus();
       await refreshCore();
+    });
+  }
+
+  async function verifyAuthNow() {
+    await run("auth-verify", async () => {
+      setAuth(await api.verifyAuth());
     });
   }
 
@@ -2194,8 +2218,10 @@ export function App() {
         <div className={`connection-card ${auth.connected ? "ok" : "warn"}`}>
           {auth.connected ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
           <div>
-            <strong>{auth.connected ? auth.user?.nickname ?? "已连接" : auth.error ? "连接失效" : auth.configured ? "待验证" : "未连接"}</strong>
-            <span>{auth.error ? formatAuthError(auth.error) : auth.checkedAt ? new Date(auth.checkedAt).toLocaleString() : "等待登录"}</span>
+            <strong>小红书账号</strong>
+            <span>{auth.user?.nickname ?? (auth.connected ? "已连接" : auth.error ? "连接失效" : auth.configured ? "待验证" : "未连接")}</span>
+            <small>{auth.checkedAt ? `最近验证：${new Date(auth.checkedAt).toLocaleString()}` : "最近验证：尚未验证"}</small>
+            {auth.error && <small>{formatAuthError(auth.error)}</small>}
           </div>
         </div>
       </aside>
@@ -2237,6 +2263,7 @@ export function App() {
             useBrowserPageBridge={useBrowserPageBridge}
             saveCookie={saveCookie}
             autoReadCookie={autoReadCookie}
+            verifyAuthNow={verifyAuthNow}
             refreshBrowserBridge={refreshBrowserBridge}
             syncBrowserBridgeCookie={syncBrowserBridgeCookie}
             startBrowserExtensionPairing={startBrowserExtensionPairing}
@@ -2763,6 +2790,7 @@ function OverviewPage({
   useBrowserPageBridge,
   saveCookie,
   autoReadCookie,
+  verifyAuthNow,
   refreshBrowserBridge,
   syncBrowserBridgeCookie,
   startBrowserExtensionPairing,
@@ -2787,6 +2815,7 @@ function OverviewPage({
   useBrowserPageBridge: boolean;
   saveCookie: () => Promise<void>;
   autoReadCookie: () => Promise<void>;
+  verifyAuthNow: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
   syncBrowserBridgeCookie: () => Promise<void>;
   startBrowserExtensionPairing: () => Promise<void>;
@@ -2857,6 +2886,7 @@ function OverviewPage({
           useBrowserPageBridge={useBrowserPageBridge}
           saveCookie={saveCookie}
           autoReadCookie={autoReadCookie}
+          verifyAuthNow={verifyAuthNow}
           refreshBrowserBridge={refreshBrowserBridge}
           syncBrowserBridgeCookie={syncBrowserBridgeCookie}
           startBrowserExtensionPairing={startBrowserExtensionPairing}
@@ -7099,6 +7129,7 @@ function AuthPanel({
   useBrowserPageBridge,
   saveCookie,
   autoReadCookie,
+  verifyAuthNow,
   refreshBrowserBridge,
   syncBrowserBridgeCookie,
   startBrowserExtensionPairing,
@@ -7117,6 +7148,7 @@ function AuthPanel({
   useBrowserPageBridge: boolean;
   saveCookie: () => Promise<void>;
   autoReadCookie: () => Promise<void>;
+  verifyAuthNow: () => Promise<void>;
   refreshBrowserBridge: () => Promise<void>;
   syncBrowserBridgeCookie: () => Promise<void>;
   startBrowserExtensionPairing: () => Promise<void>;
@@ -7142,7 +7174,7 @@ function AuthPanel({
                 ? "扩展已配对。请在 Edge/Chrome 扩展弹窗中同步登录态。"
                 : pairing.state === "pairing"
                   ? "正在等待浏览器扩展输入配对码。"
-                  : "扩展尚未配对，请先在运营台生成配对码。"
+                  : "扩展未配对，请先在运营台生成配对码。"
               : browserBridge.message ||
                 (browserBridge.connected
                   ? `已连接 ${browserBridge.browser === "edge" ? "Edge" : browserBridge.browser === "chrome" ? "Chrome" : "浏览器"}，可同步当前浏览器登录态。`
@@ -7174,7 +7206,7 @@ function AuthPanel({
         {pairing.state === "paired" ? (
           <>
             <p className="muted-line">
-              已配对 {pairing.browser === "edge" ? "Edge" : pairing.browser === "chrome" ? "Chrome" : "浏览器"}
+              扩展已配对 · {pairing.browser === "edge" ? "Edge" : pairing.browser === "chrome" ? "Chrome" : "浏览器"}
               {pairing.extensionVersion ? ` · 扩展 ${pairing.extensionVersion}` : ""}
             </p>
             {pairing.pairedAt && <p className="muted-line">配对时间：{formatDateTime(pairing.pairedAt)}</p>}
@@ -7217,6 +7249,10 @@ function AuthPanel({
         <button className="ghost-button" onClick={() => void autoReadCookie()} disabled={busy === "auth"}>
           {busy === "auth" ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
           读取本机浏览器（兼容）
+        </button>
+        <button className="ghost-button" onClick={() => void verifyAuthNow()} disabled={busy === "auth-verify"}>
+          {busy === "auth-verify" ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+          重新验证账号
         </button>
       </div>
       <label className="field-stack compact-field">

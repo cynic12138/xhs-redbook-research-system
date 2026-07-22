@@ -70,4 +70,18 @@ describe("browser pairing UI helpers", () => {
     expect(app).toContain("请在 Edge/Chrome 扩展弹窗中同步登录态");
     expect(app).not.toContain("X-XHS-Bridge-Token");
   });
+
+  it("labels the saved account separately and refreshes it without changing pairing semantics", async () => {
+    const app = await readFile("src/client/App.tsx", "utf8");
+    const revokeStart = app.indexOf("async function revokeBrowserExtensionPairing");
+    const revokeEnd = app.indexOf("async function openOriginalUrl", revokeStart);
+    const revokeSource = app.slice(revokeStart, revokeEnd);
+
+    expect(app).toContain("小红书账号");
+    expect(app).toContain("最近验证：");
+    expect(app).toContain("重新验证账号");
+    expect(app).toContain('window.addEventListener("focus"');
+    expect(app).toContain("api.verifyAuth()");
+    expect(revokeSource).not.toContain("setAuth(");
+  });
 });
