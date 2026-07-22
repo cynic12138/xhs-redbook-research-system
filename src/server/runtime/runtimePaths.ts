@@ -7,6 +7,7 @@ export interface RuntimePaths {
   outputDir: string;
   mediaCacheDir: string;
   browserProfileDir: string;
+  browserExtensionDir: string;
   envFile: string;
   clientDist: string;
 }
@@ -21,6 +22,7 @@ export function createDevelopmentRuntimePaths(cwd = process.cwd()): RuntimePaths
     outputDir: path.join(cwd, "output"),
     mediaCacheDir: path.join(cwd, "data", "media-cache"),
     browserProfileDir: path.join(cwd, "data", "xhs-login-edge-profile"),
+    browserExtensionDir: path.join(cwd, "browser-extension", "xhs-bridge"),
     envFile: path.join(cwd, ".env.local"),
     clientDist: path.join(cwd, "dist", "client"),
   };
@@ -37,6 +39,7 @@ export function createDesktopRuntimePaths(input: {
     outputDir: path.join(input.userDataDir, "output"),
     mediaCacheDir: path.join(input.userDataDir, "media-cache"),
     browserProfileDir: path.join(input.userDataDir, "browser-profile"),
+    browserExtensionDir: path.join(input.userDataDir, "browser-extension", "xhs-bridge"),
     envFile: path.join(input.userDataDir, ".env.local"),
     clientDist: path.join(input.appPath, "dist", "client"),
   };

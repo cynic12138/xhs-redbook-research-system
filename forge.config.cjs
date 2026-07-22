@@ -39,6 +39,7 @@ const electronChecksums = require("./node_modules/electron/checksums.json");
 module.exports = {
   packagerConfig: {
     asar: true,
+    extraResource: ["browser-extension/xhs-bridge"],
     download: {
       checksums: electronChecksums
     },

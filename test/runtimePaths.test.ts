@@ -17,6 +17,7 @@ describe("runtime paths", () => {
       outputDir: path.join(root, "output"),
       mediaCacheDir: path.join(root, "data", "media-cache"),
       browserProfileDir: path.join(root, "data", "xhs-login-edge-profile"),
+      browserExtensionDir: path.join(root, "browser-extension", "xhs-bridge"),
       envFile: path.join(root, ".env.local"),
       clientDist: path.join(root, "dist", "client")
     });
@@ -37,10 +38,11 @@ describe("runtime paths", () => {
       outputDir: path.join(userDataDir, "output"),
       mediaCacheDir: path.join(userDataDir, "media-cache"),
       browserProfileDir: path.join(userDataDir, "browser-profile"),
+      browserExtensionDir: path.join(userDataDir, "browser-extension", "xhs-bridge"),
       envFile: path.join(userDataDir, ".env.local"),
       clientDist: path.join(appPath, "dist", "client")
     });
-    for (const writablePath of [result.dataDir, result.databaseFile, result.outputDir, result.mediaCacheDir, result.browserProfileDir, result.envFile]) {
+    for (const writablePath of [result.dataDir, result.databaseFile, result.outputDir, result.mediaCacheDir, result.browserProfileDir, result.browserExtensionDir, result.envFile]) {
       expect(writablePath.startsWith(userDataDir)).toBe(true);
       expect(writablePath.startsWith(appPath)).toBe(false);
     }

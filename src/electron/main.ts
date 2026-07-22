@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, type MessageBoxOptions, type OpenDialogOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type MessageBoxOptions, type OpenDialogOptions } from "electron";
 import { finishStartupFailure } from "./lifecycle.js";
 import { desktopWebPreferences, isAllowedAppNavigation } from "./windowPolicy.js";
 
@@ -19,6 +19,7 @@ let jobService: JobService | undefined;
 let browserAuthService: BrowserAuthService | undefined;
 let shutdownInProgress = false;
 let isQuitting = false;
+let extensionInstallError = "";
 
 if (squirrelStartup) {
   app.quit();
@@ -73,8 +74,19 @@ async function bootDesktop(): Promise<void> {
     mkdir(runtimePaths.dataDir, { recursive: true }),
     mkdir(runtimePaths.outputDir, { recursive: true }),
     mkdir(runtimePaths.mediaCacheDir, { recursive: true }),
-    mkdir(runtimePaths.browserProfileDir, { recursive: true })
+    mkdir(runtimePaths.browserProfileDir, { recursive: true }),
+    mkdir(runtimePaths.browserExtensionDir, { recursive: true })
   ]);
+  const { syncBrowserExtensionAssets } = await import("./extensionInstaller.js");
+  const bundledExtensionDir = app.isPackaged
+    ? path.join(process.resourcesPath, "browser-extension", "xhs-bridge")
+    : path.join(app.getAppPath(), "browser-extension", "xhs-bridge");
+  await syncBrowserExtensionAssets({
+    sourceDir: bundledExtensionDir,
+    targetDir: runtimePaths.browserExtensionDir
+  }).catch(() => {
+    extensionInstallError = "浏览器扩展文件准备失败，请使用专用 Edge 登录或重新安装应用。";
+  });
 
   const clientIndex = path.join(runtimePaths.clientDist, "index.html");
   if (!existsSync(clientIndex)) {
@@ -102,6 +114,16 @@ async function bootDesktop(): Promise<void> {
     host: "127.0.0.1",
     port: 8787,
     clientDist: runtimePaths.clientDist
+  });
+  ipcMain.handle("extension:open-install-directory", async (event) => {
+    if (!event.senderFrame || !isAllowedAppNavigation(event.senderFrame.url, runningServer!.url)) {
+      return { ok: false, message: "应用拒绝了不受信任的扩展目录请求。" };
+    }
+    if (extensionInstallError) return { ok: false, message: extensionInstallError };
+    const error = await shell.openPath(runtimePaths.browserExtensionDir);
+    return error
+      ? { ok: false, message: "无法打开浏览器扩展目录，请重新安装应用。" }
+      : { ok: true, message: "已打开浏览器扩展目录。" };
   });
   mainWindow = createMainWindow(runningServer.url);
 }

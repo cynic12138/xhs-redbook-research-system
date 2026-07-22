@@ -1170,6 +1170,16 @@ export function App() {
     );
   }
 
+  async function openBrowserExtensionDirectory() {
+    await run("extension-dir", async () => {
+      if (!window.desktopExtension) {
+        throw new Error("开发模式请直接加载项目中的 browser-extension/xhs-bridge 目录。");
+      }
+      const result = await window.desktopExtension.openInstallDirectory();
+      if (!result.ok) throw new Error(result.message);
+    });
+  }
+
   async function createJob() {
     await run("job", async () => {
       const inputKeywords = keywords
@@ -2217,6 +2227,7 @@ export function App() {
             revokeBrowserExtensionPairing={revokeBrowserExtensionPairing}
             pairingCode={pairingCode}
             pairingClock={pairingClock}
+            openBrowserExtensionDirectory={openBrowserExtensionDirectory}
             openOriginalUrl={openOriginalUrl}
             onResume={resumeJob}
             onStop={stopJob}
@@ -2741,6 +2752,7 @@ function OverviewPage({
   revokeBrowserExtensionPairing,
   pairingCode,
   pairingClock,
+  openBrowserExtensionDirectory,
   openOriginalUrl,
   onResume,
   onStop,
@@ -2763,6 +2775,7 @@ function OverviewPage({
   revokeBrowserExtensionPairing: () => Promise<void>;
   pairingCode: string;
   pairingClock: number;
+  openBrowserExtensionDirectory: () => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   onResume: () => Promise<void>;
   onStop: () => Promise<void>;
@@ -2831,6 +2844,7 @@ function OverviewPage({
           revokeBrowserExtensionPairing={revokeBrowserExtensionPairing}
           pairingCode={pairingCode}
           pairingClock={pairingClock}
+          openBrowserExtensionDirectory={openBrowserExtensionDirectory}
           openOriginalUrl={openOriginalUrl}
           busy={busy}
         />
@@ -7071,6 +7085,7 @@ function AuthPanel({
   revokeBrowserExtensionPairing,
   pairingCode,
   pairingClock,
+  openBrowserExtensionDirectory,
   openOriginalUrl,
   busy
 }: {
@@ -7087,6 +7102,7 @@ function AuthPanel({
   revokeBrowserExtensionPairing: () => Promise<void>;
   pairingCode: string;
   pairingClock: number;
+  openBrowserExtensionDirectory: () => Promise<void>;
   openOriginalUrl: (url: string) => Promise<void>;
   busy: string;
 }) {
@@ -7121,6 +7137,10 @@ function AuthPanel({
         </div>
       </div>
       <div className="browser-pairing-panel">
+        <button className="ghost-button compact" onClick={() => void openBrowserExtensionDirectory()} disabled={busy === "extension-dir"}>
+          <ExternalLink size={15} />
+          打开扩展目录
+        </button>
         {pairing.state === "paired" ? (
           <>
             <p className="muted-line">

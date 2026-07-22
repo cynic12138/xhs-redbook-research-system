@@ -50,6 +50,11 @@ describe("desktop build contract", () => {
     expect(preloadSource).toContain('ipcRenderer.invoke("storage:select-legacy-data-directory")');
     expect(preloadSource).not.toContain("shell");
     expect(preloadSource).not.toContain("fs");
+    expect(mainSource).toContain('ipcMain.handle("extension:open-install-directory"');
+    expect(mainSource).toContain("isAllowedAppNavigation(event.senderFrame.url");
+    expect(preloadSource).toContain('contextBridge.exposeInMainWorld("desktopExtension"');
+    expect(preloadSource).toContain('ipcRenderer.invoke("extension:open-install-directory")');
+    expect(preloadSource).not.toContain("openPath");
   });
 
   it("configures an unsigned Squirrel installer without packaging local runtime data", async () => {
@@ -60,6 +65,7 @@ describe("desktop build contract", () => {
     expect(source).toContain("checksums: electronChecksums");
     expect(source).toContain("setupExe: \"小红书运营台-0.3.0-Setup.exe\"");
     expect(source).toContain('vendorDirectory: path.join(__dirname, ".cache", "squirrel-vendor")');
+    expect(source).toContain('extraResource: ["browser-extension/xhs-bridge"]');
     for (const excluded of [".git", ".env.local", ".vite", "AGENTS.md", "data", "design-system", "output", "test", ".playwright-cli"]) {
       expect(source).toContain(`\"${excluded}\"`);
     }
