@@ -1,10 +1,10 @@
 # MVP Scope
 
-## Current Milestone
+## Current Internal Release
 
-`D-005` adds automatic/manual SQLite backups, verified full-database restore, and credential-free migration packages to the accepted local Windows application without changing SQLite Schema v3.
+`0.5.0` is the accepted internal Windows release. D-001 through D-005 are complete, and there is no active productization milestone.
 
-## In Scope
+## Accepted Baseline
 
 - Live SQLite backups through the built-in `node:sqlite.backup()` API.
 - One daily backup per local date, unlimited manual backups, and bounded daily/safety retention.
@@ -16,7 +16,7 @@
 ## Out of Scope
 
 - Account management, roles, cloud deployment, or shared data.
-- Native Messaging, extension-store publishing, enterprise extension policy, cloud backup, automatic updates, code signing, or custom application artwork.
+- Native Messaging, extension-store publishing, enterprise extension policy, cloud backup, automatic updates, code signing, or custom application artwork. These are intentionally deferred and are not release blockers for internal use.
 - Multi-source data merging or long-term JSON/SQLite dual writes.
 - Cloud sync, accounts, roles, whole-database encryption, or cross-Windows-user credential portability.
 - Changes to existing business HTTP routes, response contracts, status codes, or business rules.

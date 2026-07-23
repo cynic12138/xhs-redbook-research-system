@@ -123,9 +123,9 @@ npm run build
 npm start
 ```
 
-## Windows 桌面试用版（D-005）
+## Windows 桌面内部正式版（0.5.0）
 
-D-005 使用 Electron 包装现有 React 和 Express 应用，复用相同业务逻辑，并使用 Node 24 内置 `node:sqlite` 保存业务数据。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。小红书 Cookie 和 AI 模型 Key 通过 Electron `safeStorage` 加密后写入 SQLite；浏览器扩展必须先完成一次性配对才能同步 Cookie；数据库支持每日自动备份、手动备份、完整恢复和脱敏迁移。
+`0.5.0` 使用 Electron 包装现有 React 和 Express 应用，复用相同业务逻辑，并使用 Node 24 内置 `node:sqlite` 保存业务数据。安装版只监听 `127.0.0.1:8787`，不向局域网开放，也不要求业务员另行安装 Node.js、npm 或数据库。小红书 Cookie 和 AI 模型 Key 通过 Electron `safeStorage` 加密后写入 SQLite；浏览器扩展必须先完成一次性配对才能同步 Cookie；数据库支持每日自动备份、手动备份、完整恢复和脱敏迁移。D-001 至 D-005 已完成自动化和安装验收，该版本作为公司内部当前正式可用基线。
 
 本机调试桌面壳：
 
@@ -163,7 +163,7 @@ npm run desktop:make
 
 安装和使用限制：
 
-- 当前安装包没有 Windows 代码签名，只用于少量内部工程验收；SmartScreen 可能显示未知发布者提示。
+- 当前安装包没有 Windows 代码签名，仅用于公司内部；SmartScreen 可能显示未知发布者提示，这是已接受的发布边界。
 - 安装版运行数据位于 `%APPDATA%\小红书运营台`，其中包含 `data/app.db`、`output/`、`media-cache/`、`browser-profile/` 和 `.env.local`。
 - 安装版会把 Cookie 和模型 Key 加密写入 `data/app.db`；`.env.local` 仅保留端口等非敏感设置。开发模式仍由 `.env.local` 管理凭证。
 - `safeStorage` 主要防止凭证以明文文件保存，不能防御以同一 Windows 用户权限运行的恶意程序。
@@ -171,7 +171,7 @@ npm run desktop:make
 - 应用使用单实例锁。再次启动会聚焦已有窗口，不会打开第二套 Store 或 HTTP 服务。
 - 如果 `127.0.0.1:8787` 被开发服务器或其他程序占用，桌面版会显示中文启动失败信息；先正常关闭占用进程再重试。
 - 关闭应用时如有抓取任务，会先要求确认并把任务安全暂停；下次启动后可以恢复。
-- 当前版本已经包含本地备份与脱敏迁移；自动更新、正式图标和代码签名仍属于后续里程碑。
+- 当前版本已经包含本地备份与脱敏迁移；自动更新、正式图标和代码签名目前暂停，不影响内部业务使用。
 
 双击 `Setup.exe` 可以按当前 Windows 用户安装，不要求管理员权限。覆盖安装不得依赖或写入程序目录；用户数据与安装目录相互分离。
 
