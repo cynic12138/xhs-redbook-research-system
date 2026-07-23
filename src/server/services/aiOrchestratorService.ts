@@ -10,6 +10,7 @@ import type {
 } from "../../shared/types.js";
 import { createId, nowIso, unique } from "../../shared/utils.js";
 import { store } from "../storage/runtimeStorage.js";
+import { BackgroundRunGate } from "../runtime/backgroundRunGate.js";
 import { jobs } from "./jobService.js";
 import { runAiWorkflow } from "./aiService.js";
 
@@ -36,7 +37,7 @@ interface Runtime {
   sleep: (ms: number) => Promise<void>;
 }
 
-const activeRuns = new Set<string>();
+const orchestrationRunGate = new BackgroundRunGate("应用正在准备数据恢复，暂不能启动 AI 编排");
 
 const stepTitles: Record<AiOrchestrationStepKey, string> = {
   "create-search-job": "创建抓取任务",
@@ -67,6 +68,7 @@ export async function createAiOrchestration(
   storage: StoreLike = store,
   options: OrchestratorOptions = {}
 ): Promise<AiOrchestration> {
+  if (options.autoStart ?? true) orchestrationRunGate.ensureAccepting();
   const instruction = input.instruction.trim();
   if (!instruction) {
     throw new Error("AI 编排指令不能为空。");
@@ -106,11 +108,11 @@ export async function getAiOrchestration(id: string, storage: StoreLike = store)
 }
 
 export function startAiOrchestration(id: string, storage: StoreLike = store, options: OrchestratorOptions = {}): void {
-  if (activeRuns.has(id)) {
+  orchestrationRunGate.ensureAccepting();
+  if (orchestrationRunGate.has(id)) {
     return;
   }
-  activeRuns.add(id);
-  void runAiOrchestration(id, storage, options)
+  const work = runAiOrchestration(id, storage, options)
     .catch(async (error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[ai-orchestration:${id}] ${message}`);
@@ -123,10 +125,12 @@ export function startAiOrchestration(id: string, storage: StoreLike = store, opt
         console.error(`[ai-orchestration:${id}:patch] ${patchMessage}`);
       });
     })
-    .finally(() => {
-      activeRuns.delete(id);
-    });
+    .then(() => undefined);
+  orchestrationRunGate.track(id, work);
 }
+
+export const quiesceAiOrchestrations = (timeoutMs: number) => orchestrationRunGate.quiesce(timeoutMs);
+export const resumeAiOrchestrationScheduling = () => orchestrationRunGate.resume();
 
 export async function runAiOrchestration(
   id: string,

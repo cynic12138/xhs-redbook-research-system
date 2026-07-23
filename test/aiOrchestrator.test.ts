@@ -4,7 +4,15 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AiArtifact, AiWorkflowKey, NoteRecord, SearchJob, SearchJobInput } from "../src/shared/types.js";
 import { LocalStore } from "../src/server/storage/localStore.js";
-import { createAiOrchestration, getAiOrchestration, listAiOrchestrations, runAiOrchestration } from "../src/server/services/aiOrchestratorService.js";
+import {
+  createAiOrchestration,
+  getAiOrchestration,
+  listAiOrchestrations,
+  quiesceAiOrchestrations,
+  resumeAiOrchestrationScheduling,
+  runAiOrchestration,
+  startAiOrchestration
+} from "../src/server/services/aiOrchestratorService.js";
 
 describe("AI orchestrator service", () => {
   it("creates a controlled orchestration session from an explicit keyword instruction", async () => {
@@ -132,6 +140,52 @@ describe("AI orchestrator service", () => {
     expect(finished.error).toContain("model timeout");
     expect(finished.steps.find((step) => step.key === "run-content-planning")?.status).toBe("failed");
     expect(finished.steps.find((step) => step.key === "run-content-planning")?.error).toContain("model timeout");
+  });
+
+  it("waits for the real orchestration runner and blocks new automatic runs while restoring", async () => {
+    const store = new LocalStore(await createTempDataDir());
+    const orchestration = await createAiOrchestration(
+      { instruction: "帮我抓取关键词 开塞露，然后生成分析" },
+      store,
+      { autoStart: false }
+    );
+    let release!: () => void;
+    let started!: () => void;
+    const didStart = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+
+    startAiOrchestration(orchestration.id, store, {
+      createJob: async (input) => {
+        started();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const created = job(input);
+        await store.update("searchJobs", (jobs) => [created, ...jobs]);
+        await store.update("notes", (notes) => [note(), ...notes]);
+        return created;
+      },
+      getJob: async () => job({ keywords: ["开塞露"], sort: "popular", noteType: "all", pages: 1, commentPages: 1, concurrency: 2 }),
+      runWorkflow: async (input) => aiArtifact(input.workflowKey, input.jobId, input.modelId),
+      pollMs: 0,
+      waitTimeoutMs: 50,
+      sleep: async () => undefined
+    });
+    await didStart;
+
+    try {
+      const quiescing = quiesceAiOrchestrations(1_000);
+      await expect(createAiOrchestration(
+        { instruction: "帮我抓取关键词 便秘护理，然后生成分析" },
+        store
+      )).rejects.toThrow("准备数据恢复");
+      release();
+      await expect(quiescing).resolves.toBeUndefined();
+    } finally {
+      release?.();
+      resumeAiOrchestrationScheduling();
+    }
   });
 });
 

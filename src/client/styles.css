@@ -142,6 +142,17 @@ button:disabled {
   display: block;
 }
 
+.connection-card span,
+.connection-card small {
+  display: block;
+}
+
+.connection-card small {
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.82;
+}
+
 .workbench {
   min-width: 0;
   padding: 18px 22px 32px;
@@ -218,6 +229,18 @@ button:disabled {
   border-radius: 8px;
   background: #fff3f6;
   color: #c01842;
+}
+
+.notice-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 32%, var(--border));
+  border-radius: var(--radius-md);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .page-grid,
@@ -519,6 +542,29 @@ button:disabled {
 .browser-bridge-card .bridge-diagnostic {
   display: block;
   color: var(--warning);
+}
+
+.browser-pairing-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.pairing-code-block {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  color: var(--foreground-secondary);
+}
+
+.pairing-code {
+  color: var(--foreground);
+  font-size: 28px;
+  letter-spacing: 0.2em;
+  line-height: 1.2;
 }
 
 .section-title {

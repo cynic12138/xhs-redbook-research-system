@@ -10,8 +10,16 @@ window.postMessage(
   window.location.origin
 );
 
+const ALLOWED_ACTIONS = new Set(["ping", "syncCookie", "openUrl"]);
+
 window.addEventListener("message", (event) => {
-  if (event.source !== window || event.data?.source !== "XHS_APP" || event.data?.type !== "XHS_BRIDGE_REQUEST") {
+  if (
+    event.source !== window
+    || event.origin !== window.location.origin
+    || event.data?.source !== "XHS_APP"
+    || event.data?.type !== "XHS_BRIDGE_REQUEST"
+    || !ALLOWED_ACTIONS.has(event.data?.action)
+  ) {
     return;
   }
 

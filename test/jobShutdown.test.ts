@@ -70,6 +70,19 @@ describe("job service desktop shutdown", () => {
     timeoutSpy.mockRestore();
   });
 
+  it("accepts resumable work again when a restore is cancelled", async () => {
+    const { JobService } = await import("../src/server/services/jobService.js");
+    const service = new JobService();
+    await service.prepareForShutdown(100);
+    service.resumeAfterCancelledShutdown();
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    await service.resume("job_running");
+    expect(timeoutSpy).toHaveBeenCalled();
+    timeoutSpy.mockRestore();
+    await service.stop("job_running");
+  });
+
   it("persists the paused state before reporting a worker shutdown timeout", async () => {
     const { JobService } = await import("../src/server/services/jobService.js");
     const service = new JobService();

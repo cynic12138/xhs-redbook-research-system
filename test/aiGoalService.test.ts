@@ -10,8 +10,11 @@ import {
   createAiGoalRun,
   getAiGoalRun,
   planAiGoalRun,
+  quiesceAiGoalRuns,
+  resumeAiGoalRunScheduling,
   retryAiGoalRun,
-  runAiGoalRun
+  runAiGoalRun,
+  startAiGoalRun
 } from "../src/server/services/aiGoalService.js";
 
 const dirs: string[] = [];
@@ -135,6 +138,42 @@ describe("AI goal content workflow", () => {
     const run = await createAiGoalRun({ instruction: "研究品牌活动并生成2篇小红书笔记" }, store);
     await confirmAiGoalRun(run.id, store, { autoStart: false });
     await expect(addAiGoalRunSources(run.id, { urls: ["https://example.com/source"] }, store)).rejects.toThrow("执行中");
+  });
+
+  it("waits for the real goal runner and blocks new automatic confirmations while restoring", async () => {
+    const store = await createStore();
+    const run = await createAiGoalRun({ instruction: "研究品牌活动并生成2篇小红书笔记" }, store);
+    await confirmAiGoalRun(run.id, store, { autoStart: false });
+    let release!: () => void;
+    let started!: () => void;
+    const didStart = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+
+    startAiGoalRun(run.id, store, {
+      createJob: async () => {
+        started();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return searchJob("job_quiesce", "failed");
+      },
+      getJob: async () => searchJob("job_quiesce", "failed"),
+      pollMs: 0,
+      waitTimeoutMs: 20
+    });
+    await didStart;
+
+    try {
+      const quiescing = quiesceAiGoalRuns(1_000);
+      const next = await createAiGoalRun({ instruction: "研究另一个品牌活动并生成2篇小红书笔记" }, store);
+      await expect(confirmAiGoalRun(next.id, store)).rejects.toThrow("准备数据恢复");
+      release();
+      await expect(quiescing).resolves.toBeUndefined();
+    } finally {
+      release?.();
+      resumeAiGoalRunScheduling();
+    }
   });
 });
 

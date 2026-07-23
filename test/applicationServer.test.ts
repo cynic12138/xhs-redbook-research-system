@@ -6,12 +6,15 @@ const pauseActiveJobsOnStartup = vi.fn(async () => undefined);
 const resumeActiveJobs = vi.fn(async () => undefined);
 const requiresLegacyImport = vi.fn(() => false);
 const closeRuntimeStorage = vi.fn();
-const getRuntimeStorage = vi.fn(() => ({ requiresLegacyImport }));
+const ensureDailyBackup = vi.fn(async () => undefined);
+const configureRuntimeStorage = vi.fn();
+const getRuntimeStorage = vi.fn(() => ({ requiresLegacyImport, backups: { ensureDailyBackup } }));
 const activateApplicationRuntime = vi.fn(async ({ resumeJobs = false }: { resumeJobs?: boolean } = {}) => {
   if (resumeJobs) await resumeActiveJobs();
   else await pauseActiveJobsOnStartup();
 });
 const deactivateApplicationRuntime = vi.fn(async () => undefined);
+const resumeApplicationRuntimeAfterCancelledRestore = vi.fn();
 
 vi.mock("../src/server/routes/api.js", () => {
   const api = express.Router();
@@ -31,18 +34,20 @@ vi.mock("../src/server/services/jobService.js", () => ({
 
 vi.mock("../src/server/storage/runtimeStorage.js", () => ({
   closeRuntimeStorage,
+  configureRuntimeStorage,
   getRuntimeStorage
 }));
 
 vi.mock("../src/server/runtime/applicationRuntime.js", () => ({
   activateApplicationRuntime,
-  deactivateApplicationRuntime
+  deactivateApplicationRuntime,
+  resumeApplicationRuntimeAfterCancelledRestore
 }));
 
 afterEach(() => {
   vi.clearAllMocks();
   requiresLegacyImport.mockReturnValue(false);
-  getRuntimeStorage.mockImplementation(() => ({ requiresLegacyImport }));
+  getRuntimeStorage.mockImplementation(() => ({ requiresLegacyImport, backups: { ensureDailyBackup } }));
 });
 
 describe("application server", () => {
@@ -57,6 +62,9 @@ describe("application server", () => {
       expect(pauseActiveJobsOnStartup).toHaveBeenCalledOnce();
       expect(resumeActiveJobs).not.toHaveBeenCalled();
       expect(activateApplicationRuntime).toHaveBeenCalledWith({ resumeJobs: false });
+      expect(ensureDailyBackup.mock.invocationCallOrder[0]).toBeLessThan(
+        activateApplicationRuntime.mock.invocationCallOrder[0]!
+      );
     } finally {
       await running.close();
     }

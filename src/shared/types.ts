@@ -68,6 +68,56 @@ export interface StorageStatus {
   counts: Record<string, number>;
 }
 
+export type BackupKind = "daily" | "manual" | "pre-upgrade" | "pre-restore";
+
+export interface BackupRecord {
+  id: string;
+  kind: BackupKind;
+  createdAt: string;
+  appVersion: string;
+  schemaVersion: number;
+  sizeBytes: number;
+  credentialsIncluded: boolean;
+}
+
+export interface BackupStatus {
+  state: "ready" | "warning";
+  lastAutomaticBackupAt?: string;
+  warning?: string;
+  retention: {
+    daily: 7;
+    safety: 3;
+  };
+  backups: BackupRecord[];
+}
+
+export interface DataRestorePreview {
+  sourceKind: "backup" | "migration-package";
+  createdAt: string;
+  appVersion: string;
+  schemaVersion: number;
+  sizeBytes: number;
+  counts: Record<string, number>;
+  credentialsIncluded: boolean;
+  fingerprint: string;
+  warnings: string[];
+  requiresRestart: true;
+}
+
+export interface PreparedDataRestore {
+  restoreId: string;
+  expiresAt: string;
+  preview: DataRestorePreview;
+}
+
+export interface MigrationPackageResult {
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  counts: Record<string, number>;
+  credentialsIncluded: false;
+}
+
 export interface CredentialSecurityStatus {
   mode: "desktop-encrypted" | "development-env";
   state: "empty" | "encrypted" | "cleanup-required" | "reconfiguration-required" | "development";
@@ -140,6 +190,33 @@ export interface BrowserBridgeStatus {
   permissionStatus: BrowserBridgePermissionStatus;
   message?: string;
   diagnostic?: string;
+  pairing?: BrowserExtensionPairingStatus;
+}
+
+export type BrowserExtensionPairingState = "unpaired" | "pairing" | "paired" | "expired";
+
+export interface BrowserExtensionPairingStatus {
+  state: BrowserExtensionPairingState;
+  expiresAt?: string;
+  attemptsRemaining?: number;
+  browser?: BrowserBridgeBrowser;
+  extensionVersion?: string;
+  pairedAt?: string;
+  lastSeenAt?: string;
+  lastSyncAt?: string;
+  message?: string;
+}
+
+export interface StartExtensionPairingInput {
+  codeHash: string;
+}
+
+export interface CompleteExtensionPairingInput {
+  code: string;
+  token: string;
+  extensionId: string;
+  browser: BrowserBridgeBrowser;
+  extensionVersion?: string;
 }
 
 export type BrowserOpenMode = "auto" | "current-browser" | "dedicated-edge";

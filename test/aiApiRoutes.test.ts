@@ -417,7 +417,9 @@ describe("browser bridge API routes", () => {
   });
 
   it("returns browser bridge status", async () => {
+    const pairingStatus = vi.fn(() => ({ state: "paired", browser: "edge", extensionVersion: "0.2.0" }));
     vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
+      getRuntimeStorage: vi.fn(() => ({ extensionPairing: { status: pairingStatus } })),
       store: {
         read: vi.fn(async (name: string) =>
           name === "browserBridgeStatus"
@@ -435,8 +437,56 @@ describe("browser bridge API routes", () => {
     expect(response.body).toMatchObject({
       connected: true,
       browser: "edge",
-      permissionStatus: "granted"
+      permissionStatus: "granted",
+      pairing: { state: "paired", extensionVersion: "0.2.0" }
     });
+  });
+
+  it("creates, completes, cancels and revokes extension pairing sessions", async () => {
+    const writeAwaited = vi.fn((resolve: (value?: unknown) => void) => resolve());
+    const storeWrite = vi.fn(() => ({ then: writeAwaited }));
+    const extensionPairing = {
+      status: vi.fn(() => ({ state: "unpaired" })),
+      start: vi.fn(() => ({ state: "pairing", expiresAt: "2026-07-22T00:05:00.000Z", attemptsRemaining: 5 })),
+      complete: vi.fn(() => ({ state: "paired", browser: "edge", extensionVersion: "0.2.0" })),
+      cancel: vi.fn(() => ({ state: "unpaired" })),
+      revoke: vi.fn(() => ({ state: "unpaired" }))
+    };
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
+      getRuntimeStorage: vi.fn(() => ({ extensionPairing })),
+      store: { read: vi.fn(async () => ({ connected: false })), write: storeWrite, update: vi.fn() }
+    }));
+    const app = await createApp();
+
+    const started = await requestJson(app, "/api/auth/extension/pairing/start", {
+      method: "POST",
+      body: { codeHash: "a".repeat(64) }
+    });
+    expect(started.status).toBe(201);
+    expect(started.body).toMatchObject({ state: "pairing", attemptsRemaining: 5 });
+
+    const completed = await requestJson(app, "/api/auth/extension/pairing/complete", {
+      method: "POST",
+      headers: { Origin: `chrome-extension://${"a".repeat(32)}` },
+      body: {
+        code: "123456",
+        token: Buffer.alloc(32, 1).toString("base64url"),
+        extensionId: "a".repeat(32),
+        browser: "edge",
+        extensionVersion: "0.2.0"
+      }
+    });
+    expect(completed.status).toBe(201);
+    expect(completed.body).toMatchObject({ state: "paired" });
+
+    expect((await requestJson(app, "/api/auth/extension/pairing/cancel", { method: "POST" })).status).toBe(200);
+    expect((await requestJson(app, "/api/auth/extension/pairing", { method: "DELETE" })).status).toBe(200);
+    expect(extensionPairing.start).toHaveBeenCalledWith({ codeHash: "a".repeat(64) });
+    expect(extensionPairing.complete).toHaveBeenCalledOnce();
+    expect(extensionPairing.cancel).toHaveBeenCalledOnce();
+    expect(extensionPairing.revoke).toHaveBeenCalledOnce();
+    expect(storeWrite).toHaveBeenCalledOnce();
+    expect(writeAwaited).toHaveBeenCalledOnce();
   });
 
   it("saves extension cookie sync without returning cookie values", async () => {
@@ -450,6 +500,12 @@ describe("browser bridge API routes", () => {
       }))
     }));
     vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
+      getRuntimeStorage: vi.fn(() => ({
+        extensionPairing: {
+          authenticate: vi.fn((token: string) => token === "paired-token"),
+          markSeen: vi.fn(() => ({ state: "paired" }))
+        }
+      })),
       store: {
         read: vi.fn(async () => ({ connected: false, configured: false })),
         write: storeWrite,
@@ -465,6 +521,7 @@ describe("browser bridge API routes", () => {
     const app = await createApp();
     const response = await requestJson(app, "/api/auth/extension-cookie", {
       method: "POST",
+      headers: { "X-XHS-Bridge-Token": "paired-token" },
       body: {
         a1: "a1Secret",
         web_session: "sessionSecret",
@@ -478,6 +535,29 @@ describe("browser bridge API routes", () => {
     expect(setCredential).toHaveBeenCalledWith(COOKIE_CREDENTIAL_KEY, "a1=a1Secret; web_session=sessionSecret; webId=webIdSecret");
     expect(storeWrite).toHaveBeenCalledWith("authStatus", expect.objectContaining({ connected: true, configured: true }));
     expect(storeWrite).toHaveBeenCalledWith("browserBridgeStatus", expect.objectContaining({ connected: true, browser: "edge" }));
+    expect(JSON.stringify(response.body)).not.toContain("Secret");
+  });
+
+  it("rejects extension cookie sync without a valid pairing token", async () => {
+    const setCredential = vi.fn();
+    vi.doMock("../src/server/runtime/runtimeCredentialVault.js", () => ({
+      readRuntimeCredential: vi.fn(async () => undefined),
+      resolveRuntimeCredentialVault: vi.fn(async () => ({ set: setCredential }))
+    }));
+    vi.doMock("../src/server/storage/runtimeStorage.js", () => ({
+      getRuntimeStorage: vi.fn(() => ({
+        extensionPairing: { authenticate: vi.fn(() => false), markSeen: vi.fn() }
+      })),
+      store: { read: vi.fn(), write: vi.fn(), update: vi.fn() }
+    }));
+    const app = await createApp();
+    const response = await requestJson(app, "/api/auth/extension-cookie", {
+      method: "POST",
+      body: { a1: "a1Secret", web_session: "sessionSecret", browser: "edge" }
+    });
+
+    expect(response.status).toBe(401);
+    expect(setCredential).not.toHaveBeenCalled();
     expect(JSON.stringify(response.body)).not.toContain("Secret");
   });
 
@@ -690,7 +770,7 @@ async function createApp(): Promise<Express> {
 async function requestJson(
   app: Express,
   path: string,
-  options: { method: "GET" | "POST" | "DELETE"; body?: unknown }
+  options: { method: "GET" | "POST" | "DELETE"; body?: unknown; headers?: Record<string, string> }
 ): Promise<{ status: number; body: unknown }> {
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -701,7 +781,10 @@ async function requestJson(
   try {
     const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
       method: options.method,
-      headers: options.body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...options.headers
+      },
       body: options.body ? JSON.stringify(options.body) : undefined
     });
     return {

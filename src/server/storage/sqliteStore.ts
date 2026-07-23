@@ -126,22 +126,7 @@ export class SqliteStore implements StoreLike {
   }
 
   collectionCounts(): Record<string, number> {
-    const counts: Record<string, number> = {};
-    for (const name of collectionNames) {
-      if (singletonCollections.has(name)) {
-        const row = this.database.connection.prepare(
-          "SELECT COUNT(*) AS count FROM app_state WHERE key = ?"
-        ).get(name) as { count: number | bigint };
-        counts[name] = Number(row.count);
-        continue;
-      }
-      const table = entityConfigurations[name as EntityCollectionName].table;
-      const row = this.database.connection.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
-        count: number | bigint;
-      };
-      counts[name] = Number(row.count);
-    }
-    return counts;
+    return collectionCountsForConnection(this.database.connection);
   }
 
   replaceAllCollections(values: CollectionValue, beforeCommit?: () => void): void {
@@ -257,6 +242,25 @@ export class SqliteStore implements StoreLike {
       if (this.locks.get(name) === chained) this.locks.delete(name);
     }
   }
+}
+
+export function collectionCountsForConnection(connection: ApplicationDatabase["connection"]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const name of collectionNames) {
+    if (singletonCollections.has(name)) {
+      const row = connection.prepare(
+        "SELECT COUNT(*) AS count FROM app_state WHERE key = ?"
+      ).get(name) as { count: number | bigint };
+      counts[name] = Number(row.count);
+      continue;
+    }
+    const table = entityConfigurations[name as EntityCollectionName].table;
+    const row = connection.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
+      count: number | bigint;
+    };
+    counts[name] = Number(row.count);
+  }
+  return counts;
 }
 
 function entity(

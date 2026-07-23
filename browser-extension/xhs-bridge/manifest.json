@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "小红书运营台助手",
   "description": "将当前浏览器的小红书登录态同步到本地小红书运营台。",
-  "version": "0.1.2",
+  "version": "0.2.1",
   "permissions": ["cookies", "tabs", "storage", "scripting"],
   "host_permissions": [
     "https://*.xiaohongshu.com/*",
@@ -16,7 +16,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://127.0.0.1:5173/*", "http://localhost:5173/*"],
+      "matches": ["http://127.0.0.1:5173/*", "http://localhost:5173/*", "http://127.0.0.1:8787/*"],
       "js": ["content-script.js"],
       "run_at": "document_idle"
     }
